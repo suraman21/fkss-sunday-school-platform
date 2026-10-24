@@ -105,8 +105,10 @@ class DocsLinks(unittest.TestCase):
     def test_every_relative_markdown_link_resolves(self):
         files = tracked_markdown()
         total = sum(1 for f in files for _ in links(f))
-        self.assertGreater(len(files), 150, "too few Markdown files found")
-        self.assertGreater(total, 350, "link parser matched too few links")
+        # Sanity floors: fail loudly if file discovery or the link parser
+        # silently breaks. Set at roughly 80% of the real counts.
+        self.assertGreater(len(files), 55, "too few Markdown files found")
+        self.assertGreater(total, 280, "link parser matched too few links")
         problems = [p for f in files for p in broken_links(f)]
         self.assertEqual(problems, [], "Broken documentation links:\n  " + "\n  ".join(problems))
 

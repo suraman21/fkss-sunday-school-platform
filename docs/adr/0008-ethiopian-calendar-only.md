@@ -21,4 +21,4 @@ Store Gregorian dates internally and convert at the edges. Every displayed date 
 
 ## Evidence
 
-Commits `185aa97`, `b260f0f`, `6fa65df`; `admin/backend/ethiopian_date.php`; PR template checklist; `docs/planning/EC_ONLY_AUDIT_2026-10-19.md`.
+Commits `185aa97`, `b260f0f`, `6fa65df`; `admin/backend/ethiopian_date.php`; PR template checklist.

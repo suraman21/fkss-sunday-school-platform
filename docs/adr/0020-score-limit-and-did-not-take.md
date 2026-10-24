@@ -23,4 +23,4 @@ Marks above an assessment's maximum could be saved, and students with blank mark
 
 ## Evidence
 
-Commits `524ab7f`, `d854591`, `205d398`; `docs/planning/SCORE_LIMIT_VIEWONLY_PAGING_PLAN_2026-10-22.md`.
+Commits `524ab7f`, `d854591`, `205d398`.

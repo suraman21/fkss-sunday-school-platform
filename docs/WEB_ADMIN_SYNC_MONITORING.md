@@ -20,10 +20,10 @@ The monitoring layer is route-agnostic but only sees writes that call the existi
 
 | Domain | Server-observed endpoint family | Correlation status |
 |---|---|---|
-| Attendance | `POST /api/v1/attendance`, `POST /api/v1/attendance/submit` | Supported; mobile sync sends operation ID, attempt ID, attempt number, source. Since 2026-10-07 drafts merge-upsert partial sheets (no more `INCOMPLETE_SHEET` rejections from updated clients — see `docs/attendance/ATTENDANCE_REWORK_2026-10.md`) |
+| Attendance | `POST /api/v1/attendance`, `POST /api/v1/attendance/submit` | Supported; mobile sync sends operation ID, attempt ID, attempt number, source. Since 2026-10-07 drafts merge-upsert partial sheets (no more `INCOMPLETE_SHEET` rejections from updated clients) |
 | Grades | `POST /api/v1/grades/save`, `POST /api/v1/grades/submit` | Supported; mobile sync sends operation ID, attempt ID, attempt number, source |
 | HR attendance | `POST /api/v1/hr/sheet` | **RETIRED (2026-10-07)** — writes answer 410 `HR_ATTENDANCE_RETIRED`; stale-device attempts surface as honest attention rows and decay as the fleet updates; no new writes originate from current builds |
-| Mezmur attendance | `POST /api/v1/mezmur/sheet` | Supported; mobile sync sends operation ID, attempt ID, attempt number, source. Since 2026-10-07 drafts merge-upsert partial sheets (see `docs/attendance/ATTENDANCE_REWORK_2026-10.md`) |
+| Mezmur attendance | `POST /api/v1/mezmur/sheet` | Supported; mobile sync sends operation ID, attempt ID, attempt number, source. Since 2026-10-07 drafts merge-upsert partial sheets |
 | Mezmur library outbox writes | idempotent `POST /api/v1/mezmur/*` writes that call `apiIdempotencyBegin` | Server-observed operation/idempotency/request correlation; source/attempt number remain **NOT YET SERVER-OBSERVABLE** for those library calls |
 | Other authenticated API writes | Any route using `apiIdempotencyBegin` | Server-observed only when a valid idempotency key is present; do not infer mobile origin |
 

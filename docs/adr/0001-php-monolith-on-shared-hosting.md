@@ -22,4 +22,4 @@ Build one PHP code base with no framework: PHP-rendered dashboards, JSON endpoin
 
 ## Evidence
 
-`AGENTS.md` (hosting rules); committed `vendor/` and `composer.json`; [OPERATIONS.md](../OPERATIONS.md).
+[CONTRIBUTING.md](../../CONTRIBUTING.md) (hosting constraints); committed `vendor/` and `composer.json`; [OPERATIONS.md](../OPERATIONS.md).

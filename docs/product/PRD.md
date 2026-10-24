@@ -6,7 +6,7 @@
 | Status | **Reconstructed baseline. Draft for review by the engineering team** |
 | Version | 1.0 (2026-10-22) |
 | Describes | The system as implemented on `main` at `46fbaa7` (deployed to production on 2026-10-22) |
-| Method | Reconstructed after the fact from the source code, migration files, commit history and the owner's dated decision records under `docs/planning/`. No PRD existed before development began; the system was built incrementally from 2026-08-15 |
+| Method | Reconstructed after the fact from the source code, migration files, commit history and the decision records ([ADRs](../adr/README.md)). No PRD existed before development began; the system was built incrementally from 2026-08-15 |
 | Owner | FKSS project owner |
 | Companion documents | [Technical design](../architecture/TECHNICAL_DESIGN.md) · [Decision records](../adr/README.md) · [Glossary](GLOSSARY.md) · [Roles and permissions](../ROLES_AND_PERMISSIONS.md) · [Engineering handover](../ENGINEERING_HANDOVER.md) |
 
@@ -108,7 +108,7 @@ Other stakeholders: the parents and guardians of students (data subjects; no sys
 | FR-EDU-01 | Education manages classes (with age group), subjects (Amharic names supported), teacher accounts and teacher ↔ subject ↔ class assignments | Implemented | `api_education.php`, `api_subjects.php`, `api_teachers.php`, `api_assignments.php` |
 | FR-EDU-02 | Subjects are `SEMESTER_ONLY` or `FULL_YEAR`. A full-year subject's annual score is the plain average of the two semester totals. A semester-only subject's final score is that semester's score | Implemented | `SubjectDurationPolicy.php`; [ADR-0010](../adr/0010-semester-based-grading.md) |
 | FR-EDU-03 | Assessments are created by Education (batch across classes and subjects). Assessment types are configurable. Each semester has a **100% weight budget** | Implemented | `AssessmentTypeService.php`; release 1.6.6 (`02b6c6d`) |
-| FR-EDU-04 | A mark above an assessment's maximum is refused with HTTP 422 and nothing is saved. A blank mark is shown as **"Did not take"** and is **excluded** from the total | Implemented | commits `524ab7f`, `d854591`; `docs/planning/SCORE_LIMIT_VIEWONLY_PAGING_PLAN_2026-10-22.md` (D1) |
+| FR-EDU-04 | A mark above an assessment's maximum is refused with HTTP 422 and nothing is saved. A blank mark is shown as **"Did not take"** and is **excluded** from the total | Implemented | commits `524ab7f`, `d854591`; [ADR-0020](../adr/0020-score-limit-and-did-not-take.md) |
 | FR-EDU-05 | Mark lists: draft → submit → Education review (approve or reject). Submitted lists are read-only. One packet per slot; review transitions cannot be replayed | Implemented | `ReviewTransitionPolicy.php`; `SubmissionService.php`; `sql/053_grade_submission_slot_uniqueness.sql` |
 | FR-EDU-06 | Semesters can be closed and reopened for corrections. Teachers can view closed semesters. Grade entry outside the current semester is visible and overridable, never silent | Implemented | `sql/067_semester_reopen_flag.sql`; releases 1.6.4 and 1.6.5 |
 | FR-EDU-07 | Report cards: totals, averages, rank and attendance, from one service used by Education and the teacher portal. Printed as an A5 booklet | Implemented | `ReportCardService.php`; release 1.6.10 |
@@ -149,7 +149,7 @@ Other stakeholders: the parents and guardians of students (data subjects; no sys
 | ID | Requirement and business rules | Status | Source |
 |---|---|---|---|
 | FR-REP-01 | Reporting Centre: governed member dataset with per-field view and export permissions, saved views (private, department, shared), audited CSV and Excel export | Implemented | `admin/backend/reporting/ReportRegistry.php`; `api_reports_v2.php`; `sql/070_report_definitions.sql` |
-| FR-REP-02 | **Boundary:** future sensitive or cross-department datasets (finance, material, detailed education, telemetry) go to the Information Department only | Implemented as a rule for additions; department datasets (V2-4) are **On hold** | `docs/planning/REPORTING_CENTRE_SCOPE_AND_ROLE_BOUNDARY_2026-10-19.md`; [ADR-0012](../adr/0012-reporting-centre-and-data-boundary.md) |
+| FR-REP-02 | **Boundary:** future sensitive or cross-department datasets (finance, material, detailed education, telemetry) go to the Information Department only | Implemented as a rule for additions; department datasets (V2-4) are **On hold** | [ADR-0012](../adr/0012-reporting-centre-and-data-boundary.md) |
 | FR-REP-03 | Attendance analytics hub for Information (Education and Mezmur sources), PDF report templates, member exports | Implemented | `api_info_analytics.php`; `admin/backend/pdf/` |
 | FR-REP-04 | Past-year view: any user can view a closed academic year read-only; writes are blocked while viewing the past | Implemented | `admin/api_year_context.php` |
 
@@ -186,11 +186,11 @@ Other stakeholders: the parents and guardians of students (data subjects; no sys
 ## 7. Planned and paused work (not implemented)
 | Item | Status | Record |
 |---|---|---|
-| Parent app | Feature list **locked**; not started | `docs/planning/parent_app/PARENT_APP_FEATURE_BASELINE.md` |
-| Members app | **On hold** | `docs/planning/members_app/` |
-| Account Command Center (parent/member accounts and devices) | Planning D1–D7; **no code until D7 is approved** | `docs/planning/account_command_center/` |
-| Reporting Centre V2-4 (department datasets) | **On hold** pending user feedback | `REPORTING_CENTRE_SCOPE_AND_ROLE_BOUNDARY_2026-10-19.md` |
-| Lesson-level attendance on mobile | Not in scope of Phase 6 | `ATTENDANCE_PHASE6_LESSON_LEVEL_PLAN_2026-10-20.md` |
+| Parent app | Feature list **locked**; not started | — |
+| Members app | **On hold** | — |
+| Account Command Center (parent/member accounts and devices) | In planning; **no code until the implementation plan is approved** | — |
+| Reporting Centre V2-4 (department datasets) | **On hold** pending user feedback | [ADR-0012](../adr/0012-reporting-centre-and-data-boundary.md) |
+| Lesson-level attendance on mobile | Not in scope of Phase 6 | [ADR-0018](../adr/0018-lesson-level-attendance.md) |
 
 ## 8. Non-functional requirements
 | ID | Requirement | Status / evidence |

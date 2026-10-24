@@ -165,7 +165,7 @@ Delete `is_active = 1` / `a.is_active = 1`. **Do not substitute `is_published = 
 
 Phases 2–5 claim schema verification "against `information_schema`". **That verification ran against a fixture I wrote myself**, which contained a column production has never had. The two `information_schema` guard tests pin the fixture, not production. CI run #44's 1,958 passing tests are therefore not evidence about production behaviour for any schema-dependent path.
 
-`docs/ACADEMIC_TRACKING_PHASE5.md` §2 states `class_subjects = id, class_id, subject_id, duration_type, term_id`. **That is wrong for production** and must be corrected.
+The Academic Tracking Phase 5 design record (§2) stated `class_subjects = id, class_id, subject_id, duration_type, term_id`. **That is wrong for production** and must be corrected.
 
 I am not claiming this list is exhaustive. An alias-aware sweep of every column reference in `AcademicTrackingService.php` against the production dump found exactly three non-existent references (`a.is_active`, `cs.duration_type`, `cs.term_id`) and no others; the same sweep has not yet been run across the rest of the codebase.
 
@@ -227,7 +227,7 @@ ssms_post056     056-supported=yes  -> 3:'FULL_YEAR'  1:'SEMESTER_ONLY' 12:'FULL
 | `tests/e2e/academic_intelligence.php` | `assessments.is_published` replaces the invented `is_active`. New `SSMS_FIXTURE_PRE056=1` mode builds the production shape. |
 | `tests/security/test_schema_conformance.py` | New. 18 tests driving the endpoints against a pre-056 database. |
 | `.github/workflows/backend-checks.yml` | Provisions `ssms_pre056_e2e`. |
-| `docs/ACADEMIC_TRACKING_PHASE5.md` | §2 schema table corrected. |
+| Academic Tracking Phase 5 design record | §2 schema table corrected. |
 
 **Deliberately not changed:** `AssessmentTypeService::ensureTable()` uses the
 same `@$conn->query(...)` idiom to probe for the `assessment_types` table.

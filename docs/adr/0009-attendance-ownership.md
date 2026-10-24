@@ -24,4 +24,4 @@ Three departments kept separate attendance, which duplicated effort and produced
 
 ## Evidence
 
-Commits `e2184d1`, `eec830c`, `9ba54ee`, `4b0124f`, `d098afc`; [ATTENDANCE_REWORK_2026-10.md](../attendance/ATTENDANCE_REWORK_2026-10.md).
+Commits `e2184d1`, `eec830c`, `9ba54ee`, `4b0124f`, `d098afc`.

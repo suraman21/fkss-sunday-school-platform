@@ -1,1 +1,0 @@
-PASS: API bootstrap returns clean JSON 401 with initial display_errors=1; no duplicate marker warning.

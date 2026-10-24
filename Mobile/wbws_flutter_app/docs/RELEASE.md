@@ -123,8 +123,7 @@ and `adb logcat -b crash -d` shows SIGSEGV inside `libflutter.so` with
 solved by the universal APK).
 
 - **Field test first** on the failing phone:
-  `adb logcat -b crash -d` (full instructions in
-  `docs/audits/LOW_END_DEVICE_COMPATIBILITY_AUDIT.md`).
+  `adb logcat -b crash -d`.
 - If (and only if) the log confirms renderer crashes, add to
   `AndroidManifest.xml` inside `<application>`:
   ```xml

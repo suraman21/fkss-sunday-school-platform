@@ -21,4 +21,4 @@ Friction scales with the impact of the action. High-risk actions use one shared 
 
 ## Evidence
 
-`admin/backend/danger_confirm.php`; commits `20fc748`, `1070b57`, `c8f02fd`, `3ed188d`; `docs/planning/DANGER_CONFIRMATION_RESEARCH_PLAN_2026-10-21.md`.
+`admin/backend/danger_confirm.php`; commits `20fc748`, `1070b57`, `c8f02fd`, `3ed188d`.

@@ -28,7 +28,6 @@
 |---|---|---|
 | `tests/security/test_mobile_target_environment.py` | `main` pins production values; `dev` carries a different version pinning beta values | A merge `dev → main` conflicts on this file, and if resolved wrongly the test fails on `main`. |
 | `.github/workflows/branch-guard.yml` | runs on every push / PR to `main` | Fails CI if beta values (`arkeonethiopia.com/api`, `fkss.beta`, `FKSS Beta`, `isBeta`) appear on `main`, or if a PR into `main` comes from `dev`. |
-| `AGENTS.md` (repo root) | read automatically by AI coding tools | Repeats this rule in the first lines. |
 | `.github/PULL_REQUEST_TEMPLATE.md` | every PR | Checklist item "not from `dev`". |
 | Build step | `Mobile/wbws_flutter_app/scripts/build-release.ps1` runs `flutter test` before building (unless `-SkipTests` is passed). A plain `flutter build apk` does **not** run tests | A production APK built through the script fails if the tree carries beta values. |
 

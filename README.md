@@ -31,7 +31,7 @@ FKSS (also referred to in the code as SSMS and, in older files, WBWS/WBSS) is th
 
 | Layer | Technology | Evidence |
 |---|---|---|
-| Server runtime | PHP **8.2** in production (shared hosting, LiteSpeed, no shell access, no Composer, no cron assumed). CI lints and tests on PHP 8.4 | `AGENTS.md`, `.github/workflows/backend-checks.yml` |
+| Server runtime | PHP **8.2** in production (shared hosting, LiteSpeed, no shell access, no Composer, no cron assumed). CI lints and tests on PHP 8.4 | [ADR-0001](docs/adr/0001-php-monolith-on-shared-hosting.md), `.github/workflows/backend-checks.yml` |
 | Database | MariaDB (CI: `mariadb:11.4`). Access mostly through **mysqli** (about 150 files), with PDO in a few places | `backend-checks.yml`, `config.php` |
 | PHP libraries | Committed in `vendor/` (PhpSpreadsheet 5.9, OpenSpout, ZipStream). TCPDF and phpqrcode are bundled in `admin/` | `composer.lock` |
 | Web front end | Server-rendered PHP pages with vanilla JavaScript (`admin/js`, `frontend/js`) | — |

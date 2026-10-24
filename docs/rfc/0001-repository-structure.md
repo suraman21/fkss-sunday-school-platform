@@ -32,8 +32,8 @@ The repository root has about 40 entries: web entry points, legacy folders, a ve
 | `admin/`, `api/`, `backend/`, `frontend/`, `app/`, `monitor/`, `themes/`, `css/`, `js/`, `uploads/` | Application code and assets served by the web | **Keep** in Phase 1; see Phase 3 |
 | `sql/`, `tests/`, `docs/`, `scripts/`, `tools/`, `Mobile/`, `.github/` | Non-web material, already blocked from the web | **Keep** |
 | `vendor/`, `composer.json`, `composer.lock` | PHP libraries, committed for shared hosting | **Keep**; document why (Phase 0) |
-| `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `AGENTS.md`, `BRANCHING.md`, `.editorconfig`, `.gitignore` | Standard project files | **Keep** |
-| `ENTERPRISE_SECURITY_AUDIT_REPORT.md` | Superseded audit (2026-09-27), kept as history | **Move** to `docs/audits/` (Phase 1) |
+| `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `BRANCHING.md`, `.editorconfig`, `.gitignore` | Standard project files | **Keep** |
+| `ENTERPRISE_SECURITY_AUDIT_REPORT.md` | Superseded audit (2026-09-27) | **Move** to `docs/audits/` (Phase 1); later removed from the repository |
 | `database_schema.sql` | Legacy, partial schema (11 tables) | **Move** to `sql/legacy/` with a README (Phase 1); 15 files reference it |
 | `leak_detector.php` | Branding check run after deployment | **Review** (Phase 1); referenced by `admin/access_control.php` and tests |
 | `index.html` | Static page alongside `index.php` | **Removed** (2026-10-23): never served at `/`, no requests in the October access logs, no references |
@@ -93,7 +93,7 @@ Each item is its own pull request containing the move, every reference update, a
 
 | Item | Done | Evidence that nothing depends on it |
 |---|---|---|
-| Superseded audit report | Moved to [`docs/audits/ENTERPRISE_SECURITY_AUDIT_REPORT_2026-09-27.md`](../audits/ENTERPRISE_SECURITY_AUDIT_REPORT_2026-09-27.md) | Referenced only by documentation; already denied by `.htaccess` |
+| Superseded audit report | Moved to `docs/audits/`; later removed from the repository with the other historical audit records | Referenced only by documentation; already denied by `.htaccess` |
 | `database_schema.sql` | Moved to [`sql/legacy/`](../../sql/legacy/README.md) | Users updated: `tests/e2e/provision_env.sh` and two tests. CI never loads it. The `.htaccess` rule still matches the new path |
 | Root `leak_detector.php` | **Removed** (changed from "move to `tools/`") | Byte-identical to `admin/leak_detector.php`, whose relative paths only work from `admin/`; the root copy looked for the configuration outside the project. The `admin/` copy and its HTTP blocks stay |
 | `public_website_frontend/` | **Removed** | No PHP, JavaScript, mobile, test, CI or server-rule reference; the live homepage is `index.php` with the root `css/` and `js/`; 0 requests in the available access logs (21–23 Oct 2026) |
@@ -122,7 +122,7 @@ Decisions:
 
 Known outdated comments (fix each with the next real change to that file; they are comments only and change no behaviour):
 - `admin/backend/services/AttendanceRiskService.php` line 53 still says `tools/attendance_rollout_2026.php` (now `scripts/`).
-- `admin/components/notification_center.php` line 6 still says `docs/COMMUNICATION_UX_OVERHAUL.md` (now `docs/communication/`).
-- `Mobile/wbws_flutter_app/android/app/src/main/kotlin/com/arkeonethiopia/fkss/BackgroundSyncProducer.kt` line 45 still says `docs/MOBILE_OFFLINE_SYNC_S3_A8_PHASE1_ANDROID_BACKGROUND_PRODUCER_ADR.md` (now `docs/mobile_offline_sync/`).
+- `admin/components/notification_center.php` line 6 refers to a design record that is no longer in the repository.
+- `Mobile/wbws_flutter_app/android/app/src/main/kotlin/com/arkeonethiopia/fkss/BackgroundSyncProducer.kt` line 45 refers to a design record that is no longer in the repository.
 
-`sql/042_notification_center.sql` line 6 mentions `docs/NOTIFICATION_SYSTEM_OVERHAUL.md` (now `docs/communication/`). It is an applied migration, a dated record, so it is not changed.
+`sql/042_notification_center.sql` line 6 mentions a design record that is no longer in the repository. It is an applied migration, a dated record, so it is not changed.

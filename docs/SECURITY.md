@@ -28,7 +28,7 @@ This repository is **public**. Open security and privacy findings, their evidenc
 | Headers | `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, `Cross-Origin-Opener-Policy`, HSTS (over HTTPS), and a baseline CSP | `config.php` |
 | Audit trail | `activity_logs` plus `SecurityAuditService` | `admin/backend/services/` |
 | Files | Member documents served through a role-checked handler from private storage | `MemberFileService`, `admin/member_file.php` |
-| Web exposure | `.htaccess` rules deny legacy migration folders, planning docs and monitor internals | `.htaccess`, `admin/.htaccess`, `docs/planning/.htaccess`, `monitor/.htaccess` |
+| Web exposure | `.htaccess` rules deny the non-web folders (`sql/`, `docs/`, `tests/`, `scripts/`, `vendor/`, `Mobile/`), legacy migration folders and monitor internals | `.htaccess`, `admin/.htaccess`, `monitor/.htaccess` |
 | Repository hygiene | CI rejects tracked credential and artifact files and secret-shaped strings | `.github/workflows/production-integrity.yml` |
 | Mobile | Tokens in `flutter_secure_storage`; app lock with `local_auth`; Android backups disabled; no cleartext traffic | `Mobile/wbws_flutter_app/` |
 

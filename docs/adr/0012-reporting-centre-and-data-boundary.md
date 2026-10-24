@@ -22,4 +22,4 @@ Information and HR needed flexible reports and exports. A separate BI server (fo
 
 ## Evidence
 
-`admin/backend/reporting/ReportRegistry.php`; commits `5d10294`, `072005e`, `d226dd8`; `docs/planning/REPORTING_ENGINE_STACK_AND_UX_DECISION_2026-10.md`; `docs/planning/REPORTING_CENTRE_SCOPE_AND_ROLE_BOUNDARY_2026-10-19.md`.
+`admin/backend/reporting/ReportRegistry.php`; commits `5d10294`, `072005e`, `d226dd8`.

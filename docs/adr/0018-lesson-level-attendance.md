@@ -24,4 +24,4 @@ Education needed attendance per lesson (subject, teacher, lesson number) without
 
 ## Evidence
 
-`LessonAttendanceService.php`; `sql/076_attendance_sessions.sql`; commit `3ad51cd`; `docs/planning/ATTENDANCE_PHASE6_LESSON_LEVEL_PLAN_2026-10-20.md`.
+`LessonAttendanceService.php`; `sql/076_attendance_sessions.sql`; commit `3ad51cd`.

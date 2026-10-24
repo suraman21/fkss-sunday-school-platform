@@ -23,9 +23,9 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for structure, [API.md](API.md) for inter
 | What is the database schema? | The production database. **Not verified;** see [DATABASE.md §4](DATABASE.md#4-applied-state-in-production-unverified) | `database_schema.sql` (stale); `sql/` describes intent only |
 | Which app version is in the field? | The app-release manager configuration (`/api/v1/app/config`) | `pubspec.yaml` on `main` |
 | Who may do what? | `admin/access_control.php`, `api/v1/core/acl.php`, in-endpoint checks | Older docs |
-| Owner decisions | Decision logs under `docs/planning/`, plus the owner | Historical audits |
+| Owner decisions | [Architecture decision records](adr/README.md) | Historical audits |
 | Security and privacy findings | The owner's restricted register | This public repository |
-| How is the system structured? | [ARCHITECTURE.md](ARCHITECTURE.md), [API.md](API.md), [DATABASE.md](DATABASE.md) | [SSMS_SYSTEM_KNOWLEDGE_REPORT.md](planning/system/SSMS_SYSTEM_KNOWLEDGE_REPORT.md) (an AI-assisted baseline from `6d5a5f8`, reconciled 2026-10-22; useful for orientation) |
+| How is the system structured? | [ARCHITECTURE.md](ARCHITECTURE.md), [API.md](API.md), [DATABASE.md](DATABASE.md) | — |
 
 ## 3. Branch and change rules
 
@@ -100,4 +100,4 @@ Severity: Critical / High / Medium / Low. Confidence: Verified (checked against 
 1. Read [README.md](../README.md), this document and [BRANCHING.md](../BRANCHING.md).
 2. Build the test environment ([DEVELOPMENT_AND_TESTING.md §2](DEVELOPMENT_AND_TESTING.md#2-local-setup-test-environment-only)).
 3. Read [ARCHITECTURE.md](ARCHITECTURE.md), then [ROLES_AND_PERMISSIONS.md](ROLES_AND_PERMISSIONS.md).
-4. Before any change, follow the change protocol in [planning/system/PROJECT_RULES.md](planning/system/PROJECT_RULES.md) and get the owner's approval.
+4. Before any change, follow [CONTRIBUTING.md](../CONTRIBUTING.md).

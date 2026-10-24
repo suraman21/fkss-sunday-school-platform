@@ -24,4 +24,4 @@ Parent details were copied onto each child's record, so siblings could not be li
 
 ## Evidence
 
-`GuardianMatchService.php`; `api_guardians.php`; `sql/069_guardian_linkage.sql`; commit `695830c`; `docs/planning/family_link/IMPLEMENTATION_PLAN_GUARDIAN_LINKAGE.md`.
+`GuardianMatchService.php`; `api_guardians.php`; `sql/069_guardian_linkage.sql`; commit `695830c`.

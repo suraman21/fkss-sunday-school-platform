@@ -24,4 +24,4 @@ Attendance could be recorded for any date, including days a class does not meet,
 
 ## Evidence
 
-`admin/backend/services/SchoolCalendarService.php`; commit `a5e8fee`; `docs/planning/ATTENDANCE_CLASS_DAY_ENFORCEMENT_PLAN_2026-10-20.md`.
+`admin/backend/services/SchoolCalendarService.php`; commit `a5e8fee`.

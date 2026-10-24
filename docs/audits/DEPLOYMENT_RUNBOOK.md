@@ -11,8 +11,6 @@
 > [`AUTH_OUTBOX_BUILD24_ROLLOUT_RUNBOOK.md`](AUTH_OUTBOX_BUILD24_ROLLOUT_RUNBOOK.md).
 > Its stop conditions supersede generic rollback advice for this release.
 
-> You have other documents for detail (`FOUNDATION_VERIFICATION.md`, `PRODUCTION_HARDENING_PLAN.md`, the three audits). You do **not** need to read them to deploy — this runbook is the checklist. They're reference if something is unclear.
-
 ---
 
 ## STAGE 0 — Before you touch the live server (15 min)
@@ -131,8 +129,7 @@ chmod 755 admin/uploads admin/uploads/members admin/uploads/members/photos \
          mezmur_hymns plus idx_mz40_art_status. The Mezmur console's
          "Sync DB schema" button applies the same columns. Verify with
          admin/api_mezmur.php?action=ping — it must report
-         code_version phase7-art01 with no missing_columns. Full design:
-         docs/mezmur_player/HYMN_ART_P66.md.
+         code_version phase7-art01 with no missing_columns.
 [ ] 4.7  (Audit 2026-10-02 — migration ordering + uniqueness) Three items.
 
          (a) MIGRATION 030 WAS DUPLICATED. Two different migrations both
@@ -398,7 +395,7 @@ issue is resolved.
 
 ## STAGE 7 — Role testing (30–45 min) — the most important step
 
-Use the **ROLE-BY-ROLE TEST CHECKLIST** in `FOUNDATION_VERIFICATION.md` (Section 2).
+Log in as each role and check the pages that role uses ([ROLES_AND_PERMISSIONS.md](../ROLES_AND_PERMISSIONS.md)).
 
 ```
 [ ] 7.1  Create one test user per role (Users page, as super admin).
@@ -420,7 +417,7 @@ Use the **ROLE-BY-ROLE TEST CHECKLIST** in `FOUNDATION_VERIFICATION.md` (Section
 
 No migrations are needed for the rework (all merge paths use existing
 unique keys; HR tables stay as a read-only archive). Verify behavior
-after the code deploy. Full contract: `docs/ATTENDANCE_REWORK_2026-10.md`.
+after the code deploy. Background: [ADR-0009](../adr/0009-attendance-ownership.md).
 
 ```
 [ ] 7B.1 Default-absent sanity (teacher, mobile app + web taker):

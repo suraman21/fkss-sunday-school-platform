@@ -1,9 +1,0 @@
-test_auth_redirects_are_request_origin_independent_and_shim_safe (test_static_safety.StaticSafetyTests.test_auth_redirects_are_request_origin_independent_and_shim_safe) ... ok
-test_ledger_validator_executes_with_no_database (test_static_safety.StaticSafetyTests.test_ledger_validator_executes_with_no_database) ... ok
-test_member_age_handles_birthdays_and_ethiopian_new_year (test_static_safety.StaticSafetyTests.test_member_age_handles_birthdays_and_ethiopian_new_year) ... ok
-test_tool_guards_run_before_config_even_without_htaccess (test_static_safety.StaticSafetyTests.test_tool_guards_run_before_config_even_without_htaccess) ... ok
-
-----------------------------------------------------------------------
-Ran 4 tests in 0.383s
-
-OK

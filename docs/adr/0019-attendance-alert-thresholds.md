@@ -23,4 +23,4 @@ Staff needed early warning when members stop attending, without the system silen
 
 ## Evidence
 
-`AttendancePolicyService.php`; `AttendanceWarningService.php`; `sql/071_department_status_and_policy.sql`, `sql/072_attendance_warnings.sql`; commits `1b45e03`, `2a571c1`; `docs/planning/ATTENDANCE_ALERTING_IMPLEMENTATION_PLAN_2026-10-19.md`.
+`AttendancePolicyService.php`; `AttendanceWarningService.php`; `sql/071_department_status_and_policy.sql`, `sql/072_attendance_warnings.sql`; commits `1b45e03`, `2a571c1`.

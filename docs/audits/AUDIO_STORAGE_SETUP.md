@@ -182,10 +182,7 @@ instant rather than a re-download.
 
 **d) The player is already built.** `MezmurAudioPlayerController` uses `just_audio` +
 `just_audio_background`: streaming (no download), background playback, lock-screen
-transport, queue from the current filtered view. That part is done — but see
-`MEZMUR_DEEP_AUDIT.md` §8: **`pubspec.lock` has no entry for the audio packages, so the
-mobile app does not currently build.** Run `flutter pub get` in
-`Mobile/wbws_flutter_app` before you test playback on a phone.
+transport, queue from the current filtered view.
 
 ---
 

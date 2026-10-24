@@ -99,8 +99,8 @@ These are standing owner decisions recorded in project notes. The table shows wh
 | Rule | Evidence |
 |---|---|
 | Registration and promotion belong to HR; Information is a viewer/updater only | `hr_register_member.php`, `api_import_members.php`, `api_check_duplicate.php` are HR-only in `ROLE_MAP` |
-| HR does not take attendance | `docs/attendance/ATTENDANCE_REWORK_2026-10.md` (HR attendance retired). `api_hr_attendance.php` still exists and is HR-gated. **Unresolved:** current behaviour |
-| Sensitive reporting datasets are restricted to Information | `docs/planning/REPORTING_CENTRE_SCOPE_AND_ROLE_BOUNDARY_2026-10-19.md`. Enforcement per dataset is in `api_reports_v2.php`; not tabulated |
+| HR does not take attendance | [ADR-0009](adr/0009-attendance-ownership.md) (HR attendance retired). `api_hr_attendance.php` still exists and is HR-gated. **Unresolved:** current behaviour |
+| Sensitive reporting datasets are restricted to Information | [ADR-0012](adr/0012-reporting-centre-and-data-boundary.md). Enforcement per dataset is in `api_reports_v2.php`; not tabulated |
 | Only Education writes school holidays and days off | `api_school_calendar.php` in-file checks; not tabulated |
 
 ## 5. Unresolved

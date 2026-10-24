@@ -27,8 +27,8 @@
 | End-to-end journeys | A user can complete a workflow in the browser or against the API | `tests/e2e/` (Python Playwright journeys, PHP harnesses) | No; run locally against a provisioned server |
 | Smoke | A deployed or local instance answers its key pages and endpoints | `tests/smoke/` | No |
 | Build | A debug Android APK builds from `main` | *Android debug APK* job | Yes |
-| Manual and visual | Layout, language and usability on real devices | [VISUAL_QA_GUIDE_2026-10-20.md](audits/VISUAL_QA_GUIDE_2026-10-20.md) | Manual |
-| Security assessment | External view of the deployed site | Dynamic scans. OWASP ZAP Phase 1 findings were remediated (for example `18c5801`: CORS wildcard removed, CSP and HSTS on the API); see [PRODUCTION_READINESS_AUDIT.md](planning/system/PRODUCTION_READINESS_AUDIT.md) | Periodic, manual |
+| Manual and visual | Layout, language and usability on real devices | Manual check on a phone, a tablet and a desktop before release | Manual |
+| Security assessment | External view of the deployed site | Dynamic scans. OWASP ZAP Phase 1 findings were remediated (for example `18c5801`: CORS wildcard removed, CSP and HSTS on the API) | Periodic, manual |
 
 ## 4. Coverage by risk area
 

@@ -1,5 +1,0 @@
-PASS Calendar boots from head, is safe to include twice, and tracks property-set values
-PASS Gregorian mode never converts dynamically inserted native date inputs
-PASS Finance double-click sends one write; Gregorian date remains exact
-PASS Shared esc() is safe for quoted HTML attributes as well as text
-PASS Admin restore buttons work on legacy and migrated department pages
