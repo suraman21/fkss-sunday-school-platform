@@ -1,6 +1,6 @@
 # Data dictionary (table level)
 
-**Status:** reconstructed 2026-10-23 from `main` at `46fbaa7` by scanning every schema source (`sql/legacy/database_schema.sql`, `admin/migrations/*.php`, `sql/*.sql`) for `CREATE TABLE` statements and declared foreign keys, and by counting references in application code. **Not compared with the production database**; the applied production state is unverified (see [DATABASE.md §4](DATABASE.md#4-applied-state-in-production-unverified)).
+**Status:** generated 2026-10-23 from `main` at `46fbaa7` by scanning every schema source (`sql/legacy/database_schema.sql`, the legacy PHP migration scripts (now in `sql/legacy/php-migrations/`), `sql/*.sql`) for `CREATE TABLE` statements and declared foreign keys, and by counting references in application code. **Not compared with the production database**; the applied production state is unverified (see [DATABASE.md §4](DATABASE.md#4-applied-state-in-production-unverified)).
 
 **Scope:** one row per table, grouped by domain. Column-level detail lives in the defining migration and in later `ALTER TABLE` migrations; this page tells you where to look. Purpose lines are one-sentence summaries taken from the defining migration and the code that uses each table.
 
@@ -75,7 +75,7 @@ erDiagram
 | `api_refresh_sessions` | Rotating refresh-token sessions (token families, revocation). | `sql/010_refresh_token_rotation.sql` | 2 |
 | `security_rate_limits` | Counters for login and API rate limiting. | `sql/008_security_rate_limits.sql` | 2 |
 | `users` | Staff and app accounts: username, password hash, role, `authorization_version`, profile fields. | `sql/legacy/database_schema.sql` | 92 · legacy definition |
-| `wbws_audit_log` | Audit trail of sensitive changes (historical WBWS naming). | `sql/013_application_schema_completion.sql` | 1 |
+| `wbws_audit_log` | Audit trail of sensitive changes. | `sql/013_application_schema_completion.sql` | 1 |
 
 ### Members and registration
 
@@ -256,7 +256,7 @@ erDiagram
 | `material_requests` | Material requests. | `sql/legacy/php-migrations/admin/004_add_finance_material_tables.php` | 3 · legacy definition |
 | `material_transactions` | Material stock movements. | `sql/legacy/php-migrations/admin/004_add_finance_material_tables.php` | 1 · legacy definition |
 
-### Groups (WBWS)
+### Groups
 
 | Table | Purpose | Defined in | Code refs |
 |---|---|---|---|
@@ -345,4 +345,4 @@ erDiagram
 
 - No column-level dictionary yet. Recommended: generate one from a schema-only export of a provisioned test database (never from production data), and keep it under version control.
 - Legacy schema sources (`sql/legacy/database_schema.sql`, `sql/legacy/php-migrations/admin/*.php`) overlap with versioned migrations; see [DATABASE.md §2](DATABASE.md#2-sources-of-schema-truth-and-their-limits).
-- Tables not referenced by code should be reviewed by the owner before any change; nothing here recommends deleting data.
+- Tables not referenced by code should be reviewed by the maintainers before any change; nothing here recommends deleting data.

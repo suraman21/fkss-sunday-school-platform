@@ -2,14 +2,14 @@
 
 **Status:** canonical. **Verified against:** `main` at `46fbaa7` (2026-10-22) by reading the code. Production configuration was **not** re-tested for this document, unless a row says otherwise.
 
-This repository is **public**. Open security and privacy findings, their evidence and their containment status are kept in a **restricted register held by the project owner**, not in this repository. Do not add vulnerability details, member data, credentials or infrastructure identifiers to any file, issue or pull request here.
+This repository is **public**. Open security and privacy findings, their evidence and their containment status are kept in a **restricted register maintained privately by the maintainers**, not in this repository. Do not add vulnerability details, member data, credentials or infrastructure identifiers to any file, issue or pull request here.
 
 ## 1. Reporting a vulnerability
 
-- Report privately to the project owner, the owner of this repository. **Do not** open a public issue or pull request.
+- Report privately to the maintainers, through the GitHub account that owns this repository. **Do not** open a public issue or pull request.
 - Include the affected path or endpoint, the steps to reproduce and the impact.
 - **Do not include member personal data** in the report.
-- The owner records each report in the restricted register.
+- Each report is recorded in the restricted register.
 
 ## 2. Controls verified in code
 
@@ -62,9 +62,9 @@ These are documented design limits. They are not the full list of findings.
 - **Third-party scripts:** some admin pages load Tailwind from its CDN without SRI. Other CDN assets use SRI.
 - **Mobile offline cache:** the cache is not encrypted at the application level; it relies on Android file-based encryption.
 - **APK signing:** the distributed Android APK is signed with a debug key (see [OPERATIONS.md](OPERATIONS.md#5-mobile-release)).
-- **Runtime parity:** CI tests PHP 8.4 while production runs PHP 8.2 ([DEVELOPMENT_AND_TESTING.md](DEVELOPMENT_AND_TESTING.md#5-runtime-parity-gap)).
+- **Runtime parity:** CI runs the tests on PHP 8.4 and lints every file on 8.5, while production runs PHP 8.5 ([DEVELOPMENT_AND_TESTING.md](DEVELOPMENT_AND_TESTING.md#5-runtime-parity-gap)).
 - **No independent assessment:** no independent penetration test or certification has been performed.
 
 ## 5. Open findings
 
-Open findings are tracked in the owner's **restricted register**, together with severity, evidence, containment and owner action. This repository records only that the register exists. Do not interpret the absence of findings here as an absence of risk.
+Open findings are tracked in the **restricted register**, together with severity, evidence, containment and the agreed action. This repository records only that the register exists. Do not interpret the absence of findings here as an absence of risk.

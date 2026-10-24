@@ -1,4 +1,4 @@
-# Production Workflow — Felege Kidusan SSMS
+# Production Workflow — FKSS
 
 > Established 2026-10-07 (production migration **Step 1**). This document
 > defines how code travels from development to production, who approves it,
@@ -9,13 +9,12 @@
 
 The policy below was adopted on 2026-10-07. Part of it is **not** in effect today. The table shows where practice differs.
 
-| Policy element | Actual state, 2026-10-22 |
+| Policy element | Actual state, 2026-10-25 |
 |---|---|
-| Changes reach production `main` through a sync pull request with one approving review | Pull requests #1–#10 used the sync flow until 2026-10-08. Since then, approved commits have been **pushed directly** to `main` in both repositories, which are kept identical (both at `46fbaa7`) |
-| Production `main` is protected | **No branch protection is active** on the production repository: protection for private repositories is unavailable on the current GitHub plan. The development repository's `main` requires only the *Branch guard* job (`main must build the production app`). No review is required, and administrators are exempt (rechecked 2026-10-22) |
+| Changes reach production `main` through a sync pull request with one approving review | Pull requests #1–#10 in the production repository used the sync flow until 2026-10-08. From 2026-10-08 to 2026-10-22, approved commits were **pushed directly** to `main` in both repositories. Since 2026-10-23, changes reach the development repository's `main` through pull requests, and the same commits are then **pushed directly** to the production repository's `main`; the two stay identical |
+| Production `main` is protected | **No branch protection is active** on the production repository: protection for private repositories is unavailable on the current GitHub plan. The development repository's `main` requires only the *Branch guard* job (`main must build the production app`). No review is required, and administrators are exempt (rechecked 2026-10-25) |
 | Every job must be green before merge | *Backend checks* has been **failing** on `main` since `b9cbb0f` (2026-10-19). See [DEVELOPMENT_AND_TESTING.md](DEVELOPMENT_AND_TESTING.md#3-current-ci-status) |
 | Deployment is not configured | It is still not automated. Production is deployed by a **manual SFTP upload** of changed files, with a backup and checksum verification. See [OPERATIONS.md](OPERATIONS.md#2-code-deployment-manual-sftp) |
-| Development repository URL | Renamed to `suraman21/fkss-sunday-school-platform`. The old `suraman21/SSMS` URL redirects |
 
 Restoring the intended policy is tracked as L-6 in [OPERATIONS.md §7.1](OPERATIONS.md#71-known-limitations). Until then, treat the sections below as the **intended** workflow.
 
@@ -23,7 +22,7 @@ Restoring the intended policy is tracked as L-6 in [OPERATIONS.md §7.1](OPERATI
 
 | | Development repository | Production repository |
 |---|---|---|
-| URL | https://github.com/suraman21/fkss-sunday-school-platform (formerly `suraman21/SSMS`) | https://github.com/Felege-Kidusan/felegekidusan |
+| URL | https://github.com/suraman21/fkss-sunday-school-platform | https://github.com/Felege-Kidusan/felegekidusan |
 | Purpose | development, feature work, experimentation, testing, development CI | production-ready code, approved releases, production CI, release history |
 
 **Rules**
@@ -110,7 +109,7 @@ request is not mergeable until every job is green.
 
 ## Deployment — not automated
 
-> **Current practice:** manual SFTP deployment by the owner; see [OPERATIONS.md](OPERATIONS.md). The text below is the original 2026-10-07 statement, kept for history.
+> **Current practice:** manual SFTP deployment by a maintainer; see [OPERATIONS.md](OPERATIONS.md). The text below is the original 2026-10-07 statement, kept for history.
 
 **Nothing in this repository deploys anywhere.** There are no deploy keys, no
 server credentials, no webhooks and no deployment jobs. This is intentional

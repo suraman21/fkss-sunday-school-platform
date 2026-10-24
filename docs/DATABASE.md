@@ -1,6 +1,6 @@
 # Database and migrations
 
-**Status:** canonical. **Verified against:** `main` at `46fbaa7` (2026-10-22), from source files only. **No production database was queried for this document.** Statements about production are owner-reported or marked unverified. This document deliberately contains no ERD, row counts or schema dump, because none could be verified.
+**Status:** canonical. **Verified against:** `main` at `46fbaa7` (2026-10-22), from source files only. **No production database was queried for this document.** Statements about production are marked as reported or unverified. This document deliberately contains no ERD, row counts or schema dump, because none could be verified.
 
 ## 1. Engine and access
 
@@ -20,14 +20,14 @@
 
 | Source | What it is | Reliability |
 |---|---|---|
-| `sql/NNN_*.sql` (76 files, `001`–`078`) | Hand-written, mostly additive and idempotent migrations. The owner applies them in phpMyAdmin | Authoritative for **intended** changes. Applied state unknown (section 4) |
+| `sql/NNN_*.sql` (76 files, `001`–`078`) | Hand-written, mostly additive and idempotent migrations, applied by hand in phpMyAdmin | Authoritative for **intended** changes. Applied state unknown (section 4) |
 | `sql/legacy/database_schema.sql` | Legacy snapshot with **11** tables (`users`, `members`, `wbws_groups`, `wbws_group_leaders`, `cache_storage`, `departments`, `staff_positions`, `member_staff_positions`, `member_code_migrations`, `member_code_sequences`, `member_type_settings`) | **Stale.** Line 10 says it "documents all tables", which is incorrect. Its `users.role` enum lists 6 roles, while the application accepts 13. Not the current schema; used only as the first step of `tests/e2e/provision_env.sh`. Moved from the repository root on 2026-10-23 ([RFC 0001](rfc/0001-repository-structure.md)) |
 | `sql/legacy/php-migrations/admin/*.php`, `sql/legacy/php-migrations/backend/*.php` | Early PHP migration scripts, including `auto_fix_database.php` in both folders. Moved from `admin/migrations/` and `backend/migrations/` on 2026-10-23 ([RFC 0001](rfc/0001-repository-structure.md) step 2b), content unchanged | Historical records. They no longer run: their settings-file links point at the old folders, so they stop before touching a database. The web server denies `sql/`, and each file also refuses web requests. Do not run them against production |
 | `admin/get_schema.php` | Former schema-dump page | **Retired.** CLI-only stub; returns 404 over HTTP. Not a schema source |
 | Runtime DDL | `MezmurSchemaReconciler::apply`, called from `admin/api_mezmur.php`, can create or alter Mezmur tables at request time | Production can drift from `sql/` |
 | `tests/e2e/provision_env.sh` | Encodes the apply order that produces a working test database | The best available **executable** description of the schema; test-only |
 
-Distinct table names created across `sql/`: **103**, counted from `CREATE TABLE` statements in this pass. Tables created before `sql/` existed, or by legacy scripts, are not included in that count.
+Distinct table names created across `sql/`: **103**, counted from `CREATE TABLE` statements on 2026-10-22. Tables created before `sql/` existed, or by legacy scripts, are not included in that count.
 
 ## 3. Migration rules in force
 
@@ -45,7 +45,7 @@ Distinct table names created across `sql/`: **103**, counted from `CREATE TABLE`
 ## 4. Applied state in production: unverified
 
 - **No migration ledger.** There is no `schema_migrations`-style table, so which files have been applied cannot be determined from the repository.
-- **Owner-reported:** migrations `070`–`078` were applied manually in October 2026.
+- **Reported (not verified):** migrations `070`–`078` were applied manually in October 2026.
 - **Gaps in numbering:**
   - `047` (`047_account_self_service.sql`) was added in `3ba18f7` and removed by the revert `491b9ed` (2026-09-22). Two tests mention that it "landed later via server-side" (`tests/security/test_p1a_members_local_first.py`, `test_p1b_notification_local_first.py`). Whether it is applied in production is **unknown**.
   - `061` never existed in history.
@@ -53,13 +53,13 @@ Distinct table names created across `sql/`: **103**, counted from `CREATE TABLE`
 
 ## 5. Migration inventory (source control only)
 
-The summaries are taken from each file's header comment. "Tables created" lists `CREATE TABLE` targets (truncated after six). **This is not a record of what production contains.**
+The summaries are based on each file's header comment. "Tables created" lists `CREATE TABLE` targets (truncated after six). **This is not a record of what production contains.**
 
-| File | Added | Summary (from file header) | Tables created |
+| File | Added | Summary | Tables created |
 |---|---|---|---|
-| `001_production_patch.sql` | 2026-08-15 | WBSS/FKSS Production Patch — Database Migration | activity_logs |
+| `001_production_patch.sql` | 2026-08-15 | Production patch: database migration | activity_logs |
 | `002_cms_schema.sql` | 2026-08-15 | FKSS CMS — Database Migration | cms_gallery_categories, cms_gallery_photos, cms_programs, cms_registration_submissions, cms_schedule, cms_social_links … |
-| `003_production_hardening.sql` | 2026-08-15 | WBSS / FKSS — Database hardening for go-live (5,000+ students) | academic_records_archive, activity_logs_archive, attendance_archive |
+| `003_production_hardening.sql` | 2026-08-15 | Database hardening for go-live (5,000+ students) | academic_records_archive, activity_logs_archive, attendance_archive |
 | `004_year_lifecycle.sql` | 2026-08-15 | Academic-year LIFECYCLE STATES (upcoming / active / closed) |  |
 | `005_roster_indexes.sql` | 2026-08-18 | Indexes for Education roster + member search. |  |
 | `006_assignment_hardening.sql` | 2026-08-18 | Smart teacher ↔ subject ↔ class assignments. | class_subjects, teacher_assignments |
@@ -70,9 +70,9 @@ The summaries are taken from each file's header comment. "Tables created" lists 
 | `011_monitor_schema.sql` | 2026-08-24 | Migration 011: deployment-managed error and uptime monitor schema | arkeon_error_log, arkeon_uptime_log |
 | `012_runtime_schema_baseline.sql` | 2026-08-24 | Migration 012: move shared bootstrap schema repair out of request handling | academic_years, activity_logs, classes, notifications, system_branding |
 | `013_application_schema_completion.sql` | 2026-08-24 | Migration 013: application-owned tables and compatibility columns | academic_records, academic_terms, ai_chat_history, ai_provider_configs, attendance, attendance_summary … |
-| `014_member_directory_scaling.sql` | 2026-08-24 | SSMS migration 014: member directory and export indexes |  |
+| `014_member_directory_scaling.sql` | 2026-08-24 | Member directory and export indexes |  |
 | `015_explicit_attendance_status.sql` | 2026-08-24 | Attendance must always be an explicit user or integration decision. |  |
-| `016_member_duplicate_lookup.sql` | 2026-08-24 | SSMS migration 016: bounded member duplicate lookup |  |
+| `016_member_duplicate_lookup.sql` | 2026-08-24 | Bounded member duplicate lookup |  |
 | `017_identity_codes.sql` | 2026-08-25 | Ministry three-category identity + configurable department / | departments, member_code_migrations, member_staff_positions, staff_positions |
 | `018_code_sequences_and_year_uniqueness.sql` | 2026-08-26 | Part of the phase-1 fix batch (findings M2 + M3): | member_code_sequences |
 | `019_member_types_and_under6_removal.sql` | 2026-08-27 | 019_member_types_and_under6_removal.sql  (IDEMPOTENT / RE-RUNNABLE) | member_type_settings |
@@ -95,13 +95,13 @@ The summaries are taken from each file's header comment. "Tables created" lists 
 | `036_mezmur_gradient_alpha.sql` | 2026-09-02 | gradient alpha channel (Patch 33) — the cover-color picker gains |  |
 | `037_zemarian_images.sql` | 2026-09-02 | singer (zemarian) cover images (Patch 34) — singers get the |  |
 | `038_mezmur_audio_media.sql` | 2026-09-03 | 038 — Mezmur audio media + synced lyrics | mezmur_play_stats, mezmur_user_favorites |
-| `039_mezmur_word_index_fold.sql` | 2026-09-05 | 039 — P42: rebuild the Mezmur word index after homophone folding |  |
-| `040_mezmur_hymn_art.sql` | 2026-09-09 | HYMN ART (P66) — per-hymn cover image plane |  |
-| `041_section_age_source_of_truth.sql` | 2026-09-12 | P71 — Section / Age Group single source of truth. |  |
-| `042_notification_center.sql` | 2026-09-12 | P72 — WBWS Communication Center: per-user notification read | announcements, message_thread_participants, message_threads, messages, notification_reads |
-| `043_message_read_receipts.sql` | 2026-09-12 | P73 Phase 3 — Telegram-style read receipts for messaging. |  |
-| `044_message_edit_delete.sql` | 2026-09-12 | P73 — Telegram-grade message management: edit + delete. |  |
-| `045_comm_poll_indexes.sql` | 2026-09-12 | P73 Phase 5 — Performance & scale: poll/pagination indexes. |  |
+| `039_mezmur_word_index_fold.sql` | 2026-09-05 | Rebuild the Mezmur word index after homophone folding |  |
+| `040_mezmur_hymn_art.sql` | 2026-09-09 | Per-hymn cover image |  |
+| `041_section_age_source_of_truth.sql` | 2026-09-12 | Section and age group: single source of truth |  |
+| `042_notification_center.sql` | 2026-09-12 | Communication Center: per-user notification read state | announcements, message_thread_participants, message_threads, messages, notification_reads |
+| `043_message_read_receipts.sql` | 2026-09-12 | Read receipts for messaging |  |
+| `044_message_edit_delete.sql` | 2026-09-12 | Message edit and delete |  |
+| `045_comm_poll_indexes.sql` | 2026-09-12 | Poll and pagination indexes |  |
 | `046_message_client_tag.sql` | 2026-09-18 | O4 (offline-first) — exactly-once message sends. |  |
 | `048_user_authorization_scope.sql` | 2026-09-23 | Monotonic authorization-scope versions for mobile live revalidation. |  |
 | `049_user_profile_image.sql` | 2026-09-25 | Private profile-image reference for authenticated user profiles. |  |
@@ -136,7 +136,7 @@ The summaries are taken from each file's header comment. "Tables created" lists 
 
 ## 6. Recommended next steps (documented, not implemented)
 
-1. Introduce a migration ledger table and a one-off, owner-run back-fill based on the schema comparison in section 4.
+1. Introduce a migration ledger table and a one-off back-fill based on the schema comparison in section 4.
 2. Replace `sql/legacy/database_schema.sql` with a generated structure-only baseline from a verified database, or delete it after review.
 3. Move `MezmurSchemaReconciler` DDL into numbered migrations.
 4. Add a CI job that builds a database from a baseline plus `sql/` and compares it with the expected structure.

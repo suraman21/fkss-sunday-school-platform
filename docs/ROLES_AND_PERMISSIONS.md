@@ -92,9 +92,9 @@ The following files rely on their own in-file checks, or are intentionally open 
 
 Route files call these helpers and add their own rules; for example, Mezmur and HR routes check department roles.
 
-## 4. Business rules recorded by the owner (verify in code before relying on them)
+## 4. Business rules (verify in code before relying on them)
 
-These are standing owner decisions recorded in project notes. The table shows where they are visible in code.
+These are standing product decisions. The table shows where they are visible in code.
 
 | Rule | Evidence |
 |---|---|
@@ -106,5 +106,5 @@ These are standing owner decisions recorded in project notes. The table shows wh
 ## 5. Unresolved
 
 1. There is no complete per-action permission matrix for `admin/api_*.php` or `api/v1` routes. Producing one needs a file-by-file read; it is a candidate for the independent review stage.
-2. Whether `finance_dept` and `material_dept` are in active use in production. Unverified; needs a read-only check of user accounts by the owner.
+2. Whether `finance_dept` and `material_dept` are in active use in production. Unverified; needs a read-only check of user accounts (Q-6 in [OPERATIONS.md §7.2](OPERATIONS.md#72-open-questions)).
 3. There are no automated tests that assert the full `ROLE_MAP`. Some security tests cover individual endpoints (`tests/security/`).

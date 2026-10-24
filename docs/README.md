@@ -33,7 +33,6 @@
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Canonical |
 | [FAILURE_INTELLIGENCE.md](FAILURE_INTELLIGENCE.md), [mobile client contract](../Mobile/wbws_flutter_app/docs/FAILURE_INTELLIGENCE_CLIENT.md) | Reference |
 | [WEB_ADMIN_SYNC_MONITORING.md](WEB_ADMIN_SYNC_MONITORING.md) | Reference |
-| [SECTION_AGE_GROUP_SOURCE_OF_TRUTH.md](SECTION_AGE_GROUP_SOURCE_OF_TRUTH.md) | Reference |
 | [Mobile app README](../Mobile/wbws_flutter_app/README.md) | Reference |
 
 ## 3. API and authorization

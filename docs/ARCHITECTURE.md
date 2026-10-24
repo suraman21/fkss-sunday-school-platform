@@ -7,7 +7,7 @@ Labels: **Verified** = read in the code at `46fbaa7`. **Unverified** = not confi
 ## 1. System context
 
 ```
-                         ┌──────────────────────────── shared hosting (LiteSpeed, PHP 8.2) ───────────────────────────┐
+                         ┌──────────────────────────── shared hosting (LiteSpeed, PHP 8.5) ───────────────────────────┐
  Staff browser ───────►  │ admin/*.php pages, department dashboards ──► admin/api_*.php        (session cookie + CSRF) │
                          │ frontend/pages/*.php ──────────────────────► backend/api/*.php ──► admin/api_*.php (shims)   │
  Android app (Flutter) ─►│ api/v1/index.php ──► api/v1/routes/*.php                             (bearer access token)   │
@@ -59,7 +59,7 @@ The `teacher` and `attendance_taker` roles are class-scoped, while `school_admin
 | Concern | Implementation (verified at `46fbaa7`) |
 |---|---|
 | Identity | Package `fkss_app`, version 1.7.3+40; Android `applicationId com.arkeonethiopia.fkss`. The API base URL is in `lib/utils/config.dart` |
-| Local storage | SQLite through `sqflite`, file `wbws_offline_v4.db`, schema version 37 (`lib/services/local_schema_v34.dart`). It is **not encrypted at the application level**; the app relies on Android file-based encryption. Some 2026-10-05 sync documents mention a v36 → v37 upgrade path |
+| Local storage | SQLite through `sqflite`, file `wbws_offline_v4.db`, schema version 37 (`lib/services/local_schema_v34.dart`). It is **not encrypted at the application level**; the app relies on Android file-based encryption |
 | Outboxes | `pending_attendance`, `pending_grades`, `pending_hr`, `pending_mezmur`, `pending_hymn_ops`, `comm_outbox`, `comm_drafts`. Bookkeeping in `sync_attempts`, `sync_state`, `sync_log` |
 | Sync | `AttendanceSyncCoordinator` and `BackgroundSyncCoordinator`, plus an Android background producer (`AndroidBackgroundSyncScheduler`). Writes carry `Idempotency-Key` and client-attempt headers, so the server can replay or deduplicate them (`api/v1/core/middleware.php`) |
 | Tokens | Kept in `flutter_secure_storage`. Access tokens last 15 minutes; refresh tokens rotate (see [API.md](API.md#2-authentication)) |
@@ -72,7 +72,7 @@ Design history for the offline and sync work is in `docs/MOBILE_OFFLINE_SYNC_*.m
 ## 5. Data access and schema management
 
 - There is a single MariaDB schema. Code uses mysqli prepared statements in most places.
-- The schema evolves through numbered files in `sql/` that the owner applies by hand. **No migration ledger table exists.** See [DATABASE.md](DATABASE.md).
+- The schema evolves through numbered files in `sql/` that are applied by hand. **No migration ledger table exists.** See [DATABASE.md](DATABASE.md).
 - **Runtime schema changes exist.** Some code issues DDL at request time. For example, `admin/api_mezmur.php` calls `MezmurSchemaReconciler::apply`, and several services run `CREATE TABLE IF NOT EXISTS`. The actual production schema can therefore differ from what `sql/` implies.
 - The committed `sql/legacy/database_schema.sql` (moved from the repository root on 2026-10-23) is a partial, legacy snapshot (11 tables). It is **not** the current schema.
 
@@ -100,8 +100,8 @@ Design history for the offline and sync work is in `docs/MOBILE_OFFLINE_SYNC_*.m
 1. Three API layers with duplicated rules (section 3).
 2. Very large PHP dashboard files and a 7,500-line `local_db.dart`.
 3. Runtime DDL and no migration ledger (section 5).
-4. CI tests PHP 8.4 while production runs PHP 8.2.
-5. Legacy naming (WBWS/WBSS/SSMS/FKSS) across files, the database file name and the PWA.
+4. CI runs the tests on PHP 8.4 while production runs PHP 8.5 (an 8.5 lint job exists).
+5. Older identifiers (for example the `wbws_` prefix in table, folder and file names, including the local database file) differ from the product name FKSS.
 6. Duplicated vendored libraries (phpqrcode). Resolved 2026-10-23: one copy remains, in `admin/id_cards/libs/`.
 
 Severity and recommended actions: [OPERATIONS.md §7](OPERATIONS.md#7-known-limitations-and-open-questions).

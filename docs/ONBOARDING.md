@@ -4,11 +4,11 @@
 
 ## 1. Before you start
 
-- You get access to the **development repository** and a **test environment** only. Production access (hosting, database, app signing) is granted separately by the owner, for a stated task.
+- You get access to the **development repository** and a **test environment** only. Production access (hosting, database, app signing) is granted separately by the maintainers, for a stated task.
 - Read the ground rules in [CONTRIBUTING.md §1](../CONTRIBUTING.md). The most important ones:
   - never use production data, and never commit personal data, credentials or environment files;
   - never push to `main`; every change goes through a pull request;
-  - database changes are versioned SQL migrations that the owner applies manually.
+  - database changes are versioned SQL migrations that a maintainer applies manually.
 
 ## 2. Day 1: understand the product
 

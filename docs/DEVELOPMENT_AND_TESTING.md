@@ -1,12 +1,12 @@
 # Development, testing and CI
 
-**Status:** canonical. **Verified against:** `main` at `46fbaa7` and GitHub Actions run `39744630068` (2026-10-22).
+**Status:** canonical. **Verified against:** `main` at `46fbaa7` (2026-10-22). CI status (§3) and runtime versions (§1, §5) rechecked on 2026-10-25.
 
 ## 1. Prerequisites
 
 | Tool | Version | Why |
 |---|---|---|
-| PHP CLI | **8.2** to match production; **8.4** to match CI | Extensions used by CI and `provision_env.sh`: mysqli, pdo_mysql, mbstring, curl, xml, gd, zip, bcmath |
+| PHP CLI | **8.5** to match production; **8.4** to match the CI test job | Extensions used by CI and `provision_env.sh`: mysqli, pdo_mysql, mbstring, curl, xml, gd, zip, bcmath |
 | MariaDB | 11.x (CI uses 11.4) | Test databases |
 | Python | 3.11 (CI) | `pytest`, `pytest-subtests`. Some suites also need `requests`, `openpyxl` and Python `playwright` |
 | Flutter | 3.44.9, stable channel (CI) | Mobile app; `flutter pub get --enforce-lockfile` |
@@ -34,21 +34,18 @@ Composer is **not** needed: dependencies are committed in `vendor/`, and the ser
 
 ## 3. Current CI status
 
-`main` = `46fbaa7`, workflow *Backend checks*, run `39744630068`. The production repository ran the same commit as run `39744635305`, with the same outcome.
+Workflow *Backend checks* on `main` at `8b9ffc1` (run `40141866479`, 2026-10-24). *Production integrity* and *Branch guard* pass.
 
 | Job | Result | Notes |
 |---|---|---|
-| PHP syntax (`php -l`) | pass | 363 first-party files, PHP 8.4 |
+| PHP syntax (`php -l`) | pass | 362 first-party files, PHP 8.4 |
+| PHP 8.5 syntax and deprecations | pass | Every first-party file on PHP 8.5; compile-time deprecations fail the job |
 | Flutter unit tests | pass | 657 tests |
 | Migration numbering | pass | Duplicate-number and destructive-statement checks |
 | Android debug APK | pass | Builds a **debug** APK only; no release signing in CI |
-| Security and regression suite | **fail** | `pytest tests/security`: **2 failed, 2,793 passed, 79 skipped** (plus 985 passing subtests). The "Fail if any test skipped" step also fails |
+| Security and regression suite | **fail** | `pytest tests/security`: **2,815 passed, 0 failed, 79 skipped**. The "Fail if any test skipped" step fails the job (§3.2) |
 
-*Backend checks* has failed on every `main` push since `b9cbb0f` (2026-10-19). *Production integrity* and *Branch guard* pass.
-
-**Update 2026-10-24:** the 2 failing tests were fixed (test-only change; the code was right). The job still fails because 79 tests are skipped (§3.2). The Flutter test `teacher_timetable_screen_test.dart` also failed every day from 16:00 to 16:40 UTC and from 23:59 to 24:00 because of its test data; fixed the same day.
-
-### 3.1 The two failures
+### 3.1 Earlier failures (fixed)
 
 Both were fixed on 2026-10-24 (test-only changes; see the last column).
 
@@ -80,14 +77,14 @@ Every skip has a stated reason. They fall into two groups:
 
 ## 5. Runtime parity gap
 
-CI runs PHP **8.4**; production runs PHP **8.2**. Syntax or behaviour that is valid only on 8.3 or later would pass CI and fail in production. A PHP 8.2 lint/test job is recommended.
+CI runs the test suite on PHP **8.4** and lints every first-party file on PHP **8.5** (compile-time deprecations fail that job); production runs PHP **8.5**. Behaviour that differs between 8.4 and 8.5 is not covered by tests. Running the test suite on 8.5 is recommended (L-8 in [OPERATIONS.md §7.1](OPERATIONS.md#71-known-limitations)).
 
 ## 6. Release acceptance policy
 
 **Intended policy (not yet met):** a commit is releasable only when all of these hold:
 1. *Backend checks* is green. That means zero failures **and** zero unexplained skips. Every remaining skip must be justified in the test and visible in the CI log.
 2. *Production integrity* and *Branch guard* are green.
-3. Any migration in the change has been reviewed, applied by the owner and recorded.
+3. Any migration in the change has been reviewed, applied by a maintainer and recorded.
 4. The deployment checklist in [OPERATIONS.md](OPERATIONS.md) is complete.
 
 **Current practice:** releases have been deployed while *Backend checks* was red, with targeted local test runs used as evidence. Until the skips are resolved (the two failures were fixed on 2026-10-24; for the skips, for example by starting a seeded server in CI and installing `openpyxl`), a green gate cannot be used as release evidence. This document records that state; it does not change CI.

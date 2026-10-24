@@ -50,12 +50,12 @@ Examples are real files under `tests/security/` unless stated otherwise.
 
 | Gate | Required |
 |---|---|
-| Pull request | CI green, or every failure linked to an owner-acknowledged known issue; PR template completed; for schema changes, a reviewed migration |
-| Merge to `main` | As above, plus owner approval (see [BRANCHING.md](../BRANCHING.md)) |
+| Pull request | CI green, or every failure linked to an acknowledged known issue; PR template completed; for schema changes, a reviewed migration |
+| Merge to `main` | As above, plus maintainer approval (see [BRANCHING.md](../BRANCHING.md)) |
 | Production deployment | The release acceptance policy in [DEVELOPMENT_AND_TESTING.md §6](DEVELOPMENT_AND_TESTING.md#6-release-acceptance-policy) and the deployment steps in [OPERATIONS.md §2](OPERATIONS.md#2-code-deployment-manual-sftp) |
 | Android release | Flutter tests green, the build installs over the previous field build, and offline sync is checked on a real device |
 
-## 6. Path to a green pipeline (proposed; each step needs owner approval)
+## 6. Path to a green pipeline (proposed; each step needs approval)
 
 | # | Step | Effect | Risk |
 |---|---|---|---|

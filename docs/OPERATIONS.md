@@ -2,19 +2,19 @@
 
 **Status:** canonical. **Verified against:** `main` at `46fbaa7` and the deployment of that commit on 2026-10-22.
 
-This repository is public. Host names, ports, accounts, server paths and network addresses are deliberately **omitted**; the owner holds them. Never add them here.
+This repository is public. Host names, ports, accounts, server paths and network addresses are deliberately **omitted**; they are held privately by the maintainers. Never add them here.
 
 ## 1. Environments
 
 | Environment | Branch | Notes |
 |---|---|---|
-| Production | `main` | Shared hosting: LiteSpeed, MariaDB, PHP 8.5 (observed from the server error log on 2026-10-23; earlier records say 8.2 and 8.4, and the host can change it without notice). It sits behind a CDN/WAF proxy. File access is SFTP only; there is no shell, Composer or cron for the application, and no Python or Redis |
+| Production | `main` | Shared hosting: LiteSpeed, MariaDB, PHP 8.5 (confirmed on 2026-10-23; the host can change the version without notice). It sits behind a CDN/WAF proxy. File access is SFTP only; there is no shell, Composer or cron for the application, and no Python or Redis |
 | Beta | `dev` | A separate server and a separate beta Android app. Only beta settings live on `dev`; see [BRANCHING.md](../BRANCHING.md) |
 | Staging for production | — | **None.** Changes are verified locally (section 2) and then deployed |
 
 ## 2. Code deployment (manual SFTP)
 
-This is the procedure actually used, most recently for `46fbaa7` on 2026-10-22, when 89 files were uploaded and all 89 checksums matched. **Deploy only with the owner's explicit approval.**
+This is the procedure actually used, most recently for `5b14afb` on 2026-10-24, when 10 files were uploaded and each live file was checked against the commit. **Deploy only with explicit approval from the maintainers.**
 
 1. **Choose the commit.**
    - The commit must be on `main` and pushed to both repositories.
@@ -23,7 +23,7 @@ This is the procedure actually used, most recently for `46fbaa7` on 2026-10-22, 
 2. **List the changed files.** Run `git diff --name-only <deployed-commit>..<target-commit>`.
    - Exclude files that exist only on the server: the secrets file, server-only `.htaccess` additions, and server-only folders.
    - Exclude anything outside the release, such as docs and tests if they are not served.
-3. **Migrations.** If the change includes `sql/` files, the owner reviews them and applies them in phpMyAdmin. Follow the order stated in the change (usually migrations before code), then record them (see [DATABASE.md](DATABASE.md#4-applied-state-in-production-unverified)).
+3. **Migrations.** If the change includes `sql/` files, a maintainer with production access reviews and applies them in phpMyAdmin. Follow the order stated in the change (usually migrations before code), then record them (see [DATABASE.md](DATABASE.md#4-applied-state-in-production-unverified)).
 4. **Back up the server copy.**
    - Download the current server version of **every file that will be overwritten** into a dated local folder.
    - Record each file's checksum, and note which files are new.
@@ -35,7 +35,7 @@ This is the procedure actually used, most recently for `46fbaa7` on 2026-10-22, 
    - Smoke-check the staff login page (`/admin/index.php`) and the mobile configuration endpoint (`/api/v1/app/config`).
    - Check the error monitor.
    - Run `python3 scripts/check_live_urls.py --server production` (see [section 2.2](#22-folder-structure-safety-checks)).
-7. **Record** the deployed commit, the file list, the checksum result and any migrations in the owner's deployment log.
+7. **Record** the deployed commit, the file list, the checksum result and any migrations in the [production deployment record](../CHANGELOG.md#production-deployment-record).
 
 ### 2.1 Server folders that Git does not create
 
@@ -77,7 +77,7 @@ python3 scripts/check_live_urls.py --server production
 - **Baseline:** recorded on 2026-10-23 at `9dd317f`; dev and production both 43 of 43.
 - **Changes:** change an expected status only with a reason in the pull request.
 
-**Deployed version:** the repository does not record what is deployed, and nothing on the server reliably records it either. The owner's deployment record is authoritative. Do not infer the deployed version from server-side files.
+**Deployed version:** nothing on the server reliably records what is deployed. The [production deployment record](../CHANGELOG.md#production-deployment-record) is authoritative. Do not infer the deployed version from server-side files.
 
 ## 3. Rollback
 
@@ -113,7 +113,7 @@ Until a restore succeeds, treat backups as **unproven**.
 3. **Version state:**
    - `main` contains **1.7.3+40**.
    - On 2026-10-22, production served **1.6.10 (build 36)** as the latest app.
-   - 1.7.3 has not been uploaded; uploading it needs the owner's decision.
+   - 1.7.3 has not been uploaded; uploading it needs a release decision.
 4. **Signing (risk):**
    - Without `android/key.properties`, Gradle falls back to the **debug** signing configuration. The APK distributed in production is debug-signed.
    - Android only installs an update that has the same signature as the installed app. Losing the build machine's debug keystore therefore stops in-place updates for every device.
@@ -132,7 +132,7 @@ Until a restore succeeds, treat backups as **unproven**.
 | On-call / escalation | None documented |
 
 **Incident response (current, informal):**
-1. The owner is the single point of contact.
+1. One maintainer is the single point of contact; there is no on-call rota.
 2. Contain the problem by rolling back the code (section 3) or disabling the feature through its `FEATURE_*` flag in the secrets file.
 3. Record what happened in `docs/incidents/` (see `docs/incidents/INCIDENT_2026-10-03_TRACKING_SCHEMA.md` for an example).
 

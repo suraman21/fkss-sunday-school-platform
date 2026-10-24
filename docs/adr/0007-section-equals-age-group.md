@@ -21,4 +21,4 @@ Sections and age groups were modelled separately, and different screens used dif
 
 ## Evidence
 
-`admin/backend/services/MemberCategory.php`; `sql/041_section_age_source_of_truth.sql`; commit `9395f15`; [SECTION_AGE_GROUP_SOURCE_OF_TRUTH.md](../SECTION_AGE_GROUP_SOURCE_OF_TRUTH.md).
+`admin/backend/services/MemberCategory.php`; `sql/041_section_age_source_of_truth.sql`; commit `9395f15`.
