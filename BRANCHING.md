@@ -1,6 +1,6 @@
 # BRANCHING — read this before you merge, rebase or push anything
 
-> **Owner rule (2026‑10‑20, binding for humans and AI agents):**
+> **Rule (binding since 2026‑10‑20):**
 > **`dev` is NEVER merged, rebased, cherry‑picked or pushed into `main`, and
 > NEVER pushed to the production repository.** Direction is one‑way only:
 > `main` → `dev`.
@@ -9,7 +9,7 @@
 
 | Branch | Lives in | What it is | Who deploys from it |
 |---|---|---|---|
-| **`main`** | `suraman21/fkss-sunday-school-platform` (formerly `suraman21/SSMS`) **and** `Felege-Kidusan/felegekidusan` (identical commits) | The real system. Production web server + **production phone app "FKSS"** (`https://felegekidusan.com/api/v1`, package `com.arkeonethiopia.fkss`). | Production server (manual SFTP upload of changed files; see `docs/OPERATIONS.md`), dev server, production APK builds. |
+| **`main`** | `suraman21/fkss-sunday-school-platform` **and** `Felege-Kidusan/felegekidusan` (identical commits) | The real system. Production web server + **production phone app "FKSS"** (`https://felegekidusan.com/api/v1`, package `com.arkeonethiopia.fkss`). | Production server (manual SFTP upload of changed files; see `docs/OPERATIONS.md`), dev server, production APK builds. |
 | **`dev`** | `suraman21/fkss-sunday-school-platform` **only** | `main` **+ exactly one commit** that re‑targets the *phone app* at the test server: **"FKSS Beta"**, `https://felegekidusan.arkeonethiopia.com/api/v1`, package `com.arkeonethiopia.fkss.beta`, BETA chip on the login screen. Server code is byte‑identical to `main`. | Beta APK builds only (`Mobile/HOW_TO_BUILD_BETA.md`, a file that exists on `dev` only; *Branch guard* rejects it on `main`). It may also be pulled on the dev server — the server files are the same as `main`. |
 
 `dev` always contains the full latest system: after every push to `main`, `main` is merged **into** `dev` (`git checkout dev && git merge main`). Pulling `dev` therefore gives *everything that is on main* plus the beta app settings.
@@ -20,7 +20,7 @@
 2. **Never** open or accept a pull request whose base is `main` and head is `dev`.
 3. **Never** push `dev` to `Felege-Kidusan/felegekidusan` (`git push <prod> dev` is forbidden in any form).
 4. Features are developed on `main` (or a feature branch merged into `main`), **never on `dev`**. The only commit that may exist on `dev` but not on `main` is the beta‑target commit (and merge commits from `main`).
-5. Keeping `dev` current is the agent's job: `git checkout dev && git merge main && git push origin dev`. Never force‑push either branch.
+5. Keep `dev` current after every push to `main`: `git checkout dev && git merge main && git push origin dev`. Never force‑push either branch.
 
 ## What stops an accident
 
@@ -51,4 +51,4 @@ cd Mobile/wbws_flutter_app && flutter build apk --release        # → FKSS
 #                        the exact mechanism is not documented here.
 ```
 
-If you are an AI agent and the task seems to require breaking rule 1–3: **stop and ask the owner**; do not proceed.
+If a task seems to require breaking rules 1–3, **stop and ask the maintainers** before going further.

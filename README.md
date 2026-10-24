@@ -6,10 +6,10 @@
 
 # FKSS — Sunday School Management System
 
-FKSS (also referred to in the code as SSMS and, in older files, WBWS/WBSS) is the management system of the Felege Kidusan Sunday School. It replaces spreadsheets and paper records for member registration, education (classes, assessments, report cards, timetable, attendance), the Mezmur (hymn) ministry, communications and reporting. Staff use a PHP web application; teachers and department staff also use an Android app built with Flutter that works offline and synchronises with the server.
+FKSS is the management system of the Felege Kidusan Sunday School. It replaces spreadsheets and paper records for member registration, education (classes, assessments, report cards, timetable, attendance), the Mezmur (hymn) ministry, communications and reporting. Staff use a PHP web application; teachers and department staff also use an Android app built with Flutter that works offline and synchronises with the server.
 
-> **Status (2026-10-22, `main` = `46fbaa7`).** The system is in production use.
-> - The automated *Backend checks* gate is currently **failing** because 79 tests are skipped (the 2 failing tests were fixed on 2026-10-24). See [Testing and CI](docs/DEVELOPMENT_AND_TESTING.md#3-current-ci-status).
+> **Status (checked 2026-10-25).** The system is in production use.
+> - The automated *Backend checks* gate is **red** because 79 tests are skipped (the job fails whenever a test is skipped); no tests fail. See [Testing and CI](docs/DEVELOPMENT_AND_TESTING.md#3-current-ci-status).
 > - Production deployments are manual. See [Operations](docs/OPERATIONS.md).
 > - New engineers: start with [docs/ONBOARDING.md](docs/ONBOARDING.md).
 > - No independent security certification exists.
@@ -31,7 +31,7 @@ FKSS (also referred to in the code as SSMS and, in older files, WBWS/WBSS) is th
 
 | Layer | Technology | Evidence |
 |---|---|---|
-| Server runtime | PHP **8.2** in production (shared hosting, LiteSpeed, no shell access, no Composer, no cron assumed). CI lints and tests on PHP 8.4 | [ADR-0001](docs/adr/0001-php-monolith-on-shared-hosting.md), `.github/workflows/backend-checks.yml` |
+| Server runtime | PHP **8.5** in production (shared hosting, LiteSpeed, no shell access, no Composer, no cron assumed). CI runs the tests on PHP 8.4 and lints every file on PHP 8.5 | [ADR-0001](docs/adr/0001-php-monolith-on-shared-hosting.md), `.github/workflows/backend-checks.yml` |
 | Database | MariaDB (CI: `mariadb:11.4`). Access mostly through **mysqli** (about 150 files), with PDO in a few places | `backend-checks.yml`, `config.php` |
 | PHP libraries | Committed in `vendor/` (PhpSpreadsheet 5.9, OpenSpout, ZipStream). TCPDF and phpqrcode are bundled in `admin/` | `composer.lock` |
 | Web front end | Server-rendered PHP pages with vanilla JavaScript (`admin/js`, `frontend/js`) | — |
@@ -91,7 +91,7 @@ The web server's document root is the repository root (production: `public_html`
 The full, verified procedure and its caveats are in [docs/DEVELOPMENT_AND_TESTING.md](docs/DEVELOPMENT_AND_TESTING.md).
 
 1. You need:
-   - PHP 8.2 (production parity) or 8.4 (CI parity) with mysqli, pdo_mysql, mbstring, curl, xml, gd, zip and bcmath. These are the extensions CI and `provision_env.sh` install.
+   - PHP 8.5 (production parity) or 8.4 (CI test parity) with mysqli, pdo_mysql, mbstring, curl, xml, gd, zip and bcmath. These are the extensions CI and `provision_env.sh` install.
    - MariaDB, Python 3.11 or later, and Flutter for mobile work.
 2. Create a secrets file named `.fkss_env.php` **outside the web root**, using `env.example.php` as the template. `config.php` refuses to start if the file is missing. Never commit it.
 3. Build a disposable test database with `tests/e2e/provision_env.sh`. It is destructive and test-only, and expects Debian/Ubuntu with passwordless `sudo`. **Never run it against production.**
@@ -104,17 +104,7 @@ python3 -m pytest tests/security -q          # security / regression suite (as i
 cd Mobile/wbws_flutter_app && flutter test     # Flutter unit tests
 ```
 
-Latest CI run on `main` (`46fbaa7`, 2026-10-22):
-
-| Job | Result |
-|---|---|
-| PHP lint | pass (363 files) |
-| Flutter tests | pass (657 tests) |
-| Migration numbering | pass |
-| Android debug APK | pass |
-| Security and regression suite | **fail** (2 failed, 2,793 passed, 79 skipped; the job also fails whenever any test is skipped) |
-
-Update 2026-10-24: the 2 failures are fixed; the suite still fails on the 79 skips.
+Latest CI result (2026-10-25): every job passes except the security and regression suite, which reports 2,815 passed, 0 failed and 79 skipped. That job fails whenever any test is skipped.
 
 Details and the work needed to make the gate trustworthy again: [docs/DEVELOPMENT_AND_TESTING.md](docs/DEVELOPMENT_AND_TESTING.md).
 
@@ -126,7 +116,7 @@ Each item is VERIFIED unless marked otherwise. Detail and evidence: [OPERATIONS.
 |---|---|---|
 | Security boundaries | Web: PHP session, CSRF token and the role guard in `admin/access_control.php`. Mobile: custom HMAC bearer token (not a JWT). No independent security certification exists | [SECURITY.md](docs/SECURITY.md), [API.md](docs/API.md) |
 | Database and migrations | There is no migration ledger and the applied production schema is unverified. `sql/legacy/database_schema.sql` is stale (11 tables). `sql/` cannot be applied linearly to an empty database. Mezmur tables can change at runtime | [DATABASE.md](docs/DATABASE.md) |
-| Runtime versions | CI uses PHP 8.4 while production uses PHP 8.2. Production MariaDB was 11.4 in a 2026-10-02 dump (not re-verified) | [DATABASE.md §1](docs/DATABASE.md#1-engine-and-access) |
+| Runtime versions | CI runs the tests on PHP 8.4 (with an 8.5 lint job) while production uses PHP 8.5. Production MariaDB was 11.4 in a 2026-10-02 dump (not re-verified) | [DATABASE.md §1](docs/DATABASE.md#1-engine-and-access) |
 | Deployment | Manual SFTP to shared hosting: no shell, Composer or cron for the application, no staging, no rehearsed rollback. Server-side git metadata is not authoritative | [OPERATIONS.md](docs/OPERATIONS.md) |
 | Release evidence | The CI gate is red and 79 tests are skipped. The Android APK is debug-signed. Mobile 1.7.3+40 is not released | [DEVELOPMENT_AND_TESTING.md](docs/DEVELOPMENT_AND_TESTING.md), [OPERATIONS.md](docs/OPERATIONS.md) |
 | Backups | Backups are kept in the same hosting account; restore has never been tested | [OPERATIONS.md](docs/OPERATIONS.md) |
@@ -161,13 +151,13 @@ Each item is VERIFIED unless marked otherwise. Detail and evidence: [OPERATIONS.
 The full working agreement (workflow, coding standards, database rules, tests, definition of done) is in **[CONTRIBUTING.md](CONTRIBUTING.md)**.
 
 - **Repositories:**
-  - Development happens in `suraman21/fkss-sunday-school-platform`. That repository was formerly named `suraman21/SSMS`, and the old URL redirects to it.
+  - Development happens in `suraman21/fkss-sunday-school-platform`.
   - `Felege-Kidusan/felegekidusan` is the private production repository.
   - Their `main` branches are kept identical.
 - **Beta branch:** `dev` builds the beta mobile app. It is **never** merged into `main`. See [BRANCHING.md](BRANCHING.md).
-- **Changes:** use a feature or documentation branch and a pull request against `main`. Changes to application logic, schema, migrations, deployment or production configuration need the owner's explicit approval.
-- **Migrations:** applied to production manually by the owner.
+- **Changes:** use a feature or documentation branch and a pull request against `main`. Changes to application logic, schema, migrations, deployment or production configuration need explicit approval from the maintainers.
+- **Migrations:** applied to production manually by a maintainer with production access.
 - **Deployment:** a manual SFTP upload of the changed files, with a backup and checksum verification. See [docs/OPERATIONS.md](docs/OPERATIONS.md).
-- **Security issues:** do **not** report them in public issues or pull requests. Contact the project owner privately. See [docs/SECURITY.md](docs/SECURITY.md).
+- **Security issues:** do **not** report them in public issues or pull requests. Report them privately to the maintainers. See [docs/SECURITY.md](docs/SECURITY.md).
 
 No licence file is present in this repository.

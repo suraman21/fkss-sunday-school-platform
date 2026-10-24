@@ -2,13 +2,14 @@
 
 A curated history of notable changes to FKSS, newest first.
 
-- **Complete record:** the Git history of `main` (658 commits, 2026-08-15 to 2026-10-22). Use `git log --oneline` or `git show <hash>`. Commit hashes below can be looked up the same way.
-- **How this file was made:** reconstructed on 2026-10-22 from the commit history, release commits and dated documents. From now on, every pull request that changes behaviour should add a line under **Unreleased** (see [CONTRIBUTING.md](CONTRIBUTING.md)).
+- **Complete record:** the Git history of `main`. Use `git log --oneline` or `git show <hash>`. Commit hashes below can be looked up the same way.
+- **Sources:** entries before 2026-10-22 summarise the commit history and release commits. Every pull request that changes behaviour adds a line under **Unreleased** (see [CONTRIBUTING.md](CONTRIBUTING.md)).
 - **Versioning:** the Android app uses `MAJOR.MINOR.PATCH+BUILD` (`pubspec.yaml`). The web application has no version numbers; it is identified by the deployed `main` commit.
 - **Production deployments** are listed only where a deployment record exists. Earlier deployments were not recorded in the repository.
 
 ## Unreleased
 
+- Documentation: removed superseded planning notes, point-in-time audit reports and feature working records; the documentation index lists only maintained documents (#26). Known limitations and open questions moved to `docs/OPERATIONS.md` §7, and the sources-of-truth table to `docs/README.md` §8 (#27).
 - Fixed: 27 more lines in 10 files had the same mistake as the `q` warning: a request value was checked with a default but read without one, so PHP wrote "Undefined array key" warnings whenever the value was left out (seen on production for the notifications `type` and four telemetry filters). The values are unchanged: the read now uses the same default (`(string)($_GET['x'] ?? '')`), proven identical for every input type, with no warnings. Files: `admin/api_app_release.php`, `api_communication.php`, `api_education.php`, `api_failure_intelligence.php`, `api_guardians.php`, `api_identity.php`, `api_notifications.php`, `api_subjects.php`, `api_telemetry.php`, and `api/v1/routes/notifications.php`. These warnings also showed up as "Warning at ..." issues in Failure Intelligence, so that list gets less noise. Test: `tests/security/test_request_reads_are_guarded.py` scans every PHP file for this pattern.
 - Fixed: on the Failure Intelligence screen (super admin), pressing Acknowledge, Resolve or Reopen erased the issue's saved remediation notes (cause, steps, link), and the screen silently fell back to the generic catalog advice. The status buttons send only the status, but `admin/api_failure_intelligence.php` passed all three note fields to the service, which treats a present field as "set this value". The endpoint now passes a note field only when the request sent it. Saving and clearing notes work as before; a request that sends nothing to change is now refused ("Nothing to update") instead of clearing the notes. No database change. Test: `tests/security/test_failure_issue_remediation_preserved.py`.
 - Fixed: opening a class's student list in Academic Tracking without a search word wrote a PHP warning ("Undefined array key q", `admin/api_education.php` line 2591) to the error log on every call. One-line fix; the answer is unchanged.
@@ -22,15 +23,22 @@ A curated history of notable changes to FKSS, newest first.
 - PHP 8.5 compatibility: replaced constants deprecated in PHP 8.4/8.5 (`PDO::MYSQL_ATTR_*` in `config.php` and the member export/report services, `E_STRICT` in the error monitor), so production no longer logs a deprecation notice on every request; added a PHP 8.5 lint job and guard tests. Operations guide: server folders that Git does not create (`admin/id_cards/assets/qr/`) and handling of deleted files during SFTP deploys.
 - Fixed: the Branding card editor showed an empty front footer and back disclaimer (editor preview only; real cards were correct).
 - Repository structure, Phase 1 ([RFC 0001](docs/rfc/0001-repository-structure.md)): the superseded 2026-09-27 audit report moved to `docs/audits/`; `database_schema.sql` moved to `sql/legacy/`; removed the unused copy `public_website_frontend/`, the duplicate root `leak_detector.php` (the working copy stays in `admin/`), and the duplicate QR library `backend/id_cards/libs/` (also closes a publicly runnable demo script). No URL used by the site, the API or the app changed.
-- Documentation: reconstructed PRD, technical design, decision records, glossary, changelog and contributing guide (documentation pull requests; not merged at the time of writing).
+- Documentation: PRD, technical design, decision records, glossary, changelog and contributing guide.
 
 ## Production deployment record
 
 | Date | Commit | Notes |
 |---|---|---|
+| 2026-10-24 | `5b14afb` | #24 and #25: Failure Intelligence notes fix and undefined-key warnings (10 files); live files checked against the commit |
+| 2026-10-24 | `a699b9b` | #23: `admin/api_education.php` warning fix (1 file) |
+| 2026-10-23 | `cbd568b` | #21: `index.html` removed, `robots.txt` updated |
+| 2026-10-23 | `8beef63`, `ebcc864` | #17 and #18: old copies of the moved command-line and legacy migration scripts removed from the server (22 files) |
+| 2026-10-23 | `9dd317f` | #15: PHP 8.5 compatibility (4 files) |
+| 2026-10-23 | `6143d89` | #13: duplicate and unused files removed (63 files) |
+| 2026-10-23 | `4cc0915` | #14: ID-card editor preview fix (1 file) |
 | 2026-10-22 | `46fbaa7` | Score limit, "Did not take", paging; 89 of 89 files checksum-verified |
-| Not recorded (on or after 2026-10-21) | `a64bc93` | Report Cards dashboard styles (owner-reported deployment) |
-| Not recorded (on or after 2026-10-21) | `b26467f` | Member import v2 (owner-reported deployment) |
+| Not recorded (on or after 2026-10-21) | `a64bc93` | Report Cards dashboard styles (deployment reported; no file record) |
+| Not recorded (on or after 2026-10-21) | `b26467f` | Member import v2 (deployment reported; no file record) |
 | 2026-10-07 | `dfb01d4` | Preparation for the production domain cutover (the commit, not a deployment record) |
 
 Manual SFTP deployment; see [docs/OPERATIONS.md](docs/OPERATIONS.md).
