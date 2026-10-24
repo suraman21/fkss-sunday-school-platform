@@ -8,13 +8,13 @@
 | Describes | The system as implemented on `main` at `46fbaa7` (deployed to production on 2026-10-22) |
 | Method | Reconstructed after the fact from the source code, migration files, commit history and the decision records ([ADRs](../adr/README.md)). No PRD existed before development began; the system was built incrementally from 2026-08-15 |
 | Owner | FKSS project owner |
-| Companion documents | [Technical design](../architecture/TECHNICAL_DESIGN.md) · [Decision records](../adr/README.md) · [Glossary](GLOSSARY.md) · [Roles and permissions](../ROLES_AND_PERMISSIONS.md) · [Engineering handover](../ENGINEERING_HANDOVER.md) |
+| Companion documents | [Technical design](../architecture/TECHNICAL_DESIGN.md) · [Decision records](../adr/README.md) · [Glossary](GLOSSARY.md) · [Roles and permissions](../ROLES_AND_PERMISSIONS.md) · [Known limitations](../OPERATIONS.md#7-known-limitations-and-open-questions) |
 
 **How to read this document**
 - Requirement IDs (`FR-MEM-01`, `NFR-SEC-02`, …) are stable references for future tickets and tests.
 - **Status:** **Implemented** = present on `main` at `46fbaa7`. **Partial** = implemented with a documented gap. **Planned** = decided or designed but not built. **On hold** = deliberately paused by the owner.
 - **Source** points to the code or decision record that defines the behaviour. Where the code and a planning document disagree, the code is what runs; the difference is noted.
-- Production configuration (feature flags, which migrations are applied) is **not verified** here. See [ENGINEERING_HANDOVER.md §5](../ENGINEERING_HANDOVER.md#5-unknowns-that-need-read-only-verification).
+- Production configuration (feature flags, which migrations are applied) is **not verified** here. See [OPERATIONS.md §7.2](../OPERATIONS.md#72-open-questions).
 
 ---
 
@@ -202,7 +202,7 @@ Other stakeholders: the parents and guardians of students (data subjects; no sys
 | NFR-SEC-01 | Role-based access on every page and endpoint; CSRF on web writes; rate-limited login (20 per 5 minutes per IP, 5 per 5 minutes per account); 30-minute idle web session | Implemented ([SECURITY.md](../SECURITY.md)) |
 | NFR-SEC-02 | Mobile tokens: 15-minute access token, 90-day rotating refresh token with replay detection; account changes revoke access | Implemented ([API.md](../API.md)) |
 | NFR-SEC-03 | Personal data (phones, addresses) visible only to roles that need it | Implemented in the API (`apiRolesPii()`) and in the reporting field permissions |
-| NFR-SEC-04 | No independent security certification exists; see the risk register | Gap ([ENGINEERING_HANDOVER.md §6](../ENGINEERING_HANDOVER.md#6-risk-register-public-summary)) |
+| NFR-SEC-04 | No independent security certification exists | Gap ([SECURITY.md](../SECURITY.md)) |
 | NFR-LOC-01 | Every user-facing date uses the **Ethiopian calendar**; content and names in Amharic (Ethiopic script) | Implemented ([ADR-0008](../adr/0008-ethiopian-calendar-only.md)) |
 | NFR-ACC-01 | Responsive web for phones and tablets; pinch zoom allowed; reduced-motion respected in key screens | Implemented (commits `8a27fb7`, `2a5a169`). No formal accessibility audit |
 | NFR-REL-01 | Encrypted backups; documented restore path | **Partial:** backups exist; restore never tested; no off-site copy |
@@ -210,7 +210,7 @@ Other stakeholders: the parents and guardians of students (data subjects; no sys
 | NFR-AVL-01 | Availability target / SLA | **Not defined** |
 
 ## 9. Open questions for the engineering team
-1. Confirm the production schema and applied migrations (handover U-1, U-2) before any database work.
+1. Confirm the production schema and applied migrations ([OPERATIONS.md §7.2](../OPERATIONS.md#72-open-questions), Q-1 and Q-2) before any database work.
 2. Decide the canonical API layer per domain ([ARCHITECTURE.md §3](../ARCHITECTURE.md#3-the-three-api-layers-unfinished-consolidation)).
 3. Define availability, backup-restore (RPO/RTO) and support targets (NFR-AVL-01, NFR-REL-01).
 4. Decide whether FR-MEM-04 needs a cron job, or should be triggered on dashboard load.

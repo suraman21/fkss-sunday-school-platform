@@ -22,7 +22,7 @@ A curated history of notable changes to FKSS, newest first.
 - PHP 8.5 compatibility: replaced constants deprecated in PHP 8.4/8.5 (`PDO::MYSQL_ATTR_*` in `config.php` and the member export/report services, `E_STRICT` in the error monitor), so production no longer logs a deprecation notice on every request; added a PHP 8.5 lint job and guard tests. Operations guide: server folders that Git does not create (`admin/id_cards/assets/qr/`) and handling of deleted files during SFTP deploys.
 - Fixed: the Branding card editor showed an empty front footer and back disclaimer (editor preview only; real cards were correct).
 - Repository structure, Phase 1 ([RFC 0001](docs/rfc/0001-repository-structure.md)): the superseded 2026-09-27 audit report moved to `docs/audits/`; `database_schema.sql` moved to `sql/legacy/`; removed the unused copy `public_website_frontend/`, the duplicate root `leak_detector.php` (the working copy stays in `admin/`), and the duplicate QR library `backend/id_cards/libs/` (also closes a publicly runnable demo script). No URL used by the site, the API or the app changed.
-- Documentation: engineering handover, reconciled system knowledge report, reconstructed PRD, technical design, decision records, glossary, changelog and contributing guide (documentation pull requests; not merged at the time of writing).
+- Documentation: reconstructed PRD, technical design, decision records, glossary, changelog and contributing guide (documentation pull requests; not merged at the time of writing).
 
 ## Production deployment record
 

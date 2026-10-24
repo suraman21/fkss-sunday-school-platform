@@ -118,7 +118,7 @@ Until a restore succeeds, treat backups as **unproven**.
    - Without `android/key.properties`, Gradle falls back to the **debug** signing configuration. The APK distributed in production is debug-signed.
    - Android only installs an update that has the same signature as the installed app. Losing the build machine's debug keystore therefore stops in-place updates for every device.
    - Switching to a proper release keystore requires every device to uninstall and reinstall. That would also erase unsynced offline data.
-   - A key-custody decision and a planned migration are needed. See `RELEASE.md` §3 and the handover risk list.
+   - A key-custody decision and a planned migration are needed. See `RELEASE.md` §3 and [§7.1](#71-known-limitations) (L-2).
 5. **Old-app compatibility:** before releasing server changes, check that installed older builds keep working, or are told to update. The legacy-token window for builds below 16 ended on 2026-09-24.
 
 ## 6. Monitoring and incident response
@@ -137,3 +137,43 @@ Until a restore succeeds, treat backups as **unproven**.
 3. Record what happened in `docs/incidents/` (see `docs/incidents/INCIDENT_2026-10-03_TRACKING_SCHEMA.md` for an example).
 
 Security incidents follow [SECURITY.md](SECURITY.md). A written incident-response plan with roles and contact paths does not exist yet.
+
+## 7. Known limitations and open questions
+
+Security and privacy findings are tracked privately and take precedence over the items below (see [SECURITY.md §5](SECURITY.md#5-open-findings)). This list contains only items whose publication does not increase risk.
+
+### 7.1 Known limitations
+
+Rechecked against the code, CI and repository settings on 2026-10-25. Severity: High / Medium / Low.
+
+| ID | Limitation | Severity | Evidence | Impact | Recommended action |
+|---|---|---|---|---|---|
+| L-1 | The security and regression suite is red because 79 tests are skipped (the job fails on any skip; there are no failing tests) | High | [DEVELOPMENT_AND_TESTING.md §3.2](DEVELOPMENT_AND_TESTING.md#32-the-79-skips) | A green gate cannot yet serve as release evidence | Start a seeded test server in CI and install `openpyxl` so the skipped tests run |
+| L-2 | The distributed Android APK is debug-signed; keystore custody is not documented | High | `Mobile/wbws_flutter_app/android/app/build.gradle` (falls back to debug signing without `key.properties`); `RELEASE.md` §3 | Losing the keystore blocks updates on every device; changing keys forces reinstalls | Decide keystore custody and plan the move to a release key before the device fleet grows |
+| L-3 | Backups are kept in the same hosting account, with no off-site copy; a restore has never been tested | High | [§4](#4-backups) | Loss of the account means loss of the data; backups are unproven | Off-site copy, recorded key custody, quarterly restore test |
+| L-4 | No migration ledger; the applied production schema is unverified | High | [DATABASE.md §4](DATABASE.md#4-applied-state-in-production-unverified) | Migrations may be missing or applied twice; deploys can break | Answer Q-1 and Q-2, then introduce a ledger |
+| L-5 | Manual deployment with no staging copy, no automated version record and no rehearsed rollback | Medium | [§2](#2-code-deployment-manual-sftp), [§3](#3-rollback) | Partial or incorrect deploys; slow recovery | Keep the deployment checklist and record; rehearse a rollback; consider a staging copy |
+| L-6 | No branch protection on the production repository's `main` (not available on the current GitHub plan). The development repository requires only the *Branch guard* check, with no review | Medium | Repository settings | Unreviewed changes can reach production | Upgrade the plan, or adopt a written two-person review rule |
+| L-7 | Monitoring and incident response are informal; uptime checks may not run | Medium | [§6](#6-monitoring-and-incident-response); `monitor/uptime_cron.php` needs cron | Outages are noticed by users first | External uptime check; a one-page incident plan |
+| L-8 | The full test suite runs on PHP 8.4; production runs PHP 8.5. A separate CI job lints every PHP file on 8.5 and fails on deprecations | Medium | `.github/workflows/backend-checks.yml` | Behaviour differences between 8.4 and 8.5 are not covered by tests | Run the test suite on PHP 8.5 |
+| L-9 | Three API layers with duplicated business rules | Medium | [ARCHITECTURE.md §3](ARCHITECTURE.md#3-the-three-api-layers-unfinished-consolidation) | Inconsistent behaviour between web and app; costly changes | Choose the canonical layer per domain and consolidate behind services |
+| L-10 | Runtime schema changes for Mezmur tables | Medium | `MezmurSchemaReconciler::apply` | Schema drift; changes happen during requests | Move these changes into migrations |
+| L-11 | Very large files: the HR, Information and Education dashboards (about 4,400–4,900 lines each) and `local_db.dart` (about 7,500 lines) | Low | Line counts | Slow, risky changes | Split by feature, behind tests, when the files are next changed |
+| L-12 | Mobile 1.7.3+40 is on `main` but not released; production serves 1.6.10 (build 36) | Low | `pubspec.yaml`; `/api/v1/app/config` (2026-10-25) | Server and app features diverge | Decide when to publish 1.7.3 |
+
+### 7.2 Open questions
+
+Each question can be answered without changing anything. Most need production access.
+
+| ID | Question | How to answer (read-only) |
+|---|---|---|
+| Q-1 | Does the production schema match `sql/`? | Export the structure only (no data) and diff it against a database built by `tests/e2e/provision_env.sh` |
+| Q-2 | Which migrations are applied, including the reverted `047`? | Derive from Q-1 |
+| Q-3 | What are the hosting provider's backup frequency, retention and restore procedure? | Hosting control panel or provider documentation |
+| Q-4 | What are the production values of `ENABLE_TEST_DATA_TOOLS` and the `FEATURE_*` flags? | Read the secrets file (names and booleans only) |
+| Q-5 | Are Telegram alerts and an uptime cron job configured? | Check the settings and the hosting control panel |
+| Q-6 | Which staff roles are in active use (for example finance and material)? | Count users by role (no names) |
+| Q-7 | Where are the Android signing keystore and the backup encryption key held, and by whom? | Written statement from the key holders |
+| Q-8 | How is the beta server updated? | Written description of the current procedure |
+| Q-9 | Does any caller outside `frontend/` use `backend/api/*`? | Web-server access logs, filtered by path |
+| Q-10 | Which MariaDB version runs in production? The last record is 11.4, from a 2026-10-02 schema dump (`sql/054_legacy_era_columns.sql` line 33) | The server version shown in phpMyAdmin |

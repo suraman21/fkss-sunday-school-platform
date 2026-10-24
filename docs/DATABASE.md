@@ -49,7 +49,7 @@ Distinct table names created across `sql/`: **103**, counted from `CREATE TABLE`
 - **Gaps in numbering:**
   - `047` (`047_account_self_service.sql`) was added in `3ba18f7` and removed by the revert `491b9ed` (2026-09-22). Two tests mention that it "landed later via server-side" (`tests/security/test_p1a_members_local_first.py`, `test_p1b_notification_local_first.py`). Whether it is applied in production is **unknown**.
   - `061` never existed in history.
-- **Read-only verification needed:** see [ENGINEERING_HANDOVER.md](ENGINEERING_HANDOVER.md#5-unknowns-that-need-read-only-verification). The owner should export the production schema (structure only, no data) and diff it against a database built by `provision_env.sh`.
+- **Read-only verification needed:** see [OPERATIONS.md §7.2](OPERATIONS.md#72-open-questions) (Q-1, Q-2): export the production schema (structure only, no data) and diff it against a database built by `provision_env.sh`.
 
 ## 5. Migration inventory (source control only)
 

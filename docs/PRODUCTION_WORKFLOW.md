@@ -17,7 +17,7 @@ The policy below was adopted on 2026-10-07. Part of it is **not** in effect toda
 | Deployment is not configured | It is still not automated. Production is deployed by a **manual SFTP upload** of changed files, with a backup and checksum verification. See [OPERATIONS.md](OPERATIONS.md#2-code-deployment-manual-sftp) |
 | Development repository URL | Renamed to `suraman21/fkss-sunday-school-platform`. The old `suraman21/SSMS` URL redirects |
 
-Restoring the intended policy is a recommendation in [ENGINEERING_HANDOVER.md](ENGINEERING_HANDOVER.md). Until then, treat the sections below as the **intended** workflow.
+Restoring the intended policy is tracked as L-6 in [OPERATIONS.md §7.1](OPERATIONS.md#71-known-limitations). Until then, treat the sections below as the **intended** workflow.
 
 ## Repository roles
 

@@ -49,7 +49,7 @@
 
 Good first tasks touch one area and have a clear test:
 - a documentation correction you found while reading (the documents state what they were verified against; tell us when something no longer matches the code);
-- a small, test-backed fix from the known-issue lists in [ENGINEERING_HANDOVER.md](ENGINEERING_HANDOVER.md), after the owner confirms it is wanted.
+- a small, test-backed fix for an item in [OPERATIONS.md §7](OPERATIONS.md#7-known-limitations-and-open-questions), after the maintainers confirm it is wanted.
 
 Open a pull request using the template, describe how you tested it, and wait for review.
 

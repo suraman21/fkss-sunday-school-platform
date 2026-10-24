@@ -104,4 +104,4 @@ Design history for the offline and sync work is in `docs/MOBILE_OFFLINE_SYNC_*.m
 5. Legacy naming (WBWS/WBSS/SSMS/FKSS) across files, the database file name and the PWA.
 6. Duplicated vendored libraries (phpqrcode). Resolved 2026-10-23: one copy remains, in `admin/id_cards/libs/`.
 
-Prioritisation is in [ENGINEERING_HANDOVER.md](ENGINEERING_HANDOVER.md).
+Severity and recommended actions: [OPERATIONS.md §7](OPERATIONS.md#7-known-limitations-and-open-questions).

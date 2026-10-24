@@ -11,7 +11,7 @@ FKSS (also referred to in the code as SSMS and, in older files, WBWS/WBSS) is th
 > **Status (2026-10-22, `main` = `46fbaa7`).** The system is in production use.
 > - The automated *Backend checks* gate is currently **failing** because 79 tests are skipped (the 2 failing tests were fixed on 2026-10-24). See [Testing and CI](docs/DEVELOPMENT_AND_TESTING.md#3-current-ci-status).
 > - Production deployments are manual. See [Operations](docs/OPERATIONS.md).
-> - The project is being prepared for an engineering handover. Start with [docs/ENGINEERING_HANDOVER.md](docs/ENGINEERING_HANDOVER.md).
+> - New engineers: start with [docs/ONBOARDING.md](docs/ONBOARDING.md).
 > - No independent security certification exists.
 
 ## Principal capabilities
@@ -120,7 +120,7 @@ Details and the work needed to make the gate trustworthy again: [docs/DEVELOPMEN
 
 ## Known limitations (summary)
 
-Each item is VERIFIED unless marked otherwise. Detail and evidence: [ENGINEERING_HANDOVER.md §6](docs/ENGINEERING_HANDOVER.md#6-risk-register-public-summary).
+Each item is VERIFIED unless marked otherwise. Detail and evidence: [OPERATIONS.md §7](docs/OPERATIONS.md#7-known-limitations-and-open-questions).
 
 | Area | Limitation | Detail |
 |---|---|---|
@@ -136,7 +136,6 @@ Each item is VERIFIED unless marked otherwise. Detail and evidence: [ENGINEERING
 | Topic | Canonical document |
 |---|---|
 | Index of all documents | [docs/README.md](docs/README.md) |
-| Engineering handover | [docs/ENGINEERING_HANDOVER.md](docs/ENGINEERING_HANDOVER.md) |
 | New engineer onboarding | [docs/ONBOARDING.md](docs/ONBOARDING.md) |
 | Product requirements (PRD) | [docs/product/PRD.md](docs/product/PRD.md) |
 | Technical design (TRD/SAD) | [docs/architecture/TECHNICAL_DESIGN.md](docs/architecture/TECHNICAL_DESIGN.md) |

@@ -1,6 +1,6 @@
 # Contributing to FKSS
 
-This guide is for engineers joining the project. Read it together with [README.md](README.md), the [engineering handover](docs/ENGINEERING_HANDOVER.md) and [BRANCHING.md](BRANCHING.md).
+This guide is for engineers joining the project. Read it together with [README.md](README.md), [docs/ONBOARDING.md](docs/ONBOARDING.md) and [BRANCHING.md](BRANCHING.md).
 
 FKSS is **in production** and holds personal data about children and families. Treat every change as a production change.
 

@@ -211,7 +211,7 @@ flowchart LR
 | Environment | Source | Notes |
 |---|---|---|
 | Production | `main` | Manual deploy. Last recorded: `46fbaa7`, 2026-10-22, with checksums verified. Detail: [OPERATIONS.md](../OPERATIONS.md) |
-| Beta | `dev` (`main` + one commit that re-targets the app) | Update mechanism **unverified** (handover U-8) |
+| Beta | `dev` (`main` + one commit that re-targets the app) | Update mechanism **unverified** ([OPERATIONS.md §7.2](../OPERATIONS.md#72-open-questions), Q-8) |
 | CI | GitHub Actions | PHP 8.4, MariaDB 11.4, Python 3.11, Flutter 3.44.9 ([DEVELOPMENT_AND_TESTING.md](../DEVELOPMENT_AND_TESTING.md)) |
 
 ## 8. Cross-cutting concepts
@@ -248,7 +248,7 @@ See the [decision record index](../adr/README.md). These records were reconstruc
 
 ## 11. Risks and technical debt
 
-The full register, with evidence and remediation, is in [ENGINEERING_HANDOVER.md §6](../ENGINEERING_HANDOVER.md#6-risk-register-public-summary). Architecture-level items:
+The full list, with evidence and recommended actions, is in [OPERATIONS.md §7](../OPERATIONS.md#7-known-limitations-and-open-questions). Architecture-level items:
 
 1. **Three API layers with duplicated rules.** Decide the canonical layer per domain, then consolidate behind services.
 2. **Very large files.** Dashboards of about 4,400–4,900 lines; `local_db.dart` about 7,500 lines. Split by feature, behind tests.

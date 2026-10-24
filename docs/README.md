@@ -15,7 +15,6 @@
 |---|---|
 | [README.md](../README.md): project overview, stack, setup summary | Canonical |
 | [ONBOARDING.md](ONBOARDING.md): first-week path for a new engineer | Canonical |
-| [ENGINEERING_HANDOVER.md](ENGINEERING_HANDOVER.md) | Canonical |
 | [CONTRIBUTING.md](../CONTRIBUTING.md): workflow, coding standards, database rules, tests, definition of done | Canonical |
 | [CHANGELOG.md](../CHANGELOG.md): change history, mobile build history, deployment record | Canonical |
 | [BRANCHING.md](../BRANCHING.md): `main` vs `dev` rules | Canonical |
@@ -75,7 +74,7 @@ Open security findings are tracked privately, not in this repository (see [SECUR
 
 | Document | Status |
 |---|---|
-| [OPERATIONS.md](OPERATIONS.md): deployment, rollback, backups, mobile release, monitoring | Canonical |
+| [OPERATIONS.md](OPERATIONS.md): deployment, rollback, backups, mobile release, monitoring, [known limitations and open questions](OPERATIONS.md#7-known-limitations-and-open-questions) | Canonical |
 | [Mobile app RELEASE.md](../Mobile/wbws_flutter_app/docs/RELEASE.md): Android build and signing guide | Canonical for mobile builds |
 | [Mobile app RELEASE_NOTES.md](../Mobile/wbws_flutter_app/RELEASE_NOTES.md) | Canonical (release log) |
 | [audits/AUDIO_STORAGE_SETUP.md](audits/AUDIO_STORAGE_SETUP.md): media storage setup | Reference |
@@ -83,3 +82,17 @@ Open security findings are tracked privately, not in this repository (see [SECUR
 | [audits/DEPLOYMENT_RUNBOOK.md](audits/DEPLOYMENT_RUNBOOK.md) | Superseded by [OPERATIONS.md](OPERATIONS.md) |
 | Mobile fleet telemetry: [release gate](audits/MOBILE_FLEET_TELEMETRY_STAGE0_RELEASE_GATE.md), [staging evidence](audits/MOBILE_FLEET_TELEMETRY_STAGE1_STAGING_EVIDENCE.md), [integrity hardening](audits/MOBILE_FLEET_TELEMETRY_INTEGRITY_HARDENING.md), [retention](audits/MOBILE_FLEET_TELEMETRY_RETENTION.md) | Reference |
 | [Mobile/HOW_TO_SHIP_AN_UPDATE.md](../Mobile/HOW_TO_SHIP_AN_UPDATE.md) | Superseded by [OPERATIONS.md §5](OPERATIONS.md#5-mobile-release) |
+
+## 8. Sources of truth
+
+When documents disagree, use this table.
+
+| Question | Authoritative source | Not authoritative |
+|---|---|---|
+| What is the code? | `main` of the development repository. The production repository's `main` is kept identical | Feature branches; `dev` (beta settings) |
+| What is deployed? | The [production deployment record](../CHANGELOG.md#production-deployment-record) (commit, files, verification result) | Files on the server; server-side git metadata |
+| What is the database schema? | The production database (not yet verified; see [DATABASE.md §4](DATABASE.md#4-applied-state-in-production-unverified)) | `sql/legacy/database_schema.sql` (stale); `sql/` describes intent only |
+| Which app version is in the field? | The app-release manager (`/api/v1/app/config`) | `pubspec.yaml` on `main` |
+| Who may do what? | `admin/access_control.php`, `api/v1/core/acl.php` and the checks inside each endpoint | Older documents |
+| Why is it built this way? | [Architecture decision records](adr/README.md) | — |
+| Security and privacy findings | Tracked privately ([SECURITY.md §5](SECURITY.md#5-open-findings)) | This repository |

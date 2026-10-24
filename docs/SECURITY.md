@@ -63,7 +63,7 @@ These are documented design limits. They are not the full list of findings.
 - **Mobile offline cache:** the cache is not encrypted at the application level; it relies on Android file-based encryption.
 - **APK signing:** the distributed Android APK is signed with a debug key (see [OPERATIONS.md](OPERATIONS.md#5-mobile-release)).
 - **Runtime parity:** CI tests PHP 8.4 while production runs PHP 8.2 ([DEVELOPMENT_AND_TESTING.md](DEVELOPMENT_AND_TESTING.md#5-runtime-parity-gap)).
-- **No independent assessment:** no independent penetration test or certification has been performed. Older documents that claim certification are superseded (see [docs/README.md](README.md)).
+- **No independent assessment:** no independent penetration test or certification has been performed.
 
 ## 5. Open findings
 

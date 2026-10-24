@@ -80,7 +80,7 @@ Every skip has a stated reason. They fall into two groups:
 
 ## 5. Runtime parity gap
 
-CI runs PHP **8.4**; production runs PHP **8.2**. Syntax or behaviour that is valid only on 8.3 or later would pass CI and fail in production. A PHP 8.2 lint/test job is recommended (see the handover).
+CI runs PHP **8.4**; production runs PHP **8.2**. Syntax or behaviour that is valid only on 8.3 or later would pass CI and fail in production. A PHP 8.2 lint/test job is recommended.
 
 ## 6. Release acceptance policy
 
