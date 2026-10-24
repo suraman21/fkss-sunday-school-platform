@@ -2,7 +2,7 @@
 
 Short records of significant architecture and product decisions: context, decision, consequences and evidence. The format follows Michael Nygard's ADR template.
 
-**These records were reconstructed on 2026-10-22** from the code, the commit history and the owner's dated planning documents. The decisions themselves were made on the dates shown. From now on, write a new ADR **before** making a significant decision (see [Writing a new ADR](#writing-a-new-adr)).
+Records 0001–0020 were written on 2026-10-22 from the code, the commit history and dated planning documents; each decision was made on the date shown. Write a new ADR **before** making a significant decision (see [Writing a new ADR](#writing-a-new-adr)).
 
 | ADR | Decision | Status | Date |
 |---|---|---|---|
@@ -23,7 +23,7 @@ Short records of significant architecture and product decisions: context, decisi
 | [ADR-0015](0015-mezmur-media-object-storage.md) | Mezmur audio and art in object storage, with presigned URLs | Accepted | 2026-09-03 |
 | [ADR-0016](0016-family-link-guardian-model.md) | Family Link: a guardian entity with typo-tolerant matching and a review queue | Accepted | 2026-10-17 |
 | [ADR-0017](0017-no-member-registration-on-mobile.md) | Members are never registered from the Android app | Accepted | 2026-10-17 |
-| [ADR-0018](0018-lesson-level-attendance.md) | Lesson-level Education attendance alongside the class-day sheet (Option B) | Accepted | 2026-10-19 |
+| [ADR-0018](0018-lesson-level-attendance.md) | Lesson-level Education attendance alongside the class-day sheet | Accepted | 2026-10-19 |
 | [ADR-0019](0019-attendance-alert-thresholds.md) | Attendance warnings with per-department thresholds; no automatic deactivation by default | Accepted | 2026-10-19 |
 | [ADR-0020](0020-score-limit-and-did-not-take.md) | Refuse marks above the maximum; a blank mark is "Did not take" and is excluded from the total | Accepted | 2026-10-22 |
 
@@ -31,5 +31,5 @@ Short records of significant architecture and product decisions: context, decisi
 
 1. Copy the [template](template.md) to `NNNN-short-title.md`, using the next number.
 2. Fill in context, the options considered, the decision and the consequences. Link the evidence: planning document, issue or PR.
-3. Open it in the same pull request as the change, or before it. Status starts as **Proposed**, and becomes **Accepted** once the owner or the reviewers approve.
+3. Open it in the same pull request as the change, or before it. Status starts as **Proposed**, and becomes **Accepted** once the maintainers or reviewers approve.
 4. Never edit an accepted decision's content. To change it, write a new ADR and mark the old one **Superseded by ADR-NNNN**.

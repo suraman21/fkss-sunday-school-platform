@@ -7,10 +7,9 @@ Domain, local and technical terms used in the FKSS code and documentation. Code 
 | Term | Meaning |
 |---|---|
 | **FKSS** | Felege Kidusan Sunday School: the organisation, and the product name used in production |
-| **SSMS** | "Sunday School Management System", the generic name of the code base. Appears in docs, tests and database names |
-| **WBWS / WBSS** | Earlier working names of the same system. They survive in file names (`wbws_flutter_app`, `wbws_groups`, `.wbws_env.php`), CSS classes and the mobile database file name. They are **not** separate systems |
+| **`wbws` / `ssms` in identifiers** | Prefixes used in some folder, file, table, CSS-class, test and environment-variable names (for example `wbws_flutter_app`, `wbws_groups`, `.wbws_env.php`, `SSMS_AUDIT_TESTING`). They belong to FKSS; they are **not** separate systems |
 | **Department** | An organisational unit with its own role and dashboard: HR, Information, Education, Mezmur, Finance, Material |
-| **Owner** | The project owner who approves changes, applies database migrations and deploys |
+| **Maintainers** | The people who approve changes, apply database migrations and deploy to production |
 
 ## Calendar and locale
 

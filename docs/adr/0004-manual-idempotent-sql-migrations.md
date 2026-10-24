@@ -2,17 +2,17 @@
 
 | Status | Date | Deciders |
 |---|---|---|
-| Accepted (known debt) | 2026-08-15 | Project owner |
+| Accepted (known debt) | 2026-08-15 | Maintainers |
 
-> Reconstructed record (written 2026-10-22). The decision itself was made on the date shown. Evidence is cited so it can be checked; where the original rationale was not recorded, that is stated.
+> Recorded on 2026-10-22; the decision date is shown above. Evidence is cited so the decision can be checked; where the rationale is not documented, this is stated.
 
 ## Context
 
-There is no shell or deploy tooling on the server. The owner applies database changes through phpMyAdmin.
+There is no shell or deploy tooling on the server. Database changes are applied by hand through phpMyAdmin.
 
 ## Decision
 
-Database changes are numbered files `sql/NNN_*.sql`. They are additive and idempotent where possible (`IF NOT EXISTS`, `information_schema` guards), the owner runs them by hand, and code tolerates a missing migration where feasible (a feature stays inert until its table exists). CI checks numbering and flags destructive statements.
+Database changes are numbered files `sql/NNN_*.sql`. They are additive and idempotent where possible (`IF NOT EXISTS`, `information_schema` guards), a maintainer runs them by hand, and code tolerates a missing migration where feasible (a feature stays inert until its table exists). CI checks numbering and flags destructive statements.
 
 ## Consequences
 

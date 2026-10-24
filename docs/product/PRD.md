@@ -1,18 +1,18 @@
-# FKSS — Product Requirements Document (reconstructed baseline)
+# FKSS — Product Requirements Document
 
 | Field | Value |
 |---|---|
 | Document | Product Requirements Document (PRD) |
-| Status | **Reconstructed baseline. Draft for review by the engineering team** |
+| Status | **Baseline. Draft for review by the engineering team** |
 | Version | 1.0 (2026-10-22) |
 | Describes | The system as implemented on `main` at `46fbaa7` (deployed to production on 2026-10-22) |
-| Method | Reconstructed after the fact from the source code, migration files, commit history and the decision records ([ADRs](../adr/README.md)). No PRD existed before development began; the system was built incrementally from 2026-08-15 |
-| Owner | FKSS project owner |
+| Method | Derived from the source code, migration files, commit history and the decision records ([ADRs](../adr/README.md)). Each requirement cites its source. Development began on 2026-08-15 and proceeds incrementally |
+| Maintained by | FKSS maintainers |
 | Companion documents | [Technical design](../architecture/TECHNICAL_DESIGN.md) · [Decision records](../adr/README.md) · [Glossary](GLOSSARY.md) · [Roles and permissions](../ROLES_AND_PERMISSIONS.md) · [Known limitations](../OPERATIONS.md#7-known-limitations-and-open-questions) |
 
 **How to read this document**
 - Requirement IDs (`FR-MEM-01`, `NFR-SEC-02`, …) are stable references for future tickets and tests.
-- **Status:** **Implemented** = present on `main` at `46fbaa7`. **Partial** = implemented with a documented gap. **Planned** = decided or designed but not built. **On hold** = deliberately paused by the owner.
+- **Status:** **Implemented** = present on `main` at `46fbaa7`. **Partial** = implemented with a documented gap. **Planned** = decided or designed but not built. **On hold** = deliberately paused.
 - **Source** points to the code or decision record that defines the behaviour. Where the code and a planning document disagree, the code is what runs; the difference is noted.
 - Production configuration (feature flags, which migrations are applied) is **not verified** here. See [OPERATIONS.md §7.2](../OPERATIONS.md#72-open-questions).
 
@@ -149,7 +149,7 @@ Other stakeholders: the parents and guardians of students (data subjects; no sys
 | ID | Requirement and business rules | Status | Source |
 |---|---|---|---|
 | FR-REP-01 | Reporting Centre: governed member dataset with per-field view and export permissions, saved views (private, department, shared), audited CSV and Excel export | Implemented | `admin/backend/reporting/ReportRegistry.php`; `api_reports_v2.php`; `sql/070_report_definitions.sql` |
-| FR-REP-02 | **Boundary:** future sensitive or cross-department datasets (finance, material, detailed education, telemetry) go to the Information Department only | Implemented as a rule for additions; department datasets (V2-4) are **On hold** | [ADR-0012](../adr/0012-reporting-centre-and-data-boundary.md) |
+| FR-REP-02 | **Boundary:** future sensitive or cross-department datasets (finance, material, detailed education, telemetry) go to the Information Department only | Implemented as a rule for additions; department datasets are **On hold** | [ADR-0012](../adr/0012-reporting-centre-and-data-boundary.md) |
 | FR-REP-03 | Attendance analytics hub for Information (Education and Mezmur sources), PDF report templates, member exports | Implemented | `api_info_analytics.php`; `admin/backend/pdf/` |
 | FR-REP-04 | Past-year view: any user can view a closed academic year read-only; writes are blocked while viewing the past | Implemented | `admin/api_year_context.php` |
 
@@ -189,14 +189,14 @@ Other stakeholders: the parents and guardians of students (data subjects; no sys
 | Parent app | Feature list **locked**; not started | — |
 | Members app | **On hold** | — |
 | Account Command Center (parent/member accounts and devices) | In planning; **no code until the implementation plan is approved** | — |
-| Reporting Centre V2-4 (department datasets) | **On hold** pending user feedback | [ADR-0012](../adr/0012-reporting-centre-and-data-boundary.md) |
+| Reporting Centre department datasets | **On hold** pending user feedback | [ADR-0012](../adr/0012-reporting-centre-and-data-boundary.md) |
 | Lesson-level attendance on mobile | Not in scope of Phase 6 | [ADR-0018](../adr/0018-lesson-level-attendance.md) |
 
 ## 8. Non-functional requirements
 | ID | Requirement | Status / evidence |
 |---|---|---|
-| NFR-PLT-01 | Runs on shared hosting: PHP 8.2, MariaDB, LiteSpeed; no shell, Composer, cron, Python, Redis or C extensions for the application | Constraint ([ADR-0001](../adr/0001-php-monolith-on-shared-hosting.md)) |
-| NFR-PLT-02 | Database changes are additive, idempotent SQL that the owner applies by hand | Constraint ([ADR-0004](../adr/0004-manual-idempotent-sql-migrations.md)) |
+| NFR-PLT-01 | Runs on shared hosting: PHP 8.5, MariaDB, LiteSpeed; no shell, Composer, cron, Python, Redis or C extensions for the application | Constraint ([ADR-0001](../adr/0001-php-monolith-on-shared-hosting.md)) |
+| NFR-PLT-02 | Database changes are additive, idempotent SQL, applied by hand | Constraint ([ADR-0004](../adr/0004-manual-idempotent-sql-migrations.md)) |
 | NFR-PRF-01 | Designed for a school of 5,000+ students: paginated lists (capped page sizes), indexed directory and roster queries, monthly roll-ups | Design target (`sql/003_production_hardening.sql` header; `sql/014_member_directory_scaling.sql`, `028`, `052`). **No load test on record** |
 | NFR-PRF-02 | Usable on 2G/3G: cache-first screens and conditional GETs (ETag/304) for messaging | Implemented (commits `4b438ae`, `40acaa7`) |
 | NFR-SEC-01 | Role-based access on every page and endpoint; CSRF on web writes; rate-limited login (20 per 5 minutes per IP, 5 per 5 minutes per account); 30-minute idle web session | Implemented ([SECURITY.md](../SECURITY.md)) |

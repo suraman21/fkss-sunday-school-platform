@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Document | Technical Requirements / Software Architecture Document (TRD/SAD), arc42-style |
-| Status | **Reconstructed baseline. Draft for review by the engineering team** |
+| Status | **Baseline. Draft for review by the engineering team** |
 | Version | 1.0 (2026-10-22) |
 | Describes | `main` at `46fbaa7`, read from source. Runtime behaviour in production was not re-tested for this document |
 | Detailed references | [ARCHITECTURE.md](../ARCHITECTURE.md) (component detail) · [API.md](../API.md) · [DATABASE.md](../DATABASE.md) · [SECURITY.md](../SECURITY.md) · [OPERATIONS.md](../OPERATIONS.md) · [ROLES_AND_PERMISSIONS.md](../ROLES_AND_PERMISSIONS.md) |
@@ -31,12 +31,12 @@ FKSS is a school management system for one Sunday school: web dashboards for eac
 
 | Type | Constraint | Consequence |
 |---|---|---|
-| Hosting | Shared hosting: LiteSpeed, PHP 8.2, MariaDB. No shell, Composer, cron, Python, Redis or C extensions for the application | Plain PHP; committed `vendor/`; no workers or queues; work runs inside requests ([ADR-0001](../adr/0001-php-monolith-on-shared-hosting.md)) |
-| Database changes | The owner applies SQL by hand in phpMyAdmin | Additive, idempotent migrations; no migration ledger ([ADR-0004](../adr/0004-manual-idempotent-sql-migrations.md)) |
+| Hosting | Shared hosting: LiteSpeed, PHP 8.5, MariaDB. No shell, Composer, cron, Python, Redis or C extensions for the application | Plain PHP; committed `vendor/`; no workers or queues; work runs inside requests ([ADR-0001](../adr/0001-php-monolith-on-shared-hosting.md)) |
+| Database changes | A maintainer applies SQL by hand in phpMyAdmin | Additive, idempotent migrations; no migration ledger ([ADR-0004](../adr/0004-manual-idempotent-sql-migrations.md)) |
 | Deployment | Manual SFTP upload of changed files | No atomic deploys; cache-busting by asset version ([OPERATIONS.md](../OPERATIONS.md)) |
 | Mobile distribution | No Play Store listing | In-app updater downloads the APK from the school's server ([ADR-0005](../adr/0005-direct-apk-distribution.md)) |
 | Locale | Ethiopian calendar for every user-facing date; Amharic content | UTF-8 (`utf8mb4`) end to end; date conversion helpers ([ADR-0008](../adr/0008-ethiopian-calendar-only.md)) |
-| Organisation | Owner approval for every schema change, deploy and production action | Changes are planned, reviewed and deployed in explicit steps |
+| Organisation | Maintainer approval for every schema change, deploy and production action | Changes are planned, reviewed and deployed in explicit steps |
 
 ## 3. Context (C4 level 1)
 
@@ -200,8 +200,8 @@ The app polls `GET /api/v1/app/config`, compares its build number with the confi
 flowchart LR
   dev["Developer workstation"] -->|"git push / PR"| gh["GitHub: suraman21/fkss-sunday-school-platform<br/>(main, dev) + CI"]
   gh -->|"same commits"| prodrepo["GitHub: Felege-Kidusan/felegekidusan<br/>(main, private)"]
-  dev -->|"owner-approved SFTP upload<br/>of changed files"| prod["Production shared hosting<br/>(LiteSpeed, PHP 8.2, MariaDB)"]
-  owner["Owner"] -->|"phpMyAdmin: apply sql/NNN"| prod
+  dev -->|"approved SFTP upload<br/>of changed files"| prod["Production shared hosting<br/>(LiteSpeed, PHP 8.5, MariaDB)"]
+  maint["Maintainer"] -->|"phpMyAdmin: apply sql/NNN"| prod
   cdn["CDN / WAF proxy"] --> prod
   users["Browsers, Android app"] --> cdn
   beta["Beta server (from dev)"]:::muted
@@ -212,7 +212,7 @@ flowchart LR
 |---|---|---|
 | Production | `main` | Manual deploy. Last recorded: `46fbaa7`, 2026-10-22, with checksums verified. Detail: [OPERATIONS.md](../OPERATIONS.md) |
 | Beta | `dev` (`main` + one commit that re-targets the app) | Update mechanism **unverified** ([OPERATIONS.md §7.2](../OPERATIONS.md#72-open-questions), Q-8) |
-| CI | GitHub Actions | PHP 8.4, MariaDB 11.4, Python 3.11, Flutter 3.44.9 ([DEVELOPMENT_AND_TESTING.md](../DEVELOPMENT_AND_TESTING.md)) |
+| CI | GitHub Actions | PHP 8.4 (tests) and 8.5 (lint), MariaDB 11.4, Python 3.11, Flutter 3.44.9 ([DEVELOPMENT_AND_TESTING.md](../DEVELOPMENT_AND_TESTING.md)) |
 
 ## 8. Cross-cutting concepts
 
@@ -232,7 +232,7 @@ flowchart LR
 
 ## 9. Architecture decisions
 
-See the [decision record index](../adr/README.md). These records were reconstructed in October 2026 from the code, the commit history and the owner's planning documents.
+See the [decision record index](../adr/README.md).
 
 ## 10. Quality requirements
 
@@ -253,7 +253,7 @@ The full list, with evidence and recommended actions, is in [OPERATIONS.md §7](
 1. **Three API layers with duplicated rules.** Decide the canonical layer per domain, then consolidate behind services.
 2. **Very large files.** Dashboards of about 4,400–4,900 lines; `local_db.dart` about 7,500 lines. Split by feature, behind tests.
 3. **Schema management.** No migration ledger, a stale `sql/legacy/database_schema.sql`, and runtime DDL. Introduce a ledger and a verified baseline.
-4. **Runtime parity.** CI runs PHP 8.4 while production runs 8.2.
+4. **Runtime parity.** CI runs the test suite on PHP 8.4 (every file is also linted on 8.5) while production runs 8.5.
 5. **Delivery pipeline.** Manual deploys, a red CI gate and a debug-signed APK.
 6. **Repository layout.** It mixes the web app, API, mobile app, tests and legacy folders at the root. A target structure should be agreed before any move, because paths are referenced by the server, the mobile app and the tests.
 

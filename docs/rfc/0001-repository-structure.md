@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| **Status** | **Phase 1 approved by the owner (2026-10-23) and implemented**, including the production server. **Option 1 approved (2026-10-23)**: Step 1 (safety checks) done; Step 2 (tidy non-web folders) done in the repository; removing the old copies from the production server waits for the owner, see [section 8](#8-option-1-tidy-without-moving-web-files). Phase 3 remains proposed |
-| **Author** | Engineering (documentation pass) |
-| **Decision owner** | Project owner, with the technical team |
+| **Status** | **Accepted.** Phase 1 (approved 2026-10-23) is implemented, including the production server. Option 1 (approved 2026-10-23) is implemented: Step 1 (safety checks) and Step 2 (tidy non-web folders) are done, and the old copies were removed from the production server on 2026-10-23; see [section 8](#8-option-1-tidy-without-moving-web-files). Phase 3 remains proposed |
+| **Author** | FKSS maintainers |
+| **Decision makers** | FKSS maintainers, with the technical team |
 | **Evidence base** | `main` at `46fbaa7`: `git ls-files`, `.htaccess` rules, and a reference search for every path named below |
 
 ## 1. Summary
@@ -54,7 +54,7 @@ The repository root has about 40 entries: web entry points, legacy folders, a ve
 Each item is its own pull request containing the move, every reference update, and passing tests:
 1. `ENTERPRISE_SECURITY_AUDIT_REPORT.md` → `docs/audits/2026-09-27-enterprise-security-audit.md` (update 2 links; content unchanged).
 2. `database_schema.sql` → `sql/legacy/database_schema.sql` (update 15 references; check that no tool loads it by path).
-3. `public_website_frontend/`: owner decides between removal and archiving; first confirm whether a copy exists on the server.
+3. `public_website_frontend/`: decide between removal and archiving; first confirm whether a copy exists on the server.
 4. `index.html` and `leak_detector.php`: confirm their use, then keep or move with references and tests updated.
 
 **Risk:** low; these files are not part of normal page loads. **Deployment:** items 2–4 change files on the server and need an approved deployment; item 1 does not. **Rollback:** revert the pull request.
@@ -79,7 +79,7 @@ Each item is its own pull request containing the move, every reference update, a
 - No change to public URLs, API paths or the database.
 - No removal of historical evidence. Files are moved with `git mv`, so their history is kept.
 
-## 6. Open questions for the owner
+## 6. Open questions
 
 1. Is `public_website_frontend/` still needed, and is a copy deployed?
 2. Is `index.html` ever served instead of `index.php`? `.htaccess` sets no `DirectoryIndex`, so the hosting default decides which file answers `/`, and `robots.txt` explicitly allows `/index.html`. Check with a request to the live site before changing either file. **Answered 2026-10-23:** both servers serve `index.php` at `/`; `index.html` had no requests in the October access logs. It was removed and the `robots.txt` line dropped.
@@ -87,7 +87,7 @@ Each item is its own pull request containing the move, every reference update, a
 
 ## 7. Decision
 
-**2026-10-23: Phase 1 approved by the owner**, with the condition that every removal is proven not to affect the system, and that it is confirmed on the dev server before production.
+**2026-10-23: Phase 1 approved**, with the condition that every removal is proven not to affect the system, and that it is confirmed on the dev server before production.
 
 ### Phase 1 outcome
 
@@ -103,10 +103,10 @@ Found during the analysis, not changed (outside Phase 1): `index.html` at the ro
 
 ## 8. Option 1: tidy without moving web files
 
-**2026-10-23: approved by the owner.** The web root stays as it is (as in WordPress and MediaWiki). Only folders the website never uses are tidied. No page, API or app URL changes. Each part is its own pull request, checked file by file, tested on dev first. Old copies on the production server are moved to a dated backup folder only after the owner confirms.
+**2026-10-23: approved.** The web root stays as it is (as in WordPress and MediaWiki). Only folders the website never uses are tidied. No page, API or app URL changes. Each part is its own pull request, checked file by file, tested on dev first. Old copies on the production server are moved to a dated backup folder only after explicit approval.
 
 Decisions:
-- `sql/` keeps its name (not renamed to `database/`): more than 250 files mention it, and the owner applies migrations from it by hand.
+- `sql/` keeps its name (not renamed to `database/`): more than 250 files mention it, and migrations are applied from it by hand.
 - `Mobile/` keeps its name (not renamed to `mobile/`): about 100 files mention it, and a capital-letter-only rename is unreliable on Windows.
 - Old PHP migrations go to `sql/legacy/`, next to the legacy schema, so all database material is in one folder.
 - Dated records (audit evidence, applied migrations, dated plans) are not rewritten. Dated plans with run commands get a one-line "moved" note.
@@ -115,9 +115,9 @@ Decisions:
 | Step | What | Status |
 |---|---|---|
 | 1 | Safety checks: include-path and boundary tests, live URL checker ([OPERATIONS.md §2.2](../OPERATIONS.md#22-folder-structure-safety-checks)) | Done (PR #16) |
-| 2a | `tools/` (3 CLI scripts) → `scripts/` | Done in the repository. Production still has the old `public_html/tools/` copy (blocked from the web); moving it to a backup folder waits for the owner |
-| 2b | `admin/migrations/` and `backend/migrations/` (19 old PHP migrations) → `sql/legacy/php-migrations/admin/` and `…/backend/` | Done in the repository, moved unchanged (they can no longer run from the new folder, by design). Production still has the old copies (blocked from the web); moving them to a backup folder waits for the owner |
-| 2c | Sort loose files in `docs/` into topic folders | Done. 33 historical records moved into `mobile_offline_sync/`, `academic_tracking/`, `communication/`, `responsive_ui/`, `attendance/`, `incidents/` and `audits/`; the 16 main guides stay at the top of `docs/`. Links fixed; new CI test `test_docs_links.py` checks every relative Markdown link |
+| 2a | `tools/` (3 CLI scripts) → `scripts/` | Done. The old copy was removed from the production server on 2026-10-23 (kept in a dated backup) |
+| 2b | `admin/migrations/` and `backend/migrations/` (19 old PHP migrations) → `sql/legacy/php-migrations/admin/` and `…/backend/` | Done, moved unchanged (they can no longer run from the new folder, by design). The old copies were removed from the production server on 2026-10-23 (kept in a dated backup) |
+| 2c | Sort loose files in `docs/` into topic folders | Done. 33 historical records moved into `mobile_offline_sync/`, `academic_tracking/`, `communication/`, `responsive_ui/`, `attendance/`, `incidents/` and `audits/`; the 16 main guides stay at the top of `docs/`. Links fixed; new CI test `test_docs_links.py` checks every relative Markdown link. Most of these records were later moved out of the repository; `incidents/` and `audits/` remain |
 | 2d | Folder guides and naming rules | Done. Guides added to the four non-website folders (`scripts/`, `sql/`, `tests/`, `Mobile/`); the README folder map now covers every top-level folder and says which are website folders; naming rules in CONTRIBUTING §9. No README inside website folders (they are served), `.github/` (GitHub would show it instead of the root README) or `vendor/` (Composer replaces it) |
 
 Known outdated comments (fix each with the next real change to that file; they are comments only and change no behaviour):

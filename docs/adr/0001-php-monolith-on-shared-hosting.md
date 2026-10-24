@@ -2,9 +2,9 @@
 
 | Status | Date | Deciders |
 |---|---|---|
-| Accepted | 2026-08-15 | Project owner |
+| Accepted | 2026-08-15 | Maintainers |
 
-> Reconstructed record (written 2026-10-22). The decision itself was made on the date shown. Evidence is cited so it can be checked; where the original rationale was not recorded, that is stated.
+> Recorded on 2026-10-22; the decision date is shown above. Evidence is cited so the decision can be checked; where the rationale is not documented, this is stated.
 
 ## Context
 

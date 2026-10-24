@@ -2,9 +2,9 @@
 
 | Status | Date | Deciders |
 |---|---|---|
-| Accepted | 2026-10-22 | Project owner |
+| Accepted | 2026-10-22 | Maintainers |
 
-> Reconstructed record (written 2026-10-22). The decision itself was made on the date shown. Evidence is cited so it can be checked; where the original rationale was not recorded, that is stated.
+> Recorded on 2026-10-22; the decision date is shown above. Evidence is cited so the decision can be checked; where the rationale is not documented, this is stated.
 
 ## Context
 
@@ -13,7 +13,7 @@ Marks above an assessment's maximum could be saved, and students with blank mark
 ## Decision
 
 - The server refuses any mark above the maximum with HTTP 422 and saves nothing; web and mobile show the limit live.
-- A blank mark is shown as **"Did not take"** on report cards and class reports and is **excluded** from the total (owner decision D1).
+- A blank mark is shown as **"Did not take"** on report cards and class reports and is **excluded** from the total.
 - Long lists are paginated everywhere.
 
 ## Consequences
