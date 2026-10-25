@@ -373,7 +373,7 @@ class SchoolCalendarService
     {
         self::primeRange($conn, $from, $to);
         $weekdayCounts = self::weekdayClassCounts($conn);   // ISO weekday => classes meeting
-        $makeupCounts = self::$range['mk'] ?? [];            // Y-m-d => makeup classes
+        $makeupCounts = self::makeupClassCounts(self::$range['mkClass'] ?? []); // Y-m-d => classes with a makeup
         $out = [];
         $d = new \DateTime($from);
         $end = new \DateTime($to);
@@ -395,21 +395,52 @@ class SchoolCalendarService
             if ($entry === null) {
                 $dow = (int)$d->format('N');
                 $classes = $weekdayCounts[$dow] ?? 0;
-                if (isset($makeupCounts[$ymd])) {
-                    $entry = ['type' => 'school', 'kind' => 'makeup', 'label' => 'School day',
-                        'detail' => $makeupCounts[$ymd] . ' makeup class' . ($makeupCounts[$ymd] > 1 ? 'es' : ''),
-                        'classes' => $makeupCounts[$ymd]];
-                } elseif ($classes > 0) {
-                    $entry = ['type' => 'school', 'kind' => 'regular', 'label' => 'School day',
-                        'detail' => $classes . ' class' . ($classes > 1 ? 'es' : '') . ' meet',
-                        'classes' => $classes];
-                } else {
-                    $entry = ['type' => 'neutral', 'kind' => 'none', 'label' => 'Neutral',
-                        'detail' => 'No class meets on this day'];
-                }
+                $entry = self::schoolDayEntry($classes, $makeupCounts[$ymd] ?? 0);
             }
             $out[$ymd] = $entry;
             $d->modify('+1 day');
+        }
+        return $out;
+    }
+
+    /**
+     * School-view entry for a day that is not off. $classes = active classes
+     * whose saved working days include the weekday; $makeupClasses = classes
+     * with at least one makeup lesson on the date. A makeup day keeps the
+     * regular count in its text.
+     *
+     * @return array{type:string,kind:string,label:string,detail:string,classes?:int,makeup_classes?:int}
+     */
+    public static function schoolDayEntry(int $classes, int $makeupClasses): array
+    {
+        $meet = $classes . ($classes === 1 ? ' class meets' : ' classes meet');
+        if ($makeupClasses > 0) {
+            $makeup = $makeupClasses . ' makeup class' . ($makeupClasses === 1 ? '' : 'es');
+            return ['type' => 'school', 'kind' => 'makeup', 'label' => 'School day',
+                'detail' => $classes > 0 ? $meet . ' · ' . $makeup : $makeup,
+                'classes' => $classes, 'makeup_classes' => $makeupClasses];
+        }
+        if ($classes > 0) {
+            return ['type' => 'school', 'kind' => 'regular', 'label' => 'School day',
+                'detail' => $meet, 'classes' => $classes];
+        }
+        return ['type' => 'neutral', 'kind' => 'none', 'label' => 'Neutral',
+            'detail' => 'No class meets on this day'];
+    }
+
+    /**
+     * Y-m-d => number of distinct classes with at least one makeup lesson.
+     * Makeups are stored one row per lesson, keyed here as "classId:Y-m-d".
+     *
+     * @param array<string,bool> $classDateKeys
+     * @return array<string,int>
+     */
+    public static function makeupClassCounts(array $classDateKeys): array
+    {
+        $out = [];
+        foreach (array_keys($classDateKeys) as $key) {
+            $date = substr((string)$key, (int)strpos((string)$key, ':') + 1);
+            $out[$date] = ($out[$date] ?? 0) + 1;
         }
         return $out;
     }
