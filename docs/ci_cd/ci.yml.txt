@@ -1,4 +1,4 @@
-# CI gate for SSMS — runs on every push and pull request.
+# CI gate for FKSS — runs on every push and pull request.
 #
 # Purpose: nothing broken reaches `main`. Every job here is a BLOCKER;
 # if one fails the pull request cannot be merged.

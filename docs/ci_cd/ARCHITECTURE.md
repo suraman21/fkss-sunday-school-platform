@@ -1,4 +1,4 @@
-# CI/CD architecture for SSMS
+# CI/CD architecture for FKSS
 
 > **Historical design proposal (marked 2026-10-22).** Written on 2026-09-05 as a proposal ("nothing here is built yet"). It is retained unchanged. The CI that actually exists, and its current status, are described in [DEVELOPMENT_AND_TESTING.md](../DEVELOPMENT_AND_TESTING.md).
 
@@ -338,7 +338,7 @@ never in the repo):
 - the Android **keystore** (`.jks`) and its passwords — **must be the
   same keystore every time**, or Android refuses to install the update
   over the existing app
-- how the APK reaches `/home/arkeonet/fkss_releases/fkss.apk`
+- how the APK reaches `<account-home>/fkss_releases/fkss.apk`
 
 If the keystore was ever lost, say so early — it changes the plan, and
 existing users would have to uninstall before updating.

@@ -1,11 +1,11 @@
 # Production incident — Academic Tracking detail views fail
 
-**Target:** `https://felegekidusan.arkeonethiopia.com/admin/dashboard.php?section=academic-tracking`
+**Target:** `<site>/admin/dashboard.php?section=academic-tracking`
 **Symptom:** Teacher, Subject and Class *detail* panels all render "Details unavailable / Could not load this X right now." Root *lists* work.
-**Evidence base:** `uploads/production_database.md` (phpMyAdmin dump of `arkeonet_felegekidusan`, MariaDB 11.4.13 / PHP 8.4.25, generated 2026-10-02) + the repository at `origin/main = d0373d9`.
+**Evidence base:** a phpMyAdmin dump of the production database (MariaDB 11.4.13 / PHP 8.4.25, generated 2026-10-02) + the repository at `origin/main = d0373d9`.
 **Status:** diagnosed, reproduced locally against a database loaded from the production dump, and fixed in code. Migration `056` still has to be applied to production by the operator.
 
-**Labelling:** every claim is marked **FACT**, **INFERENCE — REQUIRES VERIFICATION**, or **UNKNOWN — NOT VERIFIED FROM SOURCE**, per the Master Codebase Understanding Protocol. No code was changed.
+**Labelling:** every claim is marked **FACT**, **INFERENCE — REQUIRES VERIFICATION**, or **UNKNOWN — NOT VERIFIED FROM SOURCE**. No code was changed.
 
 ---
 

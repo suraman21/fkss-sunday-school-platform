@@ -82,7 +82,7 @@ After applying migrations `051`, `059`, and `060` to an authorized staging
 database:
 
 ```bash
-cd "/path/to/deployed/SSMS"
+cd "/path/to/deployed/project"
 /usr/local/bin/php admin/backend/mobile_telemetry_retention.php
 printf 'exit=%s\n' "$?"
 ```

@@ -1,4 +1,4 @@
-# Search-as-you-type without flooding the database (P43)
+# Search-as-you-type without flooding the database
 
 How Google, Algolia and Elasticsearch-backed products keep instant
 search cheap — and what this codebase now does.

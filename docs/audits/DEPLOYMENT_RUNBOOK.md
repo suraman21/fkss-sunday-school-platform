@@ -1,4 +1,4 @@
-# 🚀 Go-Live Runbook — WBSS / FKSS
+# Go-Live Runbook — FKSS
 
 > **Historical go-live runbook (marked 2026-10-22).** This 2026-10-06 runbook is retained unchanged. Individual steps may still be useful, but it is **not** the current procedure. Verify each step against [OPERATIONS.md](../OPERATIONS.md) and [DATABASE.md](../DATABASE.md) before using it.
 
@@ -122,7 +122,7 @@ chmod 755 admin/uploads admin/uploads/members admin/uploads/members/photos \
           'idx_members_archive_type_id','ft_members_directory');
          SHOW INDEX FROM class_enrollments
          WHERE Key_name = 'idx_ce_member_year_status_id';
-[ ] 4.6  (P66 hymn art — release phase7-art01) Run
+[ ] 4.6  (hymn art) Run
          sql/040_mezmur_hymn_art.sql (guarded and idempotent — safe on a
          live database, old or new code keeps working either way because
          every reader is probe-guarded). It adds the five art_* columns to
@@ -220,9 +220,9 @@ in this order:
 2. `MEMBER_PRIVATE_STORAGE_PATH/profiles`, when configured; or
 3. the fallback `ssms_private/profiles` directory beside the project/web root.
 
-For this production installation the application root is
-`/home/arkeonet/felegekidusan.arkeonethiopia.com`, so the unoverridden fallback
-resolves to `/home/arkeonet/ssms_private/profiles`. If either trusted server
+In the commands below, `<app-root>` is the deployed project root and
+`<account-home>` is its parent directory, so the unoverridden fallback
+resolves to `<account-home>/ssms_private/profiles`. If either trusted server
 constant overrides that location, verify the configured absolute path instead.
 The root must remain outside the public web root and writable only by the
 application/maintenance account. The command refuses web execution and must
@@ -234,10 +234,10 @@ never from a web request:
 
 ```bash
 umask 077
-install -d -m 0700 /home/arkeonet/ssms_private
-install -d -m 0700 /home/arkeonet/ssms_private/profiles
-stat -c '%a %U %G %n' /home/arkeonet/ssms_private /home/arkeonet/ssms_private/profiles
-find /home/arkeonet/ssms_private/profiles -maxdepth 1 -type f -printf '%m %f\n'
+install -d -m 0700 <account-home>/ssms_private
+install -d -m 0700 <account-home>/ssms_private/profiles
+stat -c '%a %U %G %n' <account-home>/ssms_private <account-home>/ssms_private/profiles
+find <account-home>/ssms_private/profiles -maxdepth 1 -type f -printf '%m %f\n'
 ```
 
 Both directories must be mode `700` and owned by the deployment account.
@@ -269,10 +269,10 @@ replaced with the exact path printed by `command -v php` when they differ.
 Install this daily entry in cPanel → Cron Jobs:
 
 ```cron
-17 3 * * * umask 077 && /usr/local/bin/php "/home/arkeonet/felegekidusan.arkeonethiopia.com/admin/backend/profile_image_cleanup.php" >> "/home/arkeonet/profile_image_cleanup.log" 2>&1
+17 3 * * * umask 077 && /usr/local/bin/php "<app-root>/admin/backend/profile_image_cleanup.php" >> "<account-home>/profile_image_cleanup.log" 2>&1
 ```
 
-The log deliberately lives at `/home/arkeonet/profile_image_cleanup.log`,
+The log deliberately lives at `<account-home>/profile_image_cleanup.log`,
 outside the application and public web root. Do not redirect it into the
 repository, `admin/uploads`, or any other web-served directory. Configure
 host-level log rotation/retention for this file if required.
@@ -282,7 +282,7 @@ host-level log rotation/retention for this file if required.
 Run from the actual deployed project root:
 
 ```bash
-cd "/home/arkeonet/felegekidusan.arkeonethiopia.com"
+cd "<app-root>"
 command -v php
 php -v
 php -m | grep -Fx mysqli
@@ -315,9 +315,9 @@ wait for the other process to finish and retry once.
 After the first 03:17 run, execute:
 
 ```bash
-stat "/home/arkeonet/profile_image_cleanup.log"
-tail -n 1 "/home/arkeonet/profile_image_cleanup.log"
-grep -c '^Profile-image cleanup failed\.$' "/home/arkeonet/profile_image_cleanup.log"
+stat "<account-home>/profile_image_cleanup.log"
+tail -n 1 "<account-home>/profile_image_cleanup.log"
+grep -c '^Profile-image cleanup failed\.$' "<account-home>/profile_image_cleanup.log"
 ```
 
 Confirm all of the following:
@@ -327,7 +327,7 @@ Confirm all of the following:
 2. the final line is valid aggregate JSON with `lock_acquired:true`;
 3. only the five documented fields are present;
 4. the log remains outside
-   `/home/arkeonet/felegekidusan.arkeonethiopia.com`; and
+   `<app-root>`; and
 5. the failure count did not increase for that run.
 
 The final log line plus the log modification time is the authoritative status
