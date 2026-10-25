@@ -33,7 +33,7 @@ $roleLabels = [
     'hr_dept' => 'HR Department', 'edu_dept' => 'Education Department', 'mezmur_dept' => 'Mezmur Department',
     'teacher' => 'Teacher', 'attendance_taker' => 'Attendance Taker',
 ];
-$assetVer = '20261021dc';
+$assetVer = '20261026lg';
 $schoolName = defined('SCHOOL_NAME_SHORT') ? SCHOOL_NAME_SHORT : 'SSMS';
 ?>
 <!DOCTYPE html>

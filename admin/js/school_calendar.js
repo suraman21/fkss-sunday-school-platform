@@ -202,8 +202,11 @@
     Array.prototype.forEach.call($('sc-days').querySelectorAll('.sc-day.clickable'), function (el) {
       el.addEventListener('click', function () { openDayDialog(el.getAttribute('data-date')); });
     });
+    var schoolDayKey = state.classId > 0
+      ? 'School day — classes meet per the timetable'
+      : 'School day — number of classes whose saved working days include this weekday';
     $('sc-legend').innerHTML =
-      '<span><i style="background:#f0fdf4;border-color:#bbf7d0"></i>School day — classes meet per the timetable</span>'
+      '<span><i style="background:#f0fdf4;border-color:#bbf7d0"></i>' + schoolDayKey + '</span>'
       + '<span><i style="background:#f0fdfa;border-color:#99f6e4"></i>School day (makeup class)</span>'
       + '<span><i style="background:#faf5ff;border-color:#e9d5ff"></i>Holiday / vacation</span>'
       + '<span><i style="background:#fff7ed;border-color:#fed7aa"></i>Day Off</span>'
