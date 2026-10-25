@@ -154,4 +154,4 @@ post-deploy health verification             (runbook STAGE 5)
 
 - `docs/ci_cd/ARCHITECTURE.md`, `docs/ci_cd/GIT_CHEATSHEET.md` — development workflow
 - `docs/audits/DEPLOYMENT_RUNBOOK.md` — server-side go-live procedure
-- `Mobile/HOW_TO_SHIP_AN_UPDATE.md` — current manual deployment procedure
+- `docs/OPERATIONS.md` — current deployment procedure (server code and mobile releases)

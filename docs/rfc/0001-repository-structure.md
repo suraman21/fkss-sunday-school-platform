@@ -124,5 +124,6 @@ Known outdated comments (fix each with the next real change to that file; they a
 - `admin/backend/services/AttendanceRiskService.php` line 53 still says `tools/attendance_rollout_2026.php` (now `scripts/`).
 - `admin/components/notification_center.php` line 6 refers to a design record that is no longer in the repository.
 - `Mobile/wbws_flutter_app/android/app/src/main/kotlin/com/arkeonethiopia/fkss/BackgroundSyncProducer.kt` line 45 refers to a design record that is no longer in the repository.
+- `env.example.php` line 110 refers to `Mobile/HOW_TO_SHIP_AN_UPDATE.md`, which is no longer in the repository; the current guide is `Mobile/wbws_flutter_app/docs/RELEASE.md`.
 
 `sql/042_notification_center.sql` line 6 mentions a design record that is no longer in the repository. It is an applied migration, a dated record, so it is not changed.

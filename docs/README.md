@@ -80,7 +80,6 @@ Open security findings are tracked privately, not in this repository (see [SECUR
 | [audits/AUTH_OUTBOX_BUILD24_ROLLOUT_RUNBOOK.md](audits/AUTH_OUTBOX_BUILD24_ROLLOUT_RUNBOOK.md) | Historical (build 24 rollout) |
 | [audits/DEPLOYMENT_RUNBOOK.md](audits/DEPLOYMENT_RUNBOOK.md) | Superseded by [OPERATIONS.md](OPERATIONS.md) |
 | Mobile fleet telemetry: [release gate](audits/MOBILE_FLEET_TELEMETRY_STAGE0_RELEASE_GATE.md), [staging evidence](audits/MOBILE_FLEET_TELEMETRY_STAGE1_STAGING_EVIDENCE.md), [integrity hardening](audits/MOBILE_FLEET_TELEMETRY_INTEGRITY_HARDENING.md), [retention](audits/MOBILE_FLEET_TELEMETRY_RETENTION.md) | Reference |
-| [Mobile/HOW_TO_SHIP_AN_UPDATE.md](../Mobile/HOW_TO_SHIP_AN_UPDATE.md) | Superseded by [OPERATIONS.md §5](OPERATIONS.md#5-mobile-release) |
 
 ## 8. Sources of truth
 

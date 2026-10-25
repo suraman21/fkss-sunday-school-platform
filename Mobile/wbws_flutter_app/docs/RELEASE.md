@@ -1,4 +1,4 @@
-# FKSS Android Release Guide (P65)
+# FKSS Android Release Guide
 
 **The one rule:** a build that has not come out of `scripts\build-release.ps1`
 is not a release. `flutter run --release` on a dev machine builds **only the
@@ -50,6 +50,12 @@ reports in **Profile → App → Version** (see the golden rule below). Raise
 `min_build` only when old phones **must** update (security fix) — that is
 the force-update lever. `force_update: true` forces everyone on the
 current version.
+
+The super admin can do the same from the web app-release manager
+(`admin/api_app_release.php`): it uploads the APK into `fkss_releases/` and
+writes the same `.fkss_app_release.php`. Settings that need no new APK:
+`banner_text` (message at the top of the app), `release_notes` (text on the
+update screen) and `tiles` (which Education tiles the app shows).
 
 > **⚠ The golden rule: the numbers must match the APK.** The app compares
 > its own self-reported version (`lib/utils/config.dart`) against

@@ -1,4 +1,4 @@
-# WBWS App — Release Notes
+# FKSS App — Release Notes
 
 User-facing notes per release. Keep the newest on top. The build
 script runs the full test suite (including the version-sync pin) so
@@ -7,7 +7,7 @@ the version below must always match `pubspec.yaml` +
 
 ## 1.7.3 (build 40) — Marks: live limit, "Did not take", View only, result card
 
-Owner request 2026-10-22. Works with the server change in the same release
+Works with the server change in the same release
 (the server already refuses invalid marks with a clear message).
 
 - **Live limit on marks:** on a test out of 10, a key that would make the
@@ -35,7 +35,7 @@ Owner request 2026-10-22. Works with the server change in the same release
 - New endpoint `GET /api/v1/grades/student-results`. No schema change; no new
   packages.
 
-**Lists: Load more (same build, owner request 2026-10-22).**
+**Lists: Load more (same build).**
 
 - **Members:** the list still loads as you scroll, and now ends with
   "Showing 60 of 440 members" and a **Load more (380 left)** button
@@ -75,10 +75,10 @@ Mobile side of the Education timetable builder (web, `sql/077`). Read-only.
 - New endpoint `GET /api/v1/timetable/week` (and `/today`). No schema
   change; no new feature flag; no new packages.
 
-## 1.7.1 (build 38) — Attendance sheet reopen + review bells (Phase 3 mobile)
+## 1.7.1 (build 38) — Attendance sheet reopen + review bells
 
-Mobile side of attendance alerting Phase 3 (owner decisions Q‑1/Q‑2/Q‑3,
-2026‑10‑19). Works against the Phase 3 server (`sql/073`).
+Mobile side of the attendance sheet review changes. Requires the server
+change that adds `sql/073`.
 
 - **Reopen / reject an approved sheet** (Education and Mezmur department
   accounts only): the review detail of an *approved* attendance sheet now
@@ -99,9 +99,9 @@ Mobile side of attendance alerting Phase 3 (owner decisions Q‑1/Q‑2/Q‑3,
   belong to the department; Approve stays.
 - No schema change; no new feature flag.
 
-## 1.7.0 (build 37) — Attendance warnings (Phase 2 mobile)
+## 1.7.0 (build 37) — Attendance warnings
 
-Mobile side of the approved attendance alerting Phase 2. Everything is
+Mobile side of attendance warnings. Everything is
 behind the server feature flag `FEATURE_ATTENDANCE_V2` (`attendance_v2`
 in `/app/config`); with the flag off the app looks and behaves exactly
 like 1.6.10.
@@ -444,10 +444,9 @@ database is what you see, and the network only refreshes it.
 - Local history is capped at the newest 500 messages per
   conversation (older ones load from the server on demand).
 
-## 1.3.0 (build 22) — Communication polish (UX audit)
+## 1.3.0 (build 22) — Communication polish
 
-A full accessibility and craft pass over Messages and Notifications,
-built on a professional UI/UX audit of the feature.
+A full accessibility and design pass over Messages and Notifications.
 
 ### Readable by everyone (accessibility)
 
@@ -553,7 +552,7 @@ Communication Center feature for feature.
 
 ### Notes for this release
 
-- Server side: requires the current SSMS server (P73+); the new
+- Server side: requires a server with migrations `043`–`045` applied; the new
   message features degrade gracefully — the app simply doesn't show
   them — if the server is older, except the compile fix, which is
   client-only.

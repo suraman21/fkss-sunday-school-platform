@@ -1,14 +1,14 @@
 # FKSS Mobile App
 
-Flutter client for the Sunday School Management System. The app supports
+Flutter client for FKSS (Felege Kidusan Sunday School). The app supports
 role-based online workflows plus offline attendance, grades, and roster caches.
 
 ## Local-data security
 
 The offline database (`wbws_offline_v4.db`) is a **cache** of server data plus
 temporary unsynced attendance/grade drafts. It lives in the app's private
-sandbox and is protected at rest by the device's own file-based encryption —
-the mainstream pattern used by large consumer apps (Google, Meta). The server
+sandbox and is protected at rest by the device's own file-based encryption,
+the standard approach on Android. The server
 remains the source of truth; synced data can always be re-fetched after a
 reinstall.
 
@@ -36,7 +36,7 @@ What is still protected:
 
 ## Required release checks
 
-Use Flutter 3.27 or newer and build 1.1.15+17 or later.
+Use Flutter 3.27 or newer (the minimum in `pubspec.yaml`); CI uses 3.44.9.
 
 ```bash
 flutter pub get
