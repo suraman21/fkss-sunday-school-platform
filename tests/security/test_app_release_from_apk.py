@@ -328,6 +328,12 @@ class ReleaseWiringTests(unittest.TestCase):
         for key in ("latest_version", "latest_build", "min_version", "min_build", "force_update"):
             self.assertTrue(f"'{key}' => $phone['{key}']," in src, key)
 
+    def test_dashboard_loads_the_updated_script(self):
+        # A new cache tag makes browsers fetch the script that sends the
+        # background-sync checkbox and shows the version read from the APK.
+        page = (ROOT / "admin/dashboards/super-admin.php").read_text(encoding="utf-8")
+        self.assertTrue('src="/admin/js/app_release.js?v=20261026rel"' in page)
+
     def test_drains_checkbox_is_always_sent_and_read(self):
         js = (ROOT / "admin/js/app_release.js").read_text(encoding="utf-8")
         self.assertTrue("formData.set('background_drains_enabled', drainsEl && drainsEl.checked ? '1' : '0');" in js)
