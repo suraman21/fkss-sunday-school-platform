@@ -16,6 +16,7 @@ if ($method === 'GET' && ($action === 'config' || $action === '' || $action === 
     }
     header('Cache-Control: no-store');
     $rel = fkssLoadAppRelease();
+    $phone = fkssPhoneUpdatePolicy($rel);
     $rel['tiles'] = \App\Services\FeatureGate::filterMobileTiles($rel['tiles'] ?? []);
     $features = \App\Services\FeatureGate::mobileCapabilities();
     // Release-owned emergency containment. This is intentionally separate
@@ -40,11 +41,12 @@ if ($method === 'GET' && ($action === 'config' || $action === '' || $action === 
         'sync_instance_id' => \App\Services\SyncInstanceService::instanceId(
             isset($conn) && $conn instanceof \mysqli ? $conn : null
         ),
-        'latest_version' => $rel['latest_version'],
-        'latest_build' => $rel['latest_build'],
-        'min_version' => $rel['min_version'],
-        'min_build' => $rel['min_build'],
-        'force_update' => $rel['force_update'],
+        // Phone-facing update rule (never blocks without a downloadable file).
+        'latest_version' => $phone['latest_version'],
+        'latest_build' => $phone['latest_build'],
+        'min_version' => $phone['min_version'],
+        'min_build' => $phone['min_build'],
+        'force_update' => $phone['force_update'],
         'release_notes' => $rel['release_notes'],
         'download_available' => $rel['download_available'],
         'download_path' => '/app/download',

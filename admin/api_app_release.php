@@ -76,11 +76,15 @@ try {
                 'min_version' => $_POST['min_version'] ?? '',
                 'min_build' => $_POST['min_build'] ?? '',
                 'force_update' => !empty($_POST['force_update']),
-                'background_drains_enabled' => isset($_POST['background_drains_enabled']) ? (bool)$_POST['background_drains_enabled'] : true,
                 'release_notes' => $_POST['release_notes'] ?? '',
                 'banner_text' => $_POST['banner_text'] ?? '',
                 'banner_kind' => $_POST['banner_kind'] ?? 'info',
             ];
+            // The dashboard always sends "1" or "0"; when the field is absent
+            // (an older cached page) the current value is kept.
+            if (isset($_POST['background_drains_enabled'])) {
+                $input['background_drains_enabled'] = (string)$_POST['background_drains_enabled'] === '1';
+            }
 
             // Danger confirmation (HIGH, conditional): turning Force update ON
             // or changing the minimum version/build decides which installed

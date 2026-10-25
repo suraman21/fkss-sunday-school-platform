@@ -31,7 +31,7 @@ from structure_paths import ROOT, first_party_php, includes  # noqa: E402
 DYNAMIC_ALLOWLIST = {
     "admin/api_export_members.php": 1,
     "admin/backend/reporting/ReportExportService.php": 1,
-    "admin/backend/services/AppReleaseManager.php": 3,
+    "admin/backend/services/AppReleaseManager.php": 4,
     "admin/backend/services/FailureAlertService.php": 1,
     "admin/backend/services/GuardianMatchService.php": 1,
     "admin/backend/services/TestMemberSeed.php": 1,

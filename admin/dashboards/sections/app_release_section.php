@@ -5,6 +5,7 @@
 $arProjectRoot = defined('ROOT_PATH') ? ROOT_PATH : dirname(__DIR__, 2);
 require_once $arProjectRoot . '/admin/backend/services/AppReleaseManager.php';
 $arRelease = \App\Services\AppReleaseManager::getReleaseInfo($arProjectRoot);
+$arFromApk = ($arRelease['version_source'] ?? '') === 'apk';
 ?>
 <style>
 /* ═══ App Release UI Custom Styles (High Contrast & Professional Ergonomics) ═══ */
@@ -380,15 +381,17 @@ $arRelease = \App\Services\AppReleaseManager::getReleaseInfo($arProjectRoot);
                     <label class="ar-label" for="cfg-latest-version">
                         <i class="fa-solid fa-tag" style="color:#94a3b8;font-size:0.75rem"></i> Latest Version String <span class="req">*</span>
                     </label>
-                    <input type="text" name="latest_version" id="cfg-latest-version" class="ar-input" value="<?= htmlspecialchars((string)($arRelease['latest_version'] ?? '1.5.1')) ?>" placeholder="1.5.1" required>
-                    <span class="ar-help">Must match <code>version: X.Y.Z</code> in pubspec.yaml</span>
+                    <input type="text" name="latest_version" id="cfg-latest-version" class="ar-input" value="<?= htmlspecialchars((string)($arRelease['latest_version'] ?? '1.5.1')) ?>" placeholder="1.5.1" required<?= $arFromApk ? ' readonly' : '' ?>>
+                    <span class="ar-help" id="cfg-version-source"><?= $arFromApk
+                        ? 'Read from the published APK (' . htmlspecialchars((string)($arRelease['apk_package'] ?? '')) . '). Upload a new APK to change it.'
+                        : 'No readable APK is published, so this typed value is used.' ?></span>
                 </div>
                 <div class="ar-form-group">
                     <label class="ar-label" for="cfg-latest-build">
                         <i class="fa-solid fa-code-commit" style="color:#94a3b8;font-size:0.75rem"></i> Latest Build Number (VersionCode) <span class="req">*</span>
                     </label>
-                    <input type="number" name="latest_build" id="cfg-latest-build" class="ar-input" value="<?= htmlspecialchars((string)($arRelease['latest_build'] ?? '25')) ?>" placeholder="25" min="1" required>
-                    <span class="ar-help">Must match <code>+build</code> in pubspec.yaml</span>
+                    <input type="number" name="latest_build" id="cfg-latest-build" class="ar-input" value="<?= htmlspecialchars((string)($arRelease['latest_build'] ?? '25')) ?>" placeholder="25" min="1" required<?= $arFromApk ? ' readonly' : '' ?>>
+                    <span class="ar-help">Build number inside the APK (versionCode).</span>
                 </div>
             </div>
 

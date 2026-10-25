@@ -10,7 +10,15 @@
  * 'apk_arm32_path' let the phone download a ~2x smaller per-device build
  * (the app sends ?abi=arm64-v8a|armeabi-v7a). Old app versions ignore
  * the extra fields and keep receiving the universal file.
+ *
+ * The published version is read from the universal APK itself
+ * (apk_manifest.php); the typed latest_version / latest_build are only a
+ * fallback for a file whose manifest cannot be read. Phones are never told
+ * to update, or blocked, unless the file they need can be downloaded:
+ * see fkssPhoneUpdatePolicy().
  */
+
+require_once __DIR__ . '/apk_manifest.php';
 
 /**
  * Size + SHA-256 of an APK, with a sidecar cache so an ~80MB file is not
@@ -22,20 +30,23 @@
  */
 function fkssApkMeta(string $file): array
 {
+    clearstatcache(true, $file);
     $size = (int)filesize($file);
+    $mtime = (int)filemtime($file);
     $sidecar = $file . '.meta';
+    // "<sha256> <size> <mtime>": a replaced file of the same size is re-hashed.
     if (is_file($sidecar)) {
         $parts = preg_split('/\s+/', trim((string)@file_get_contents($sidecar)));
         if (
-            is_array($parts) && count($parts) === 2
+            is_array($parts) && count($parts) === 3
             && strlen((string)$parts[0]) === 64 && ctype_xdigit((string)$parts[0])
-            && (int)$parts[1] === $size
+            && (int)$parts[1] === $size && (int)$parts[2] === $mtime
         ) {
             return ['size' => $size, 'sha256' => strtolower((string)$parts[0])];
         }
     }
     $sha = hash_file('sha256', $file);
-    @file_put_contents($sidecar, $sha . ' ' . $size, LOCK_EX);
+    @file_put_contents($sidecar, $sha . ' ' . $size . ' ' . $mtime, LOCK_EX);
     return ['size' => $size, 'sha256' => $sha];
 }
 
@@ -81,7 +92,9 @@ function fkssLoadAppRelease(): array
     }
 
     $loaded = [];
+    $configFile = null;
     if ($file) {
+        $configFile = $file;
         $raw = include $file;
         if (is_array($raw)) {
             $loaded = $raw;
@@ -107,10 +120,15 @@ function fkssLoadAppRelease(): array
         $out['tiles'] = $defaults['tiles'];
     }
 
+    $out['_config_file'] = $configFile;
+
     // Universal artifact — the baseline every client can fall back to.
     $resolved = fkssResolveApkPath($out['apk_path']);
     $out['_apk_file'] = $resolved;
     $out['download_available'] = $resolved !== null;
+    $out['version_source'] = 'config';
+    $out['apk_package'] = '';
+    $universalApp = null;
 
     $artifacts = [];
     $files = [];
@@ -119,6 +137,14 @@ function fkssLoadAppRelease(): array
         $out['apk_size_bytes'] = $meta['size'];
         $out['apk_sha256'] = $meta['sha256'];
         $artifacts['universal'] = ['size_bytes' => $meta['size'], 'sha256' => $meta['sha256']];
+        // The file is the truth: advertise exactly the version it contains.
+        $universalApp = fkssApkManifestCached($resolved, $meta);
+        if ($universalApp !== null) {
+            $out['latest_version'] = preg_replace('/[^0-9.]/', '', $universalApp['version_name']) ?: $out['latest_version'];
+            $out['latest_build'] = $universalApp['version_code'];
+            $out['version_source'] = 'apk';
+            $out['apk_package'] = $universalApp['package'];
+        }
     } else {
         $out['apk_size_bytes'] = 0;
         $out['apk_sha256'] = '';
@@ -136,6 +162,15 @@ function fkssLoadAppRelease(): array
             continue;
         }
         $meta = fkssApkMeta($abiFile);
+        // A per-ABI file is offered only when it is the same app and build as
+        // the universal file; a stale split from an older release is skipped.
+        if ($universalApp !== null) {
+            $abiApp = fkssApkManifestCached($abiFile, $meta);
+            if ($abiApp === null || $abiApp['package'] !== $universalApp['package']
+                || $abiApp['version_code'] !== $universalApp['version_code']) {
+                continue;
+            }
+        }
         $files[$abi] = $abiFile;
         $artifacts[$abi] = ['size_bytes' => $meta['size'], 'sha256' => $meta['sha256']];
     }
@@ -144,6 +179,51 @@ function fkssLoadAppRelease(): array
     $out['apk_artifacts'] = $artifacts;
 
     return $out;
+}
+
+/**
+ * Compare two app versions the way the phone does (AppVersion in
+ * Mobile/wbws_flutter_app/lib/utils/version.dart): major.minor.patch, then
+ * build. Returns -1, 0 or 1.
+ */
+function fkssVersionCompare(string $versionA, int $buildA, string $versionB, int $buildB): int
+{
+    $parts = static function (string $v): array {
+        $p = explode('.', preg_replace('/[^0-9.]/', '', $v));
+        return [(int)($p[0] ?? 0), (int)($p[1] ?? 0), (int)($p[2] ?? 0)];
+    };
+    $a = $parts($versionA);
+    $a[] = $buildA;
+    $b = $parts($versionB);
+    $b[] = $buildB;
+    return $a <=> $b;
+}
+
+/**
+ * What phones are told by GET /app/config.
+ *  - No downloadable APK: no update prompt and no block (a phone cannot
+ *    install a file that does not exist).
+ *  - A minimum above the published file is lowered to the published file,
+ *    so installing the published APK always clears the block.
+ *
+ * @return array{latest_version:string,latest_build:int,min_version:string,min_build:int,force_update:bool}
+ */
+function fkssPhoneUpdatePolicy(array $rel): array
+{
+    if (empty($rel['download_available'])) {
+        return ['latest_version' => '1.0.0', 'latest_build' => 1,
+            'min_version' => '1.0.0', 'min_build' => 1, 'force_update' => false];
+    }
+    $latestV = (string)$rel['latest_version'];
+    $latestB = (int)$rel['latest_build'];
+    $minV = (string)$rel['min_version'];
+    $minB = (int)$rel['min_build'];
+    if (fkssVersionCompare($minV, $minB, $latestV, $latestB) > 0) {
+        $minV = $latestV;
+        $minB = $latestB;
+    }
+    return ['latest_version' => $latestV, 'latest_build' => $latestB,
+        'min_version' => $minV, 'min_build' => $minB, 'force_update' => !empty($rel['force_update'])];
 }
 
 /** Only files under an allowed folder, ending in .apk, may be served. */

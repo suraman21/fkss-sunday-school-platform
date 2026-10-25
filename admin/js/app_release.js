@@ -740,6 +740,8 @@
           '<div style="font-size:1.2rem;font-weight:700;color:#f8fafc;letter-spacing:0.02em">Version ' + escapeHtml(data.latest_version) + ' <span style="font-size:.85rem;color:#94a3b8;font-weight:400">(Build ' + escapeHtml(data.latest_build) + ')</span></div>' +
           '<div style="font-size:.775rem;color:#cbd5e1;margin-top:.3rem">Min required: v' + escapeHtml(data.min_version) + ' (Build ' + escapeHtml(data.min_build) + ')' +
           (data.force_update ? ' • <span style="color:#f87171;font-weight:700"><i class="fa-solid fa-triangle-exclamation"></i> Mandatory Update Gate</span>' : '') + '</div>' +
+          (data.apk_package ? '<div style="font-size:.75rem;color:#94a3b8;margin-top:.3rem">App in the file: <code>' + escapeHtml(data.apk_package) + '</code></div>' : '') +
+          this._renderPhonePolicy(data) +
         '</div>' +
         '<div>' +
           (data.download_available
@@ -782,6 +784,21 @@
       container.innerHTML = html;
     },
 
+    // The rule phones actually receive from /api/v1/app/config.
+    _renderPhonePolicy: function (data) {
+      var p = data.phone_policy;
+      if (!p) return '';
+      var text;
+      if (!data.download_available) {
+        text = 'No APK is published, so phones are not asked to update and nobody is blocked.';
+      } else {
+        text = 'Phones older than v' + p.min_version + ' (build ' + p.min_build + ') must update' +
+          (p.force_update ? '; Force update also blocks phones older than v' + p.latest_version + ' (build ' + p.latest_build + ').' :
+            '; others see an optional update to v' + p.latest_version + ' (build ' + p.latest_build + ').');
+      }
+      return '<div id="ar-phone-policy" style="font-size:.75rem;color:#cbd5e1;margin-top:.3rem"><strong>What phones see now:</strong> ' + escapeHtml(text) + '</div>';
+    },
+
     _renderArtifactItem: function (label, art, abi) {
       return '<div style="display:flex;align-items:center;justify-content:space-between;padding:.75rem 1rem;margin-bottom:.5rem;background:#0f172a;border-radius:.5rem;border:1px solid #334155;border-left:4px solid #38bdf8">' +
         '<div style="min-width:0;flex:1">' +
@@ -810,6 +827,18 @@
       AppReleaseUI._cfg = { min_version: String(data.min_version || ''), min_build: parseInt(data.min_build, 10) || 0, force_update: !!data.force_update };
       setVal('cfg-latest-version', data.latest_version);
       setVal('cfg-latest-build', data.latest_build);
+      // Taken from the uploaded APK: shown, not typed.
+      var fromApk = data.version_source === 'apk';
+      ['cfg-latest-version', 'cfg-latest-build'].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) el.readOnly = fromApk;
+      });
+      var srcHint = document.getElementById('cfg-version-source');
+      if (srcHint) {
+        srcHint.textContent = fromApk
+          ? 'Read from the published APK (' + (data.apk_package || '') + '). Upload a new APK to change it.'
+          : 'No readable APK is published, so this typed value is used.';
+      }
       setVal('cfg-min-version', data.min_version);
       setVal('cfg-min-build', data.min_build);
       setChecked('cfg-force-update', data.force_update);
@@ -854,6 +883,8 @@
 
       var form = document.getElementById('form-release-config');
       var formData = new FormData(form);
+      var drainsEl = document.getElementById('cfg-drains-enabled');
+      formData.set('background_drains_enabled', drainsEl && drainsEl.checked ? '1' : '0');
       formData.append('action', 'save_config');
       if (phrase) formData.append('confirm_phrase', phrase);
 
