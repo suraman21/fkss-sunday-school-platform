@@ -222,6 +222,9 @@
     var days = this.pendingDays || s.working_days;
     var dirty = !!this.pendingDays && this.pendingDays.join(',') !== s.working_days.join(',');
     var ro = this.readonly;
+    // No saved row: the days shown are only the default, and attendance is
+    // blocked until they are saved, so Save must be offered even unchanged.
+    var unsaved = s.days_saved === false && !ro;
     var h = '<div class="tt-wrap">';
     h += '<div class="tt-head tt-noprint"><div><h2>Timetable</h2><p>Select a class, set its working days and bell schedule, then fill each day. Teachers see their schedule on their dashboard automatically.</p></div>';
     h += '<div class="tt-cls"><span class="tt-pill">' + esc(this.yearName) + '</span><select data-act="select-class">' + this.classes.map(function (x) {
@@ -231,8 +234,10 @@
 
     // Working days
     h += '<div class="tt-card tt-noprint"><div class="tt-ct"><h3>Working days — ' + esc(c.class_name_en || c.class_name) + '</h3><div class="tt-act">'
-      + (dirty ? '<button class="tt-btn ghost" data-act="cancel-days">Cancel</button><button class="tt-btn p" data-act="save-days">Save days</button>' : '')
+      + (dirty ? '<button class="tt-btn ghost" data-act="cancel-days">Cancel</button>' : '')
+      + (dirty || unsaved ? '<button class="tt-btn p" data-act="save-days">Save days</button>' : '')
       + '</div></div>'
+      + (unsaved ? '<div class="tt-warn">Working days are not saved yet. Attendance is blocked for this class until you press Save days.</div>' : '')
       + '<p class="tt-d">' + (days.length ? days.map(function (d) { return DAYS[d].slice(0, 3); }).join(' · ') : 'No days selected') + ' — the days this class meets. The grid below shows only these.</p>'
       + '<div class="tt-days">' + DAY_ORDER.map(function (d) {
         return '<button type="button" class="tt-day' + (days.indexOf(d) >= 0 ? ' on' : '') + '" data-act="toggle-day" data-day="' + d + '"' + (ro ? ' disabled' : '') + '>' + DAYS[d] + '</button>';
@@ -372,7 +377,7 @@
     this.render();
   };
   EduTimetable.prototype.saveDays = function () {
-    var self = this, days = this.pendingDays || [];
+    var self = this, days = this.pendingDays || this.setup.working_days.slice();
     var removed = this.setup.working_days.filter(function (d) { return days.indexOf(d) < 0; });
     var finish = function (d) {
       self.pendingDays = null; notify(d.message || 'Working days saved.'); return self.loadClass();

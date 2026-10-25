@@ -107,7 +107,7 @@ const EDU_SECTIONS=<?= json_encode(\App\Services\MemberCategory::sections(), JSO
 <script src="/admin/js/danger_confirm.js?v=20261022dc4"></script>
 <script src="/admin/js/score_limit.js?v=20261022s"></script>
 <script src="/admin/js/list_pager.js?v=20261022p"></script>
-<script src="/admin/js/edu_timetable.js?v=20261021dc"></script>
+<script src="/admin/js/edu_timetable.js?v=20261025wd"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+Ethiopic:wght@400;600;700&family=Poppins:wght@300;400;600;700&display=swap');
 /* Field footer: inline validation errors + live character counters (patch 8) */

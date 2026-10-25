@@ -112,6 +112,7 @@ class TimetableService
             'class_id'         => $classId,
             'academic_year_id' => $yearId,
             'working_days'     => self::workingDays($conn, $classId, $yearId),
+            'days_saved'       => self::daysSaved($conn, $classId, $yearId),
             'periods'          => self::periodsFor($conn, $classId, $yearId),
             'entries'          => self::entriesFor($conn, $classId, $yearId),
             'teachers'         => self::teachersFor($conn, $classId, $yearId),
@@ -137,6 +138,26 @@ class TimetableService
             return self::DEFAULT_DAYS;
         }
         return self::parseDays((string)$row['working_days']);
+    }
+
+    /**
+     * True when the class has a saved working-days row for the year. Without
+     * one, workingDays() shows DEFAULT_DAYS but the class-day attendance rule
+     * treats the class as not configured, so the builder must offer Save.
+     */
+    private static function daysSaved(\mysqli $conn, int $classId, int $yearId): bool
+    {
+        $stmt = $conn->prepare(
+            "SELECT 1 FROM timetable_class_days WHERE class_id = ? AND academic_year_id = ? LIMIT 1"
+        );
+        if (!$stmt) {
+            return false;
+        }
+        $stmt->bind_param('ii', $classId, $yearId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_row();
+        $stmt->close();
+        return $row !== null;
     }
 
     public static function periodsFor(\mysqli $conn, int $classId, int $yearId): array
