@@ -204,7 +204,10 @@ jobs:
           # tests/e2e/idempotency_lifecycle.php, which DROPs and re-creates
           # its own tables on every scenario. It must never be shared with
           # another harness.
-          for db in ssms_comm_e2e ssms_e2e ssms_smoke ssms_pre056_e2e ssms_idem_e2e; do
+          # ssms_calendar_e2e is the disposable target for
+          # tests/security/test_attendance_offline_calendar.py, which also
+          # DROPs and re-creates its own tables for every test.
+          for db in ssms_comm_e2e ssms_e2e ssms_smoke ssms_pre056_e2e ssms_idem_e2e ssms_calendar_e2e; do
             mysql -h 127.0.0.1 -u root -proot \
               -e "CREATE DATABASE IF NOT EXISTS \`$db\` \
                     CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

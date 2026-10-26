@@ -68,6 +68,61 @@ function apiAssertClassDay(\mysqli $conn, int $classId, string $date): void {
     }
 }
 
+/**
+ * Classes in the phone's attendance list — the same rules as GET /classes:
+ * teachers / attendance takers get their active assignments, other
+ * attendance roles get every active class.
+ *
+ * @return int[]
+ */
+function apiAttendanceClassIds(\mysqli $conn, array $auth, int $yearId): array {
+    if (apiIsClassRestricted($auth)) {
+        $stmt = $conn->prepare(
+            'SELECT DISTINCT ta.class_id FROM teacher_assignments ta
+               JOIN classes c ON c.id = ta.class_id
+              WHERE ta.teacher_id = ? AND ta.is_active = 1
+                AND (ta.academic_year_id IS NULL OR ta.academic_year_id = ?)
+              ORDER BY ta.class_id'
+        );
+        if (!$stmt) {
+            return [];
+        }
+        $uid = (int)$auth['uid'];
+        $stmt->bind_param('ii', $uid, $yearId);
+    } else {
+        $stmt = $conn->prepare('SELECT id FROM classes WHERE is_active = 1 ORDER BY id');
+        if (!$stmt) {
+            return [];
+        }
+    }
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $ids = [];
+    while ($row = $res->fetch_row()) {
+        $ids[] = (int)$row[0];
+    }
+    $stmt->close();
+    return $ids;
+}
+
+/** ETag compare that tolerates W/ and the "-gzip" suffix Apache's mod_deflate adds. */
+function apiEtagMatches(string $etag, string $ifNoneMatch): bool {
+    $norm = static function (string $v): string {
+        $v = trim($v);
+        if (stripos($v, 'W/') === 0) {
+            $v = substr($v, 2);
+        }
+        $v = trim($v, '"');
+        return (string)preg_replace('/-(gzip|br|deflate)$/', '', $v);
+    };
+    foreach (explode(',', $ifNoneMatch) as $candidate) {
+        if ($candidate !== '' && hash_equals($norm($etag), $norm($candidate))) {
+            return true;
+        }
+    }
+    return false;
+}
+
 function apiValidateAttendanceSheet(\mysqli $conn, int $classId, int $yearId, array $records, bool $requireComplete, ?string $sheetDate = null): array {
     if (!class_exists('\\App\\Services\\AttendanceRecordService')
         || !class_exists('\\App\\Services\\EnrollmentService')) {
@@ -143,6 +198,50 @@ function apiReplaceAttendanceRows(
 // ============================================================
 // GET /attendance?class_id=X&date=Y
 // ============================================================
+// ============================================================
+// GET /attendance/calendar — offline class-day calendar (mobile)
+// Same rule as the save paths (SchoolCalendarService::dayType) for the
+// classes in the phone's list, from the backdate limit to 60 days ahead.
+// Conditional: If-None-Match with the last ETag → 304 without computing.
+// ============================================================
+if ($method === 'GET' && $action === 'calendar') {
+    if (!class_exists('\\App\\Services\\SchoolCalendarService')) {
+        ok(['available' => false]);
+    }
+    if (isApiRateLimited('attendance_calendar', 30)) {
+        err('Too many requests. Please wait a moment.', 429);
+    }
+    $calendar = '\\App\\Services\\SchoolCalendarService';
+    $classIds = apiAttendanceClassIds($conn, $auth, $yearId);
+    $today = $calendar::today();
+    $revision = $calendar::calendarRevision($conn);
+    $etag = '"cal1-' . substr(sha1($revision . '|' . $today . '|' . implode(',', $classIds)), 0, 24) . '"';
+    $ifNoneMatch = (string)($_SERVER['HTTP_IF_NONE_MATCH'] ?? '');
+    if ($revision !== '') {
+        header('ETag: ' . $etag);
+        if ($ifNoneMatch !== '' && apiEtagMatches($etag, $ifNoneMatch)) {
+            http_response_code(304);
+            header('Cache-Control: no-store, no-cache, must-revalidate');
+            exit;
+        }
+    }
+    $from = date('Y-m-d', strtotime($today . ' -' . $calendar::BACKDATE_DAYS . ' days'));
+    $to = date('Y-m-d', strtotime($today . ' +' . $calendar::MOBILE_FUTURE_DAYS . ' days'));
+    $data = $calendar::mobileCalendar($conn, $classIds, $from, $to);
+    ok([
+        'available'     => true,
+        'enforced'      => $calendar::tablesReady($conn),
+        'etag'          => $revision !== '' ? $etag : null,
+        'revision'      => $revision,
+        'today'         => $today,
+        'from'          => $from,
+        'to'            => $to,
+        'backdate_days' => $calendar::BACKDATE_DAYS,
+        'classes'       => $data['classes'],
+        'school'        => (object)$data['school'],
+    ]);
+}
+
 if ($method === 'GET' && ($action === '' || $action === null)) {
     $classId = (int)($_GET['class_id'] ?? 0);
     $date = validateDate($_GET['date'] ?? '', date('Y-m-d'));

@@ -248,6 +248,113 @@ class SchoolCalendarService
         return array_merge($base, ['ok' => true, 'code' => 'OK']);
     }
 
+    /** One character per date in the mobile offline calendar (see mobileCalendar()). */
+    public const MOBILE_DAY_CODES = [
+        'NOT_CLASS_DAY'  => 'n',
+        'NOT_CONFIGURED' => 'c',
+        'DAY_OFF'        => 'd',
+        'HOLIDAY'        => 'h',
+    ];
+    /** Days after "today" covered by the mobile offline calendar. */
+    public const MOBILE_FUTURE_DAYS = 60;
+
+    /**
+     * Offline class-day calendar for the mobile app. For each class, one
+     * character per date from $from to $to, computed with dayType() — the
+     * same rule the save paths enforce:
+     *   o class day, m makeup class day (both allowed),
+     *   n not a class day, c working days not set, d Day Off, h holiday,
+     *   x any other verdict (the phone leaves the decision to the server).
+     * Day Off / holiday texts are school-wide, so they are sent once per date.
+     *
+     * @param int[] $classIds
+     * @return array{classes: list<array{class_id:int,days:string}>, school: array<string,string>}
+     */
+    public static function mobileCalendar(\mysqli $conn, array $classIds, string $from, string $to): array
+    {
+        self::primeRange($conn, $from, $to);
+        $classes = [];
+        $school = [];
+        foreach ($classIds as $classId) {
+            $days = '';
+            foreach (self::classDaysForMonth($conn, (int)$classId, $from, $to) as $ymd => $st) {
+                if (!empty($st['ok'])) {
+                    $code = !empty($st['is_makeup']) ? 'm' : 'o';
+                } else {
+                    $code = self::MOBILE_DAY_CODES[$st['code'] ?? ''] ?? 'x';
+                }
+                if ($code === 'd' || $code === 'h') {
+                    $school[$ymd] = (string)($st['detail'] ?? '');
+                }
+                $days .= $code;
+            }
+            $classes[] = ['class_id' => (int)$classId, 'days' => $days];
+        }
+        ksort($school);
+        return ['classes' => $classes, 'school' => $school];
+    }
+
+    /**
+     * Fingerprint of every input of dayType(): working days, makeup classes,
+     * Day Offs, holidays and the active academic year. The tables have no
+     * reliable change timestamp, so row count, highest id and a CRC sum of
+     * the columns the rule reads are used; together they also catch edited
+     * and deleted rows. Two small queries; missing tables are skipped.
+     * Returns '' when the fingerprint cannot be computed (no 304 then).
+     */
+    public static function calendarRevision(\mysqli $conn): string
+    {
+        $columns = [
+            'timetable_class_days'     => "id,class_id,academic_year_id,working_days",
+            'timetable_makeup_classes' => "id,class_id,lesson_date",
+            self::DAY_OFFS             => "id,day_date,is_off,cancel_makeup,COALESCE(reason,'')",
+            self::HOLIDAYS             => "id,date_from,date_to,title,COALESCE(title_am,'')",
+        ];
+        try {
+            $present = [];
+            $res = $conn->query(
+                "SELECT TABLE_NAME FROM information_schema.TABLES
+                  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ('"
+                . implode("','", array_keys($columns)) . "')"
+            );
+            if (!$res) {
+                return '';
+            }
+            while ($row = $res->fetch_row()) {
+                $present[(string)$row[0]] = true;
+            }
+            $res->free();
+            $values = [];
+            $selects = [];
+            foreach ($columns as $table => $cols) {
+                if (isset($present[$table])) {
+                    $selects[] = "(SELECT CONCAT(COUNT(*),'.',COALESCE(MAX(id),0),'.',"
+                        . "COALESCE(SUM(CRC32(CONCAT_WS('|',{$cols}))),0)) FROM `{$table}`) AS `{$table}`";
+                } else {
+                    $values[$table] = 'absent';
+                }
+            }
+            if ($selects !== []) {
+                $res = $conn->query('SELECT ' . implode(', ', $selects));
+                $row = $res ? $res->fetch_assoc() : null;
+                if ($res) {
+                    $res->free();
+                }
+                if (!is_array($row)) {
+                    return '';
+                }
+                $values += $row;
+            }
+        } catch (\Throwable $e) {
+            return '';
+        }
+        ksort($values);
+        $year = self::activeYearRow($conn);
+        $values['academic_year'] = $year === null ? 'none' : $year['id'] . '|' . $year['from'] . '|' . $year['to'];
+        $values['rule'] = 'v1';
+        return substr(sha1((string)json_encode($values)), 0, 20);
+    }
+
     /**
      * Status map for one EC month: [Y-m-d => status] — fast path for grids.
      * Unknown/absent keys mean "outside the month".
