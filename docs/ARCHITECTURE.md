@@ -32,6 +32,14 @@ The server is a PHP monolith with shared services and database access; the mobil
 | Domain services | `admin/backend/services/*.php` | For example `RefreshTokenService`, `SecurityRateLimiter`, `AdminSessionGuard`, `SecurityAuditService`, `BackupService`, `FailureAlertService`, `MezmurMediaService`, `MemberFileService`. Verified |
 | Libraries | `vendor/` (Composer, committed); `admin/backend/pdf/tcpdf`; phpqrcode (`admin/id_cards/libs/`; the duplicate copy in `backend/id_cards/libs/` was removed 2026-10-23) | There is no Composer run on the server. Verified |
 
+### Browser page addresses (development change, 2026-10-30)
+
+The finite registry in [BrowserPageRoutes.php](../admin/backend/services/BrowserPageRoutes.php) maps browser pages to same-directory aliases, such as `/admin/login`, `/admin/member?id=123` and `/admin/dashboards/education`. Root/admin rewrite rules send only the supported route shapes through [browser_page.php](../browser_page.php); the dispatcher rejects unknown paths and restores the actual legacy PHP script identity and working directory **before** existing authentication, role and feature checks. A rewrite-server environment variable preserves subdirectory mount prefixes under Apache Alias. No arbitrary `.php` inference or file parameter is accepted.
+
+The shared bootstrap temporarily redirects mapped legacy **document GET/HEAD navigation** only when rewrite support is signalled. Query strings are preserved; POST, AJAX, JSON and non-navigation fetch requests remain compatible with their original endpoints. API/mobile routing, exports, internal handlers and authorization policies are not replaced. Existing relative links remain valid; following an old PHP document link adds a redirect. Legacy POST responses can still show their original PHP address, intentionally avoiding unsafe submission redirects. The homepage and existing directory entry points remain available.
+
+This is URL presentation, not a security boundary. Local Apache evidence does not verify the hosted LiteSpeed/Apache configuration or deployment; production promotion requires separate approval. See [routing acceptance checks](DEVELOPMENT_AND_TESTING.md#browser-url-routing-acceptance).
+
 ### Department model
 
 The organisation is modelled as departments, each with its own role and dashboard:

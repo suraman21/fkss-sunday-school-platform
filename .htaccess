@@ -1,4 +1,4 @@
-Options -Indexes
+Options -Indexes -MultiViews
 # SSMS — production cache policy (standard HTTP caching)
 # Static assets are revalidated on every deploy so a `git pull` is always
 # reflected in the browser without manual cache clearing. HTML is never cached.
@@ -48,6 +48,17 @@ Options -Indexes
     RewriteRule ^(sql|docs|tests|scripts|tools|vendor|Mobile|\.github)(/|$) - [F,L]
     RewriteRule (^|/)(database_schema\.sql|README\.md|ENTERPRISE_SECURITY_AUDIT_REPORT\.md|env\.example\.php|\.editorconfig|\.gitignore)$ - [F,L]
     RewriteRule \.(sql|md|sh|py|lock|ya?ml|dist)$ - [F,L]
+
+    # Browser aliases are dispatched through a finite PHP registry, NOT by
+    # appending .php to arbitrary input. API/assets/real directories keep
+    # their original handlers. Child admin rules repeat this capability flag.
+    RewriteRule ^ - [E=FKSS_BROWSER_ROUTES:1]
+    # Retain the mount prefix when Apache Alias rewrites SCRIPT_NAME.
+    RewriteCond %{REQUEST_URI} ^((?:/[A-Za-z0-9_-]+)*)/(?:verify-member|(?:frontend/pages|monitor)/[a-z][a-z0-9-]*)$
+    RewriteRule ^ - [E=FKSS_BROWSER_PREFIX:%1]
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^(?:verify-member|(?:frontend/pages|monitor)/[a-z][a-z0-9-]*)$ browser_page.php [END]
 </IfModule>
 
 # php -- BEGIN cPanel-generated handler, do not edit

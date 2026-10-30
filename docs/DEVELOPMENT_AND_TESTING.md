@@ -91,3 +91,19 @@ Backend behavioral tests use PHP 8.4; PHP 8.5 has a separate lint/deprecation jo
 | `apk-upload-e2e.yml` | Manual dispatch | Synthetic Chromium/PHP APK-transfer acceptance and evidence artifacts |
 
 Workflow presence and branch-protection settings are different facts. Verify current repository settings before a release; the dated settings observations in older documents are not a fresh permissions audit.
+
+## Browser URL routing acceptance
+
+The page registry and dispatcher are described in [ARCHITECTURE.md](ARCHITECTURE.md#browser-page-addresses-development-change-2026-10-30). Inspect [the registry](../admin/backend/services/BrowserPageRoutes.php) for the complete supported aliases; do not add generic extension stripping or map APIs/download handlers as pages.
+
+Run `php tests/fixtures/browser_page_routes.fixture "$PWD"` for the standalone policy/identity matrix. Run `python -m pytest tests/security/test_browser_page_routes.py -q -rs` in the fully provisioned disposable environment described above. Its HTTP tests require `SSMS_AUDIT_TESTING=1` and `SSMS_TEST_BASE` (default `http://127.0.0.1:8080`); the normal CI router supports the finite aliases, but **is not Apache rewrite verification**. The full security suite and zero-skip gate remain required.
+
+Before accepting a hosted development rollout, verify these separately on the actual web server:
+
+- Apache-compatible rewrite support (`[END]` included), root **and** admin `.htaccess` activation, `AllowOverride` for the existing directives and `Options -MultiViews`; preserve the existing cPanel PHP handler. A host with rewrite support disabled must continue serving old PHP URLs without redirecting them to unavailable aliases.
+- Root and any real deployment subdirectory: all registry aliases, legacy GET/HEAD document redirects, exact query preservation, restored legacy handler identity, no redirect loops, and relative assets/forms/fetch/redirect targets. Unknown, encoded, traversal, internal and protected paths must remain denied or 404; API paths must retain their existing routing.
+- Legacy and clean write methods, raw bodies and multipart uploads; JSON/XHR/non-navigation requests must not acquire document redirects. Check actual allowed/denied roles, feature-off paths, CSRF rejection and retained manual member types with synthetic records only. Do not replace an established handler's error status/envelope merely to match a new route test.
+- Temporary 302 rather than permanent bookmark changes. PHP requests `Cache-Control: no-store`; the existing Apache policy may override it with `no-cache, must-revalidate`, requiring revalidation before reuse. Do not claim a no-store response unless the hosted headers show it.
+- Browser acceptance for login/logout, department navigation, assets, edits and browser back/refresh; installed mobile clients still use their existing endpoints. Old explicit POST targets may retain a PHP URL for that response; do not hide it by replaying a write. Old document links add one redirect rather than being bulk rewritten.
+
+Rollback is a normal reviewed revert of the routing change: original page files, database schema and APIs remain in place. Do not copy only the dispatcher or only one `.htaccess`; deploy/revert the accepted change atomically. Development acceptance does not authorize production promotion or prove server deployment.
