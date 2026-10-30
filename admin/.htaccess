@@ -10,6 +10,16 @@
     RewriteRule ^(?:backend/generate_hash|get_schema|id_cards/qr_diagnostic|leak_detector)\.php$ - [F,L,NC]
     RewriteCond %{HTTP:Authorization} .
     RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+    # Keep denials above routing. Unknown slugs return 404 in the explicit
+    # page registry; APIs, existing files and directories are never inferred.
+    RewriteRule ^ - [E=FKSS_BROWSER_ROUTES:1]
+    # Retain the deployment prefix across ../browser_page.php under Alias.
+    RewriteCond %{REQUEST_URI} ^((?:/[A-Za-z0-9_-]+)*)/admin/
+    RewriteRule ^ - [E=FKSS_BROWSER_PREFIX:%1]
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^(?:(?:dashboards|id_cards)/)?[a-z][a-z0-9-]*$ ../browser_page.php [END]
 </IfModule>
 
 # CORS for mobile API — handled by PHP code (api_mobile.php) which checks origins.
@@ -31,4 +41,4 @@
     Deny from all
 </FilesMatch>
 
-Options -Indexes
+Options -Indexes -MultiViews

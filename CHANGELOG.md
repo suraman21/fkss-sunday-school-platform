@@ -9,6 +9,8 @@ A curated history of notable changes to FKSS, newest first.
 
 ## Unreleased
 
+- Browser pages: finite, same-directory clean URL aliases with temporary document-navigation redirects; retain legacy links, queries, write requests, role/feature checks and API/mobile endpoints. Includes handler-identity, security and compatibility regression coverage. Development-first change; no production deployment implied. See the architecture and testing guides for hosting requirements and legacy POST-address limitations.
+
 - Documentation renewal, first reviewed scope: add an evidence-based authoring/lifecycle standard and partial mobile account/device, update and recovery manuals with an explicit source-coverage queue; correct stale CI/version/logout and development-versus-production claims; retire the obsolete nonexecuting CI proposal/template after knowledge/reference review. The full all-department/all-control manual remains incomplete. Diagnostics wording now warns users to review raw logs before private sharing; no report-generation, permission, schema or API behavior changes.
 
 - Mobile 1.7.4+41 readiness audit: preserve pending edits across sheet changes/reloads/navigation, retain newer marks and submitted locks against delayed responses, bind Undo to its original operation, autosave note-only changes and report QR storage refusal accurately. Added screen/native-SQLite regression evidence; repaired stale live-test paths/fixtures without changing server permissions or confirmation rules.

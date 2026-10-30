@@ -1,0 +1,63 @@
+<?php
+require $argv[1] . '/admin/backend/services/BrowserPageRoutes.php';
+use App\Services\BrowserPageRoutes as Routes;
+$checks = 0;
+function same($expected, $actual): void {
+    global $checks;
+    $checks++;
+    if ($expected !== $actual) throw new RuntimeException(json_encode(['expected'=>$expected,'actual'=>$actual]));
+}
+$server = ['SCRIPT_NAME'=>'/admin/index.php', 'SCRIPT_FILENAME'=>$argv[1].'/admin/index.php', 'REQUEST_URI'=>'/admin/index.php?next=%2Fadmin%2Fdashboard.php&a=1&a=2',
+    'REQUEST_METHOD'=>'GET','FKSS_BROWSER_ROUTES'=>'1','HTTP_ACCEPT'=>'text/html'];
+same('/admin/login?next=%2Fadmin%2Fdashboard.php&a=1&a=2', Routes::navigationRedirect($server));
+foreach (['GET','HEAD'] as $method) {
+    $s=$server; $s['REQUEST_METHOD']=$method;
+    same('/admin/login?next=%2Fadmin%2Fdashboard.php&a=1&a=2',Routes::navigationRedirect($s));
+}
+foreach ([['REQUEST_METHOD'=>'POST'],['REQUEST_METHOD'=>'PUT'],['REQUEST_METHOD'=>'DELETE'],
+          ['FKSS_BROWSER_ROUTES'=>''],['HTTP_ACCEPT'=>'application/json'],
+          ['HTTP_X_REQUESTED_WITH'=>'XMLHttpRequest'],['HTTP_X_CSRF_TOKEN'=>'test'],
+          ['HTTP_SEC_FETCH_DEST'=>'empty'],['HTTP_ACCEPT'=>'*/*']] as $override) {
+    same(null,Routes::navigationRedirect(array_replace($server,$override)));
+}
+foreach (Routes::pages() as $clean=>$legacy) {
+    same(dirname($legacy),dirname($clean));
+    same(true,is_file($argv[1].$legacy));
+    same(false,str_contains($clean,'.php'));
+    foreach (['','/school'] as $base) {
+        $s=['SCRIPT_NAME'=>$base.'/browser_page.php','REQUEST_URI'=>$base.$clean.'?id=123&x=%26', 'REQUEST_METHOD'=>'POST'];
+        $identity=Routes::dispatchIdentity($s,$argv[1]);
+        same($base.$legacy,$identity['SCRIPT_NAME']);
+        same($base.$legacy,$identity['PHP_SELF']);
+        same($argv[1].$legacy,$identity['SCRIPT_FILENAME']);
+        same($s['REQUEST_URI'],$identity['REQUEST_URI']);
+        same('POST',$identity['REQUEST_METHOD']);
+        $nav=array_replace($server,['SCRIPT_NAME'=>$base.$legacy,'SCRIPT_FILENAME'=>$argv[1].$legacy,'REQUEST_URI'=>$base.$legacy.'?id=123']);
+        same($base.$clean.'?id=123',Routes::navigationRedirect($nav));
+        $nav['REQUEST_URI']=$base.$clean;
+        same(null,Routes::navigationRedirect($nav));
+    }
+}
+foreach (['/browser_page.php?file=admin/users.php','/admin/api_education','/api/v1/members',
+          '/admin/config','/api/v1/admin/login','/admin/get-schema','/admin/member/../users','/admin/%6cogin',
+          '/admin/login/','/admin//login','//admin/login','/admin/login/extra',
+          '/admin/LOGIN','/admin/login%00',"/admin/login\r\nX-Test:1",'/admin\\login'] as $uri) {
+    same(null,Routes::dispatchIdentity(['SCRIPT_NAME'=>'/browser_page.php','REQUEST_URI'=>$uri],$argv[1]));
+}
+foreach (['/api/v1/index.php','/public_gallery.php','/admin/api_education.php'] as $api) {
+    same(null,Routes::navigationRedirect(array_replace($server,[
+        'SCRIPT_NAME'=>$api,'SCRIPT_FILENAME'=>$argv[1].$api,'REQUEST_URI'=>$api])));
+}
+foreach (['FKSS_BROWSER_PREFIX','REDIRECT_FKSS_BROWSER_PREFIX'] as $key) {
+    $alias=['SCRIPT_NAME'=>'/browser_page.php','REQUEST_URI'=>'/school/admin/login?x=1', $key=>'/school'];
+    same('/school/admin/index.php',Routes::dispatchIdentity($alias,$argv[1])['SCRIPT_NAME']);
+    $alias[$key]='/../bad';
+    same(null,Routes::dispatchIdentity($alias,$argv[1]));
+}
+same(null,Routes::dispatchIdentity(['SCRIPT_NAME'=>'/browser_page.php','REQUEST_URI'=>'/school/admin/login','HTTP_FKSS_BROWSER_PREFIX'=>'/school'],$argv[1]));
+same(null,Routes::basePath('/../browser_page.php'));
+same(null,Routes::basePath('//browser_page.php'));
+same(null,Routes::basePath('/unknown.php'));
+$nav=$server;unset($nav['FKSS_BROWSER_ROUTES']);$nav['REDIRECT_FKSS_BROWSER_ROUTES']='1';
+same('/admin/login?next=%2Fadmin%2Fdashboard.php&a=1&a=2',Routes::navigationRedirect($nav));
+echo json_encode(['status'=>'PASS','checks'=>$checks,'pages'=>Routes::pages()]).PHP_EOL;
