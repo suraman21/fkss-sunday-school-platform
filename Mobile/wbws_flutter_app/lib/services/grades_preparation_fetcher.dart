@@ -23,7 +23,7 @@ final class GradesPreparationFetcher {
     final data = (body['data'] is Map) ? body['data'] as Map : body;
     final envelopeMap = <String,dynamic>{}; for (final e in (data as Map).entries) envelopeMap[e.key.toString()]=e.value;
     try {
-      final envelope = GradesPreparationEnvelope.decode(envelopeMap, expected: expectedScope ?? GradesPreparationScope(ownerUserId: session.ownerUserId, authorizationVersion: session.authorizationVersion, role: 'teacher', familyId: '00'*32, serverIdentity: 'https://school.example/api/v1'), maxPayloadBytes: maxPayloadBytes);
+      final envelope = GradesPreparationEnvelope.decode(envelopeMap, expected: expectedScope ?? GradesPreparationScope(ownerUserId: session.ownerUserId, authorizationVersion: session.authorizationVersion, role: 'teacher', familyId: '00'*32, serverIdentity: 'https://felegekidusan.com/api/v1'), maxPayloadBytes: maxPayloadBytes);
       final dataset = GradesPreparationDataset.decode(envelope.payloadUtf8);
       await _store.publishPreparation(expectedSession: session, envelope: envelope, dataset: dataset);
       final snap = await _store.getSnapshot(); if (snap == null) throw const GradesPreparationFetchException('GRADES_PREPARATION_PUBLISH_FAILED','Publish succeeded but snapshot missing.');

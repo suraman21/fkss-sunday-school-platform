@@ -286,10 +286,22 @@ class AttendanceScreenState extends State<AttendanceScreen> with WidgetsBindingO
         authorizationVersion: sessionRec.authorizationVersion ?? _api.authorizationVersion,
         runtimeGeneration: sessionRec.generation,
       );
+      final fid = _api.familyId;
+      if (fid == null || fid.isEmpty) {
+        throw AttendancePreparationFetchException('AUTH_FAMILY_MISSING', 'Sign in again — refresh family is unavailable.');
+      }
+      final expectedScope = AttendancePreparationScope(
+        ownerUserId: session.ownerUserId,
+        authorizationVersion: session.authorizationVersion,
+        role: _api.userRole,
+        familyId: fid,
+        serverIdentity: AppConfig.apiBaseUrl,
+      );
       final fetcher = AttendancePreparationFetcher(store: AttendancePreparationStore(db: _db));
       await fetcher.fetchAndPublish(
         session: session,
         get: (path) => _api.get(path),
+        expectedScope: expectedScope,
       );
       await _loadPreparationStatus();
       if (mounted) {

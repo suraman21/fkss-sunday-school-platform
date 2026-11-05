@@ -302,6 +302,27 @@ class ApiService {
   int get authorizationVersion =>
       _nonNegativeInt(_userData?['authorization_version']) ?? 0;
 
+  /// Stable refresh family extracted from the access JWT (payload.fid).
+  /// Null when the token is absent or unparsable — the fetcher must
+  /// surface a typed error rather than silently using a dummy.
+  String? get familyId {
+    final t = _token;
+    if (t == null || t.isEmpty) return null;
+    try {
+      final parts = t.split('.');
+      if (parts.length != 3) return null;
+      final padded = parts[1].replaceAll('-', '+').replaceAll('_', '/');
+      final normalized = base64.normalize(padded);
+      final payload = jsonDecode(utf8.decode(base64.decode(normalized)));
+      if (payload is! Map) return null;
+      final fid = payload['fid'];
+      if (fid is String && RegExp(r'^[a-f0-9]{64}$').hasMatch(fid)) return fid;
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   int get _requestGeneration => sessionGenerationProvider?.call() ?? 0;
   bool _generationIsCurrent(int captured) =>
       captured == (sessionGenerationProvider?.call() ?? 0);

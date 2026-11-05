@@ -73,7 +73,7 @@ final class AttendancePreparationFetcher {
           authorizationVersion: session.authorizationVersion,
           role: 'teacher',
           familyId: '00' * 32,
-          serverIdentity: 'https://school.example/api/v1',
+          serverIdentity: 'https://felegekidusan.com/api/v1',
         ),
         maxPayloadBytes: maxPayloadBytes,
       );

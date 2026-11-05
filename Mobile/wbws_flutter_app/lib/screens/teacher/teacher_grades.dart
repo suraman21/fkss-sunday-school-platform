@@ -14,6 +14,7 @@ import '../../services/legacy_outbox_models.dart';
 import '../../services/local_db.dart';
 import '../../widgets/sync_attention.dart';
 import '../../services/sync_service.dart';
+import '../../utils/config.dart';
 import '../../utils/packet.dart';
 import '../../utils/roster.dart';
 import '../../utils/scrolling.dart';
@@ -172,8 +173,11 @@ class TeacherGradesScreenState extends State<TeacherGradesScreen> {
     try {
       final rec = await _db.getLocalSession();
       final session = LegacyWriteSession(ownerUserId: rec.ownerUserId ?? _api.userId, authorizationVersion: rec.authorizationVersion ?? _api.authorizationVersion, runtimeGeneration: rec.generation);
+      final fid = _api.familyId;
+      if (fid == null || fid.isEmpty) throw const GradesPreparationFetchException('AUTH_FAMILY_MISSING', 'Sign in again — refresh family is unavailable.');
+      final expectedScope = GradesPreparationScope(ownerUserId: session.ownerUserId, authorizationVersion: session.authorizationVersion, role: _api.userRole, familyId: fid, serverIdentity: AppConfig.apiBaseUrl);
       final fetcher = GradesPreparationFetcher(store: GradesPreparationStore(db: _db));
-      await fetcher.fetchAndPublish(session: session, get: (p) => _api.get(p));
+      await fetcher.fetchAndPublish(session: session, get: (p) => _api.get(p), expectedScope: expectedScope);
       await _loadPreparationStatus();
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Preparation refreshed'), backgroundColor: AppTheme.success));
     } on GradesPreparationFetchException catch (e) {
@@ -490,7 +494,7 @@ class TeacherGradesScreenState extends State<TeacherGradesScreen> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         );
       }).toList()),
-      if (_termViewLocked)
+      if (_termViewLocked && _selectedTermId != null)
         Container(
           margin: const EdgeInsets.only(top: 10),
           padding: const EdgeInsets.all(10),
