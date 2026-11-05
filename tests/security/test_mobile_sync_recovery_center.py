@@ -208,10 +208,22 @@ def test_all_three_submit_flows_keep_exact_ref_and_block_late_autosave() -> None
     }
     for name, path in files.items():
         text = source(path)
-        assert "LegacyOperationRef? _submittedUndoRef" in text, name
-        assert "_submittedUndoRef = await _db.save" in text, name
+        if name == "attendance":
+            # Capture the exact operation in the toast closure, never a
+            # mutable ref that another sheet's submission can replace.
+            assert "late final LegacyOperationRef operation;" in text
+            assert "operation = await _db.saveAttendanceLocal(" in text
+            assert "onUndo: () => _undoSubmit(operation, epoch)" in text
+            assert "_submittedUndoRef" not in text
+            undo_start = "Future<void> _undoSubmit(LegacyOperationRef operation, int epoch)"
+        else:
+            assert "LegacyOperationRef? _submittedUndoRef" in text, name
+            assert "_submittedUndoRef = await _db.save" in text, name
+            undo_start = "Future<void> _undoSubmit()"
         assert "notBefore: DateTime.now().add(const Duration(seconds: 5))" in text, name
-        undo = between(text, "Future<void> _undoSubmit()", "@override\n  Widget build")
+        undo = between(text, undo_start, "@override\n  Widget build")
+        if name == "attendance":
+            assert "epoch != _loadEpoch || !_sheetSessionCurrent" in undo
         assert "undoSubmittedLegacyOperation(operation)" in undo, name
         assert pending_lookup[name] not in undo, name
         assert "SubmitUndoResult.supersededLocal" in undo, name

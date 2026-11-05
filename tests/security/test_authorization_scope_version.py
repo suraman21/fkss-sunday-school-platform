@@ -204,7 +204,8 @@ class AuthorizationScopeVersionTests(unittest.TestCase):
             self.auth.index("function apiRevalidateAuthorizationScope") :
             self.auth.index("/**\n * Authenticate the current request")
         ]
-        compatibility = method.index("if (!apiAuthorizationScopeEnforcedForClient())")
+        self.assertIn("bool $requireCurrentScope = false", method)
+        compatibility = method.index("if (!$requireCurrentScope && !apiAuthorizationScopeEnforcedForClient())")
         query = method.index("SELECT role, is_active, authorization_version")
         self.assertLess(compatibility, query)
         self.assertIn("return $payload;", method[compatibility:query])

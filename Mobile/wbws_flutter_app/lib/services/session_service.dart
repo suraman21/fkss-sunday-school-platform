@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 import 'api_service.dart';
+import 'attendance_calendar_cache.dart';
 import 'app_lock_service.dart';
 import 'app_nav.dart';
 import 'app_update_service.dart';
@@ -310,6 +311,7 @@ class SessionCoordinator extends ChangeNotifier with WidgetsBindingObserver {
     await _db.clearAuthorizationScopedReadCaches();
     await NotificationService.instance.clearPersistedState();
     await TimetableCache.instance.clearAll();
+    await AttendanceCalendarCache.clearAll();
     CatalogService().clear();
     AppNav().resetForAuthorizationScope();
     AppNavigator.popToRootForAuthorizationScope();
@@ -908,6 +910,7 @@ class SessionCoordinator extends ChangeNotifier with WidgetsBindingObserver {
       onProfileSessionCleared?.call();
       await NotificationService.instance.clearPersistedState();
       await TimetableCache.instance.clearAll();
+      await AttendanceCalendarCache.clearAll();
       await _db.clearAllUserData();
       await AppLockService().clearPin();
       await _db.persistLocalSession(

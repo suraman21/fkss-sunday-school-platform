@@ -4,9 +4,17 @@
 
 One issue registry for every failure the system can observe, a seeded
 remediation catalog, and durable recorded reports — surfaced in the
-Super Admin dashboard under **Failure Intelligence**. It answers, per
-issue: **what** fails, **why** it fails, **when** it fails, **where** it
-fails, and **how to fix it**.
+Super Admin dashboard under **Failure Intelligence**. It groups observed
+symptoms, timestamps, source context and seeded remediation suggestions.
+A fingerprint or catalog match is **not a verified root-cause diagnosis**;
+an authorized operator must investigate and validate a fix. This is
+rule-based operational aggregation, not a claim of generative-AI diagnosis.
+
+**Evidence boundary:** source contract, not live service activation. See
+[current operations](OPERATIONS.md), [sync truth boundaries](WEB_ADMIN_SYNC_MONITORING.md)
+and [incident response](INCIDENT_RESPONSE.md). No production schedules,
+alerts, records or private provider configuration were accessed in the
+2026-10-28 documentation review.
 
 Three channels, three fingerprints (all deterministic and low-cardinality):
 
@@ -20,8 +28,8 @@ Three channels, three fingerprints (all deterministic and low-cardinality):
 
 - **`failure_issues`** — one row per fingerprint: source, category, title,
   first/last seen, lifetime occurrences, status workflow
-  (`open → acknowledged → resolved`, reopen on recurrence = regression,
-  Sentry semantics), admin remediation override, `last_auto_report_at`.
+  (`open → acknowledged → resolved`, reopening on recurrence), admin
+  remediation override, `last_auto_report_at`.
 - **`failure_remediation_catalog`** — seed-owned `(source, category)` rows
   (the client's 22 `SyncErrorCategory` failure shapes + the server error
   families) with cause and fix steps. Refreshed by re-running migration
@@ -74,12 +82,20 @@ or ≥ 50 occurrences in 24h → one recorded report per issue per 24h**
 
 ## Privacy
 
-No new data leaves devices. The issue registry groups data the server
-already records; crash issues carry only the bounded signature from
-migration 063 (exception class + ≤ 3 first-party frame names). Server
-error samples shown in the dashboard were already redacted at capture by
-the monitor. The admin API is read-mostly and double-gated (session +
-super_admin role + access_control ROLE_MAP).
+The issue registry aggregates existing server-observed channels rather
+than making all private local outbox state observable. Crash grouping
+uses the bounded signature from migration 063 (exception class and up to
+three first-party frame names); this does not establish that every
+telemetry field or copied diagnostic is anonymous. Monitor capture has
+redaction logic, but operators must still review samples/reports before
+sharing. Raw bootstrap/native log tails have a different privacy boundary.
+
+The admin API is read-mostly and gated by session, `super_admin` and the
+central role map. Preserve that boundary; do not put private samples,
+member information or raw diagnostic reports in public issues. Alerts
+sent through Telegram leave the hosting environment when that optional
+channel is enabled; configuration and recipient authorization require
+operator review.
 
 ## Alerting (Phase 4)
 
@@ -115,7 +131,17 @@ by `tests/security/test_failure_intelligence_phase4.py`.
 
 ## Deploy order
 
-1. Apply `sql/062`, `sql/063`, `sql/064`, `sql/065` (all repeat-safe).
+**Conditional procedure, not permission to deploy.** Test only with isolated
+synthetic data during routine engineering work. Integrate checked changes
+into development, independently verify the development target and obtain
+owner acceptance; production then needs separate explicit authorization.
+Inspect the target's applied schema and preflight stop conditions rather
+than treating filename order as proof that prerequisites exist. Preserve
+private backups/rollback evidence before an approved migration.
+
+1. Review/apply the numbered migrations beginning `062`, `063`, `064` and
+   `065` to the separately authorized target, respecting prerequisites and
+   verifying repeat-safety there; source intent is not live-state proof.
 2. Deploy the server code.
 3. Run the read-only staging preflight and keep the output as release
    evidence (it fail-closes with `SIGNAL SQLSTATE '45000'` on any BLOCK
@@ -124,7 +150,12 @@ by `tests/security/test_failure_intelligence_phase4.py`.
 4. Install the two CLI crons after the existing retention job:
    - nightly (03:47): `php .../admin/backend/failure_issue_reconcile.php`
    - every 15 min: `php .../admin/backend/failure_alert_check.php`
-5. Ship the app release (carries `X-Installation-Id` + crash signatures).
+5. Follow the owner-controlled [APK release gates](../Mobile/wbws_flutter_app/docs/RELEASE.md) for any client publication. Client headers alone do not prove correct installation or reporting.
+
+Use the target's verified absolute PHP/script paths and outside-web-root
+logs. Record observed execution and exit status; installing a schedule is
+not evidence it has run successfully. Do not put credentials in commands,
+URLs or logs. The repository does not install these hosting crons.
 
 Older servers + newer clients, and newer servers + older clients, remain
 compatible: every hook tolerates a missing table (issue bookkeeping is

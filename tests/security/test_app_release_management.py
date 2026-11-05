@@ -39,7 +39,7 @@ class AppReleaseManagementTests(unittest.TestCase):
         self.assertIn("case 'delete_apk':", self.api_app_release)
 
     def test_service_validates_apk_extension_and_chunk_integrity(self):
-        self.assertIn("MAX_APK_BYTES = 262144000", self.app_release_manager)
+        self.assertIn("MAX_APK_BYTES = 536870912", self.app_release_manager)
         self.assertIn("handleChunkUpload", self.app_release_manager)
         self.assertIn("assembleChunks", self.app_release_manager)
         self.assertIn("cleanupOldChunks", self.app_release_manager)
@@ -64,11 +64,10 @@ class AppReleaseManagementTests(unittest.TestCase):
         self.assertIn("id=\"upload-progress-fill\"", self.app_release_section)
 
     def test_js_engine_handles_chunking_retries_and_resilience(self):
-        # Telegram-style part-pool engine: 512 KB parts, 4-way parallel
-        # sliding window, per-part deadlines (a stalled part can never
-        # freeze the transfer), independent per-part retries, base64
-        # text-mode per part when a WAF rejects binary bodies, resume from
-        # server-truth (upload_status) and a visible watchdog diagnostic.
+        # Bounded binary transfers, verified server-truth resume and ACK-gated
+        # assembly. Executable scheduling/error contracts live in
+        # test_apk_upload_reliability.py and tests/js/. Legacy base64 remains
+        # server-compatible, not an automatic auth/WAF bypass in the client.
         self.assertIn("PART_SIZE = 512 * 1024", self.app_release_js)
         self.assertIn("POOL_SIZE = 4", self.app_release_js)
         self.assertIn("PART_DEADLINE_MS = 45000", self.app_release_js)
@@ -77,15 +76,18 @@ class AppReleaseManagementTests(unittest.TestCase):
         self.assertIn("workerLoop", self.app_release_js)
         self.assertIn("sendPart", self.app_release_js)
         self.assertIn("AbortController", self.app_release_js)
-        self.assertIn("chunk_b64", self.app_release_js)
+        self.assertNotIn("chunk_b64", self.app_release_js)
+        self.assertIn("ctx.count === ctx.total", self.app_release_js)
+        self.assertIn("Object.keys(ctx.pending).length === 0", self.app_release_js)
+        self.assertIn("fingerprint", self.app_release_js)
         self.assertIn("upload_status", self.app_release_js)
         self.assertIn("assembleChunksOnServer", self.app_release_js)
         self.assertIn("cancelUpload", self.app_release_js)
         self.assertIn("startWatchdog", self.app_release_js)
         # the stalled-at-0% class of bug must stay impossible: deadline abort
         # and the watchdog banner are the two guards against silent freezes.
-        self.assertIn("part stalled — deadline exceeded", self.app_release_js)
-        self.assertIn("No server response for", self.app_release_js)
+        self.assertIn("timed out; saved parts are retained", self.app_release_js)
+        self.assertIn("No verified part for", self.app_release_js)
 
     def test_no_external_cdn_dependency_for_upload_engine(self):
         # The engine must be fully self-contained: a blocked/slow CDN must

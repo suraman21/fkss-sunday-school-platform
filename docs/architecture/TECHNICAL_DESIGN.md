@@ -9,7 +9,7 @@
 | Detailed references | [ARCHITECTURE.md](../ARCHITECTURE.md) (component detail) · [API.md](../API.md) · [DATABASE.md](../DATABASE.md) · [SECURITY.md](../SECURITY.md) · [OPERATIONS.md](../OPERATIONS.md) · [ROLES_AND_PERMISSIONS.md](../ROLES_AND_PERMISSIONS.md) |
 | Requirements | [PRD](../product/PRD.md) · Decisions: [ADR index](../adr/README.md) |
 
-Diagrams use Mermaid and render on GitHub. Statements are verified in code unless marked **Unverified**.
+Diagrams use Mermaid. **2026-10-28 review:** the original `46fbaa7` design remains a source-bounded baseline; the hosting, release, local-lock and quality-evidence clarifications below were checked against `7e28157` and current owner instructions. Diagrams simplify flows and do not prove every failure/compatibility path. “Implemented” means a source mechanism exists, not production, complete permission or device acceptance. [ADR-0021](../adr/0021-development-acceptance-before-production.md) supersedes historical automatic production-equivalence/no-cron assumptions.
 
 ---
 
@@ -31,11 +31,11 @@ FKSS is a school management system for one Sunday school: web dashboards for eac
 
 | Type | Constraint | Consequence |
 |---|---|---|
-| Hosting | Shared hosting: LiteSpeed, PHP 8.5, MariaDB. No shell, Composer, cron, Python, Redis or C extensions for the application | Plain PHP; committed `vendor/`; no workers or queues; work runs inside requests ([ADR-0001](../adr/0001-php-monolith-on-shared-hosting.md)) |
-| Database changes | A maintainer applies SQL by hand in phpMyAdmin | Additive, idempotent migrations; no migration ledger ([ADR-0004](../adr/0004-manual-idempotent-sql-migrations.md)) |
-| Deployment | Manual SFTP upload of changed files | No atomic deploys; cache-busting by asset version ([OPERATIONS.md](../OPERATIONS.md)) |
-| Mobile distribution | No Play Store listing | In-app updater downloads the APK from the school's server ([ADR-0005](../adr/0005-direct-apk-distribution.md)) |
-| Locale | Ethiopian calendar for every user-facing date; Amharic content | UTF-8 (`utf8mb4`) end to end; date conversion helpers ([ADR-0008](../adr/0008-ethiopian-calendar-only.md)) |
+| Hosting | Historical shared-hosting record: LiteSpeed, PHP 8.5 and MariaDB; current capabilities not reverified | PHP monolith and committed `vendor/`; server CLI jobs require operator scheduling. Mobile durable queues and Android scheduling exist. A blanket “no cron/queues” assertion is incorrect |
+| Database changes | Maintainer-reviewed manual SQL application; target applied state unknown | Additive/idempotent design, preflight gates and no migration ledger ([ADR-0004](../adr/0004-manual-idempotent-sql-migrations.md)) |
+| Deployment | Development-main integration → independently observed cron update → owner acceptance → separate production authorization | Historical SFTP procedure is conditional, not automatic promotion ([OPERATIONS.md](../OPERATIONS.md)) |
+| Mobile distribution | First-party APK publication and in-app updater | Signing continuity, phone acceptance and publication are separate owner gates ([release guide](../../Mobile/wbws_flutter_app/docs/RELEASE.md)) |
+| Locale | Ethiopian-calendar business-display policy and Amharic content | Gregorian/ISO storage and some technical diagnostics exist; policy is not proof every displayed date/export has been audited ([ADR-0008](../adr/0008-ethiopian-calendar-only.md)) |
 | Organisation | Maintainer approval for every schema change, deploy and production action | Changes are planned, reviewed and deployed in explicit steps |
 
 ## 3. Context (C4 level 1)
@@ -70,10 +70,10 @@ A CDN/WAF proxy sits in front of the origin. There is no e-mail, SMS or payment 
 |---|---|
 | Many departments on one register | One database and one PHP code base; per-department dashboards; a central page and endpoint role map (`admin/access_control.php`) |
 | Mobile on poor networks | Offline-first Flutter app: SQLite cache, outboxes, idempotent writes, change feed ([ADR-0003](../adr/0003-offline-first-mobile.md)) |
-| Secure mobile sessions without server state per request | Short-lived signed access tokens; rotating refresh tokens stored server-side; per-request authorization re-check ([ADR-0002](../adr/0002-mobile-token-authentication.md)) |
+| Mobile sessions with revocable authorization | Short-lived signed access tokens, server-stored rotating refresh sessions and database scope revalidation; legacy compatibility settings qualify immediate enforcement ([API authentication](../API.md#2-authentication)) |
 | Shared business rules between web and API | Service classes in `admin/backend/services/` (79 files), called from both. Consolidation is incomplete (section 11) |
-| No background jobs | Do work inside the triggering request (for example, warnings are evaluated after each attendance write); CLI scripts exist where a cron would be needed |
-| Feature rollout without branches per customer | Feature flags in `FeatureGate`; migrations that leave code inert until applied (for example, the class-day rule activates when `sql/078_school_calendar.sql` exists) |
+| Request work and scheduled maintenance | Attendance writes trigger warning evaluation; CLI-only cleanup, retention/reconciliation and alert jobs require separately verified scheduling. Android has its own background-sync mechanism |
+| Capability and schema rollout | `FeatureGate` enforces actual boolean capability constants. `SchoolCalendarService` probes database tables, not the mere presence of `sql/078_school_calendar.sql` in Git. Feature, permission and schema readiness are separate gates |
 
 ## 5. Building blocks
 
@@ -198,21 +198,21 @@ The app polls `GET /api/v1/app/config`, compares its build number with the confi
 
 ```mermaid
 flowchart LR
-  dev["Developer workstation"] -->|"git push / PR"| gh["GitHub: suraman21/fkss-sunday-school-platform<br/>(main, dev) + CI"]
-  gh -->|"same commits"| prodrepo["GitHub: Felege-Kidusan/felegekidusan<br/>(main, private)"]
-  dev -->|"approved SFTP upload<br/>of changed files"| prod["Production shared hosting<br/>(LiteSpeed, PHP 8.5, MariaDB)"]
-  maint["Maintainer"] -->|"phpMyAdmin: apply sql/NNN"| prod
-  cdn["CDN / WAF proxy"] --> prod
-  users["Browsers, Android app"] --> cdn
-  beta["Beta server (from dev)"]:::muted
-  classDef muted fill:#eee,stroke:#999,color:#555
+  topic["Reviewed topic branch"] -->|"PR and passing applicable checks"| main["Development repository main"]
+  main -->|"Owner-reported cron update; verify execution"| development["Development server"]
+  development --> acceptance["Owner acceptance"]
+  acceptance --> approval["Separate explicit production authorization"]
+  approval --> prodrepo["Approved production repository revision"]
+  prodrepo -->|"Confirmed deployment procedure and parity verification"| production["Production target"]
+  main -->|"One-way synchronization only"| beta["dev: beta app settings"]
 ```
 
-| Environment | Source | Notes |
+| Environment | Source | Evidence boundary |
 |---|---|---|
-| Production | `main` | Manual deploy. Last recorded: `46fbaa7`, 2026-10-22, with checksums verified. Detail: [OPERATIONS.md](../OPERATIONS.md) |
-| Beta | `dev` (`main` + one commit that re-targets the app) | Update mechanism **unverified** ([OPERATIONS.md §7.2](../OPERATIONS.md#72-open-questions), Q-8) |
-| CI | GitHub Actions | PHP 8.4 (tests) and 8.5 (lint), MariaDB 11.4, Python 3.11, Flutter 3.44.9 ([DEVELOPMENT_AND_TESTING.md](../DEVELOPMENT_AND_TESTING.md)) |
+| Development | Development repository `main` | Merge and server cron/deployment/acceptance are independently recorded events |
+| Production | Separately approved production repository revision | Do not infer current deployment from a dated record; confirm files, schema and configuration under authorization |
+| Beta | `dev`, with beta-only app settings | No reverse merge; actual server update mechanism remains unverified |
+| CI | Candidate SHA / GitHub Actions | PHP 8.4 behavior tests, PHP 8.5 lint, MariaDB 11.4, Python 3.11, Node 22, Flutter 3.44.9 and JDK 17; [exact workflow guide](../DEVELOPMENT_AND_TESTING.md) |
 
 ## 8. Cross-cutting concepts
 
@@ -238,10 +238,10 @@ See the [decision record index](../adr/README.md).
 
 | Quality | Scenario | Current state |
 |---|---|---|
-| Integrity | A teacher's phone retries a submission 3 times on a flaky network → exactly one record | Met (idempotency keys; CI runs the lifecycle harness) |
-| Security | A disabled staff account → no further web or API access on the next request | Met (per-request revalidation) |
-| Security | A teacher requests another class's marks → refused | Met for the paths covered by `tests/security` (teacher scope tests) |
-| Offline | A teacher records attendance with no network → visible at once, sent later | Met |
+| Integrity | Repeated submission with a stable idempotency key should not duplicate an accepted write | Source mechanism plus lifecycle tests; not a guarantee for every route, client identity or failure path |
+| Security | Disabled or changed staff authorization should invalidate access | Session/token revalidation exists; legacy API scope behavior depends on client build and `API_AUTHZ_LEGACY_COMPAT_UNTIL`, so immediate revocation is not a universal claim |
+| Security | Teachers should not access another class's marks | Scope checks/tests cover specific paths; this is not a complete action-level authorization audit |
+| Offline | Attendance captured locally should survive and reconcile when eligible | Durable outbox/recovery mechanisms exist; network, owner/scope, schema and server acceptance remain dependencies. Destructive discard/uninstall can remove unsent work |
 | Performance | Member lists for 5,000+ students stay responsive | Design target: capped page sizes and indexes. **No load test on record** |
 | Recoverability | Restore production after data loss | **Not met:** restore never tested; backups in the same account |
 | Changeability | A new engineer changes a grading rule in one place | **Partly met:** rules are duplicated across API layers |
@@ -251,10 +251,10 @@ See the [decision record index](../adr/README.md).
 The full list, with evidence and recommended actions, is in [OPERATIONS.md §7](../OPERATIONS.md#7-known-limitations-and-open-questions). Architecture-level items:
 
 1. **Three API layers with duplicated rules.** Decide the canonical layer per domain, then consolidate behind services.
-2. **Very large files.** Dashboards of about 4,400–4,900 lines; `local_db.dart` about 7,500 lines. Split by feature, behind tests.
-3. **Schema management.** No migration ledger, a stale `sql/legacy/database_schema.sql`, and runtime DDL. Introduce a ledger and a verified baseline.
-4. **Runtime parity.** CI runs the test suite on PHP 8.4 (every file is also linted on 8.5) while production runs 8.5.
-5. **Delivery pipeline.** Manual deploys, a red CI gate and a debug-signed APK.
+2. **Large components.** Dashboards and local storage combine many responsibilities. Historical line counts are not current inventories; any split needs a separately reviewed behavioral change.
+3. **Schema management.** No migration ledger, a stale `sql/legacy/database_schema.sql`, and runtime DDL. Introduce a ledger and a verified baseline through a separate approved change.
+4. **Runtime parity.** PHP 8.4 behavior tests and PHP 8.5 lint do not prove behavior on the historical PHP 8.5 production environment; current runtime is unverified.
+5. **Delivery evidence.** The former 79-skip CI gap was resolved at the [documented baseline](../reports/DOCUMENTATION_BASELINE_2026-10-28.md); each candidate still needs fresh checks. Actual signing certificates, host schedules, deployment parity and owner phone acceptance are separate unverified gates.
 6. **Repository layout.** It mixes the web app, API, mobile app, tests and legacy folders at the root. A target structure should be agreed before any move, because paths are referenced by the server, the mobile app and the tests.
 
 ## 12. Glossary

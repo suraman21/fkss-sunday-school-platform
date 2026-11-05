@@ -115,10 +115,111 @@ class AppRemoteConfig {
 }
 
 /// Checks the server for a newer app. Downloads live on Android only.
-class AppUpdateService {
+enum AppDownloadPhase { idle, downloading, verifying, ready, failed }
+
+/// Safe user-facing failure; never display raw transport paths or URLs.
+class AppUpdateFailure implements Exception {
+  final String message;
+  const AppUpdateFailure(this.message);
+  @override
+  String toString() => message;
+}
+
+class AppUpdateService extends ChangeNotifier {
   static final AppUpdateService _instance = AppUpdateService._internal();
   factory AppUpdateService() => _instance;
-  AppUpdateService._internal();
+  AppUpdateService._internal({
+    Future<ApiResponse> Function()? fetchConfig,
+    http.Client Function()? clientFactory,
+    bool? android,
+  })  : _fetchConfig = fetchConfig,
+        _clientFactory = clientFactory,
+        _android = android;
+
+  @visibleForTesting
+  factory AppUpdateService.forTesting({
+    required Future<ApiResponse> Function() fetchConfig,
+    required http.Client Function() clientFactory,
+  }) =>
+      AppUpdateService._internal(
+        fetchConfig: fetchConfig,
+        clientFactory: clientFactory,
+        android: true,
+      );
+
+  final Future<ApiResponse> Function()? _fetchConfig;
+  final http.Client Function()? _clientFactory;
+  final bool? _android;
+  bool isChecking = false;
+  bool checkFailed = false;
+  DateTime? lastSuccessfulCheck;
+  AppDownloadPhase downloadPhase = AppDownloadPhase.idle;
+  int receivedBytes = 0;
+  int totalBytes = 0;
+  String? downloadError;
+  String? installMessage;
+  bool isOpeningInstaller = false;
+  String? _readyPath;
+  String? _readySha;
+  int? _readySize;
+  String? _downloadReleaseKey;
+  AppRemoteConfig? _transferConfig;
+  AppRemoteConfig? get transferConfig => _transferConfig;
+  bool get downloadTargetsCurrentRelease => _downloadReleaseKey == releaseKey;
+  Future<String>? _downloadFuture;
+  Future<void>? _installFuture;
+
+  String? get releaseKey {
+    final value = config;
+    if (value == null) return null;
+    final keys = value.apkArtifacts.keys.toList()..sort();
+    return '${value.latestVersion}|${value.latestBuild}|${value.apkSha256}|'
+        '${keys.map((key) => '$key:${value.apkArtifacts[key]!.sha256}').join('|')}';
+  }
+
+  bool get hasVersionInformation =>
+      config != null &&
+      RegExp(r'^\d+\.\d+\.\d+(?:\+\d+)?$')
+          .hasMatch(config!.latestVersion.trim()) &&
+      !AppVersion.parse(config!.latestVersion, config!.latestBuild).isZero;
+
+  bool get isDownloading =>
+      downloadPhase == AppDownloadPhase.downloading ||
+      downloadPhase == AppDownloadPhase.verifying;
+  bool get hasReadyDownload =>
+      downloadPhase == AppDownloadPhase.ready &&
+      _readyPath != null &&
+      _downloadReleaseKey == releaseKey;
+  double? get downloadProgress => totalBytes > 0
+      ? (receivedBytes / totalBytes).clamp(0.0, 1.0).toDouble()
+      : null;
+
+  String get statusLabel {
+    if (isDownloading) {
+      if (downloadPhase == AppDownloadPhase.verifying) {
+        return 'Checking downloaded file…';
+      }
+      final p = downloadProgress;
+      return p == null
+          ? 'Downloading update…'
+          : 'Downloading · ${(p * 100).floor()}%';
+    }
+    if (hasReadyDownload) return 'Ready to install';
+    if (isChecking) return 'Checking for updates…';
+    if (decision.force) return 'Update required · View details';
+    if (downloadPhase == AppDownloadPhase.failed && decision.any) {
+      return 'Download failed · Try again';
+    }
+    if (decision.optional) {
+      return checkFailed
+          ? 'Update available · Could not refresh status'
+          : 'Version ${config!.latestVersion} available';
+    }
+    if (checkFailed) return 'Could not check · Try again';
+    if (lastSuccessfulCheck == null) return 'Check for updates';
+    if (!hasVersionInformation) return 'Version information unavailable';
+    return 'Up to date';
+  }
 
   static const _channel = MethodChannel('fkss.app/updater');
 
@@ -128,7 +229,8 @@ class AppUpdateService {
 
   AppRemoteConfig? config;
   UpdateDecision decision = const UpdateDecision(force: false, optional: false);
-  /// Bumped after every completed server check. Lets small widgets (the
+
+  /// Bumped after successful checks, once release gates can be reconciled. Lets small widgets (the
   /// optional-update banner) rebuild on fresh results the moment a check
   /// lands — without the whole shell rebuilding (that visibly hitched
   /// the kept-alive tabs).
@@ -154,19 +256,23 @@ class AppUpdateService {
     // in-flight requests still settle by exact identity; workers resume only
     // after fresh config (or the durable fallback) has been selected.
     _releaseCheckCompleted = false;
+    isChecking = true;
     late final Future<void> future;
     future = _checkOnce().whenComplete(() {
       if (identical(_checkFuture, future)) _checkFuture = null;
     });
     _checkFuture = future;
+    notifyListeners();
     return future;
   }
 
   Future<void> _checkOnce() async {
-    await _loadCapabilityCache();
+    var succeeded = false;
     try {
-      final res = await ApiService().get('/app/config', auth: false);
-      if (!res.success || res.data == null) return;
+      await _loadCapabilityCache();
+      final res = await (_fetchConfig?.call() ??
+          ApiService().get('/app/config', auth: false));
+      if (!res.success || res.data is! Map) return;
       final data = res.data is Map<String, dynamic>
           ? res.data as Map<String, dynamic>
           : Map<String, dynamic>.from(res.data);
@@ -181,11 +287,16 @@ class AppUpdateService {
         minBuild: config!.minBuild,
         forceFlag: config!.forceFlag,
       );
-      revision.value++;
+      lastSuccessfulCheck = DateTime.now();
+      succeeded = true;
     } catch (_) {
       // Stay on the current app if the check fails — do not lock teachers out.
     } finally {
       _releaseCheckCompleted = true;
+      isChecking = false;
+      checkFailed = !succeeded;
+      if (succeeded) revision.value++;
+      notifyListeners();
     }
   }
 
@@ -208,7 +319,8 @@ class AppUpdateService {
         if (raw is Map) {
           _cachedFeatures = {
             for (final entry in raw.entries)
-              if (entry.value is bool) entry.key.toString(): entry.value as bool,
+              if (entry.value is bool)
+                entry.key.toString(): entry.value as bool,
           };
         }
       }
@@ -219,7 +331,8 @@ class AppUpdateService {
             for (final entry in raw.entries)
               if (entry.value is List)
                 entry.key.toString(): (entry.value as List)
-                    .map((item) => item.toString()).toList(growable: false),
+                    .map((item) => item.toString())
+                    .toList(growable: false),
           };
         }
       }
@@ -255,7 +368,9 @@ class AppUpdateService {
   }
 
   bool get canDownload =>
-      !kIsWeb && Platform.isAndroid && (config?.downloadAvailable ?? false);
+      (_android ?? (!kIsWeb && Platform.isAndroid)) &&
+      (config?.downloadAvailable ?? false) &&
+      decision.any;
 
   /// P65 — which artifact the config promises for [abi]:
   /// the per-ABI entry when published, else `universal`, else the legacy
@@ -280,105 +395,243 @@ class AppUpdateService {
   static bool _isSha256(String s) =>
       s.length == 64 && RegExp(r'^[0-9a-f]{64}$').hasMatch(s);
 
-  Future<String> downloadApk({void Function(double p)? onProgress}) async {
+  /// All entry points share one operation. Leaving a route does not cancel it.
+  /// This batch retries from zero; it does NOT claim durable/background resume.
+  Future<String> downloadApk({void Function(double p)? onProgress}) {
+    final existing = _downloadFuture;
+    if (existing != null) return existing;
+    if (isOpeningInstaller) {
+      return Future.error(const AppUpdateFailure(
+          'Finish opening installation before starting another download.'));
+    }
     if (!canDownload) {
-      throw Exception('Download is only available on Android.');
+      return Future.error(
+          const AppUpdateFailure('No Android update download is available.'));
     }
-    final dir = await _channel.invokeMethod<String>('updateDir');
-    if (dir == null || dir.isEmpty) {
-      throw Exception('Could not prepare the download folder.');
-    }
-    final file = File('$dir/fkss.apk');
-    if (await file.exists()) {
-      await file.delete();
-    }
+    downloadPhase = AppDownloadPhase.downloading;
+    receivedBytes = 0;
+    totalBytes = 0;
+    downloadError = null;
+    installMessage = null;
+    _readyPath = null;
+    _readySha = null;
+    _readySize = null;
+    final snapshot = config!;
+    _transferConfig = snapshot;
+    _downloadReleaseKey = releaseKey;
+    late final Future<String> future;
+    future = _download(snapshot, onProgress).whenComplete(() {
+      if (identical(_downloadFuture, future)) _downloadFuture = null;
+    });
+    _downloadFuture = future;
+    notifyListeners();
+    return future;
+  }
 
-    // P65: ask for this device's architecture. Old servers ignore the
-    // extra query parameter (same universal file); new servers stream a
-    // ~2x smaller per-ABI build when one is published.
-    final abi = DeviceTierService.instance.info?.primaryAbi;
-    final artifact = artifactFor(config, abi);
-    var uri = Uri.parse('${AppConfig.apiBaseUrl}/app/download');
-    if (abi != null && abi.isNotEmpty) {
-      uri = uri.replace(queryParameters: {'abi': abi});
+  void _requireCurrentDownload() {
+    if (!downloadTargetsCurrentRelease) {
+      throw const AppUpdateFailure(
+          'A different release is now available. Download the latest update.');
     }
-    final client = http.Client();
-    String headerSha = '';
+  }
+
+  Future<void> _verifyFile(File file, String expected, int? size) async {
+    if (!await file.exists() || (size != null && await file.length() != size)) {
+      throw const AppUpdateFailure(
+          'The downloaded file is incomplete. Download it again.');
+    }
+    // Streaming verification keeps large APKs out of the Dart heap.
+    final digest = await sha256.bind(file.openRead()).first;
+    if (digest.toString() != expected) {
+      throw const AppUpdateFailure(
+          'The downloaded file could not be verified. Download it again.');
+    }
+  }
+
+  Future<String> _download(
+      AppRemoteConfig snapshot, void Function(double)? onProgress) async {
+    File? file;
+    final client = _clientFactory?.call() ?? http.Client();
     try {
-      final request = http.Request('GET', uri);
+      final dir = await _channel.invokeMethod<String>('updateDir');
+      if (dir == null || dir.isEmpty) {
+        throw const AppUpdateFailure(
+            'Could not prepare the download folder. Try again.');
+      }
+      file = File('$dir/fkss.apk');
+      if (await file.exists()) await file.delete();
+      final abi = DeviceTierService.instance.info?.primaryAbi;
+      final artifact = artifactFor(snapshot, abi);
+      var uri = Uri.parse('${AppConfig.apiBaseUrl}/app/download');
+      if (abi != null && abi.isNotEmpty) {
+        uri = uri.replace(queryParameters: {'abi': abi});
+      }
       final response = await client
-          .send(request)
-          .timeout(const Duration(minutes: 10));
+          .send(http.Request('GET', uri))
+          .timeout(const Duration(seconds: 45));
       if (response.statusCode != 200) {
-        throw Exception('Download failed (${response.statusCode}).');
+        throw const AppUpdateFailure(
+            'The update could not be downloaded. Try again later.');
       }
-      // The server states the SHA-256 of the file it ACTUALLY served —
-      // authoritative even when it falls back to universal for us.
-      final rawHeader = '${response.headers['x-app-sha256'] ?? ''}'
-          .trim()
-          .toLowerCase();
-      if (_isSha256(rawHeader)) headerSha = rawHeader;
-      final total =
-          response.contentLength ??
-          artifact?.sizeBytes ??
-          config?.apkSizeBytes ??
-          0;
-      var received = 0;
-      final sink = file.openWrite();
-      await for (final chunk in response.stream) {
-        received += chunk.length;
-        sink.add(chunk);
-        final p = total > 0 ? (received / total).clamp(0.0, 1.0) : 0.0;
-        _progress.add(p);
-        onProgress?.call(p);
+      // Preserve served-artifact fallback, but never install without a digest.
+      final header =
+          (response.headers['x-app-sha256'] ?? '').trim().toLowerCase();
+      final expected = _isSha256(header) ? header : artifact?.sha256 ?? '';
+      if (!_isSha256(expected)) {
+        throw const AppUpdateFailure(
+            'Update verification information is missing. Contact the administrator.');
       }
-      await sink.close();
+      final expectedSize = response.contentLength ??
+          (artifact?.sha256 == expected && (artifact?.sizeBytes ?? 0) > 0
+              ? artifact!.sizeBytes
+              : null);
+      totalBytes = expectedSize ?? 0;
+      var lastNotification = DateTime.now();
+      final sink = await file.open(mode: FileMode.write);
+      try {
+        await for (final chunk
+            in response.stream.timeout(const Duration(seconds: 45))) {
+          _requireCurrentDownload();
+          receivedBytes += chunk.length;
+          if (expectedSize != null && receivedBytes > expectedSize) {
+            throw const AppUpdateFailure(
+                'The downloaded file has an unexpected size. Try again.');
+          }
+          await sink.writeFrom(chunk);
+          final p = downloadProgress ?? 0.0;
+          _progress.add(p);
+          onProgress?.call(p);
+          final now = DateTime.now();
+          if (now.difference(lastNotification).inMilliseconds >= 200) {
+            lastNotification = now;
+            notifyListeners();
+          }
+        }
+      } finally {
+        await sink.close();
+      }
+      _requireCurrentDownload();
+      downloadPhase = AppDownloadPhase.verifying;
+      notifyListeners();
+      await _verifyFile(file, expected, expectedSize);
+      _requireCurrentDownload();
+      _readyPath = file.path;
+      _readySha = expected;
+      _readySize = await file.length();
+      downloadPhase = AppDownloadPhase.ready;
+      notifyListeners();
+      if (_android == null) {
+        try {
+          TelemetryService.instance.recordUpdateDownloaded(
+            version: snapshot.latestVersion,
+            build: snapshot.latestBuild,
+          );
+        } catch (_) {}
+      }
+      return file.path;
+    } catch (error) {
+      if (file != null) {
+        try {
+          if (await file.exists()) await file.delete();
+        } catch (_) {}
+      }
+      downloadPhase = AppDownloadPhase.failed;
+      downloadError = error is AppUpdateFailure
+          ? error.message
+          : error is FileSystemException
+              ? 'Could not save the update. Check free storage and try again.'
+              : 'Connection interrupted. Check your connection and download again.';
+      notifyListeners();
+      throw AppUpdateFailure(downloadError!);
     } finally {
       client.close();
     }
+  }
 
-    // Validation order: served-file header → per-ABI/universal artifact
-    // from config → legacy field. Never skip the check.
-    final expected = headerSha.isNotEmpty
-        ? headerSha
-        : (artifact?.sha256 ?? config?.apkSha256 ?? '');
-    if (expected.isNotEmpty) {
-      final bytes = await file.readAsBytes();
-      final got = sha256.convert(bytes).toString();
-      if (got != expected) {
-        await file.delete();
-        throw Exception('The file was damaged. Please try again.');
-      }
-    }
+  /// Opening the Android installer is not a successful APK replacement.
+  Future<void> installReadyApk() {
+    final existing = _installFuture;
+    if (existing != null) return existing;
+    late final Future<void> future;
+    future = _installReady().whenComplete(() {
+      if (identical(_installFuture, future)) _installFuture = null;
+    });
+    _installFuture = future;
+    return future;
+  }
 
+  Future<void> _installReady() async {
+    var fileVerified = false;
+    isOpeningInstaller = true;
+    installMessage = null;
+    notifyListeners();
     try {
-      final currentConfig = config;
-      if (currentConfig != null) {
-        TelemetryService.instance.recordUpdateDownloaded(
-          version: currentConfig.latestVersion,
-          build: currentConfig.latestBuild,
-        );
+      if (!hasReadyDownload || _readySha == null) {
+        throw const AppUpdateFailure(
+            'Check for the latest update and download it again.');
       }
-    } catch (_) {}
-
-    return file.path;
+      await _verifyFile(File(_readyPath!), _readySha!, _readySize);
+      fileVerified = true;
+      if (!await canRequestPackageInstalls()) {
+        await openInstallPermissionSettings();
+        installMessage =
+            'Allow installs from FKSS in Android settings, then return and tap Install update again.';
+        return;
+      }
+      // Metadata might have changed while permission/file checks were awaited.
+      if (!hasReadyDownload) {
+        fileVerified = false;
+        throw const AppUpdateFailure(
+            'A different release is now available. Download the latest update.');
+      }
+      await installApk(_readyPath!);
+      installMessage =
+          'Finish in Android’s installer. If installation was canceled, the verified file is still ready.';
+    } on AppUpdateFailure catch (error) {
+      if (!fileVerified) {
+        // Invalid/missing/stale artifacts must not retain an Install action.
+        _readyPath = null;
+        downloadPhase = AppDownloadPhase.failed;
+        downloadError = error.message;
+      } else {
+        // A settings/permission failure must not discard a verified APK.
+        installMessage = error.message;
+      }
+    } catch (_) {
+      if (!fileVerified) {
+        _readyPath = null;
+        downloadPhase = AppDownloadPhase.failed;
+        downloadError =
+            'Could not read the downloaded file. Download it again.';
+      } else {
+        installMessage =
+            'Could not open installation. Check Android install permission and try again.';
+      }
+    } finally {
+      isOpeningInstaller = false;
+      notifyListeners();
+    }
   }
 
   Future<bool> canRequestPackageInstalls() async {
-    if (kIsWeb || !Platform.isAndroid) return true;
+    if (!(_android ?? (!kIsWeb && Platform.isAndroid))) return true;
     try {
-      final res = await _channel.invokeMethod<bool>('canRequestPackageInstalls');
-      return res ?? true;
+      final res =
+          await _channel.invokeMethod<bool>('canRequestPackageInstalls');
+      return res ?? false;
     } catch (_) {
-      return true;
+      return false;
     }
   }
 
   Future<void> openInstallPermissionSettings() async {
-    if (kIsWeb || !Platform.isAndroid) return;
+    if (!(_android ?? (!kIsWeb && Platform.isAndroid))) return;
     try {
       await _channel.invokeMethod('openInstallPermissionSettings');
-    } catch (_) {}
+    } catch (_) {
+      throw const AppUpdateFailure(
+          'Could not open Android install settings. Check device settings and try again.');
+    }
   }
 
   Future<void> installApk(String path) async {

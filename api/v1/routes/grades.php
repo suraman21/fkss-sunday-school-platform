@@ -15,9 +15,37 @@
  * GET  /grades/summary?class_id=X                — Grade summary
  */
 
-$auth = apiRequireAuth();
 $action = $ROUTE['id'] ?? '';
+if ($action === 'preparation') header('Cache-Control: no-store');
+$auth = apiRequireAuth();
 $sub = $ROUTE['sub'] ?? '';
+if (in_array($action, ['preparation'], true)) {
+    $auth = apiRevalidateAuthorizationScope($auth, true);
+}
+if (!apiRoleIs($auth, apiRolesGrades())) {
+    // Preparation is the only grades route that needs its own role error inside the block;
+    // other routes enforce below after year resolution.
+    if ($action === 'preparation') err('You cannot manage grades.', 403);
+}
+if ($action === 'preparation') {
+    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') { header('Allow: GET'); err('Use GET for grades preparation.', 405); }
+    if (!empty($ROUTE['sub'])) err('Unknown preparation endpoint.', 404);
+    $query = $_GET; unset($query['_route'], $query['path']);
+    if ($query !== []) err('Preparation scope is selected by the server.', 422);
+    require_once dirname(__DIR__, 3) . '/admin/backend/services/GradesPreparationService.php';
+    require_once dirname(__DIR__, 3) . '/admin/backend/services/GradesPreparationGrant.php';
+    try {
+        $identity = \App\Services\GradesPreparationGrant::serverIdentity((string)SITE_URL);
+        $facts = \App\Services\GradesPreparationService::read($conn, $auth, apiRolesGrades(), apiIsClassRestricted($auth));
+        $preparation = \App\Services\GradesPreparationGrant::issue($facts, $identity, API_TOKEN_SECRET);
+    } catch (\App\Services\GradesPreparationDenied $denial) {
+        err('Preparation authority changed. Preserve older work and sign in again.', 401, ['code'=>$denial->reason]);
+    } catch (Throwable $error) {
+        error_log('Grades preparation unavailable.');
+        err('Complete grades preparation is unavailable. Preserve the previous dataset.', 503, ['code'=>'GRADES_PREPARATION_UNAVAILABLE']);
+    }
+    ok($preparation);
+}
 
 // /grades/followups[/counts|/{id}[/decide|/attempt]] — assessment follow-ups
 // after an Education reactivation (Attendance alerting Phase 5). Own role

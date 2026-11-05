@@ -1,6 +1,6 @@
 # ──────────────────────────────────────────────────────────────────────
-# FKSS release build script (P65) — the ONE command that makes a
-# publishable APK. Run from Mobile/wbws_flutter_app:
+# FKSS release build script (P65) — build and verify candidate APKs.
+# Owner signing continuity and representative-device acceptance remain required. Run from Mobile/wbws_flutter_app:
 #
 #   powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1
 #
@@ -39,6 +39,11 @@ function Invoke-Step {
 }
 
 Assert-Flutter
+# Python3.11+ is build tooling only. Missing SDK/Python must fail, never skip
+# actual artifact checks. Existing signing-key selection remains unchanged.
+$python = Get-Command py, python, python3 -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $python) { throw 'Python3.11+ is required for scripts/verify_android_apk.py.' }
+$pythonArgs = if ($python.Name -match '^py(\.exe)?$') { @('-3') } else { @() }
 
 # ── 0. Record the toolchain (reproducibility: the APK's behavior depends
 #       on the Flutter/Gradle versions that built it) ───────────────────
@@ -57,14 +62,14 @@ Write-Host ""
 Write-Host "Building FKSS $appVersion (build $appBuild)" -ForegroundColor Green
 
 if ($Clean) { Invoke-Step 'flutter clean' { flutter clean } }
-Invoke-Step 'flutter pub get' { flutter pub get }
+Invoke-Step 'flutter pub get --enforce-lockfile' { flutter pub get --enforce-lockfile }
 
 if (-not $SkipTests) {
     Invoke-Step 'flutter test' { flutter test }
 }
 
-# ── 2. Build the universal APK (works on every phone — ALWAYS publish) ─
-Invoke-Step 'flutter build apk --release (universal)' { flutter build apk --release }
+# ── 2. Build the universal APK (supported ABIs, not every Android phone) ─
+Invoke-Step 'flutter build apk --release (universal)' { flutter build apk --release --target-platform 'android-arm,android-arm64,android-x64' }
 
 $dist = Join-Path (Get-Location) 'dist'
 New-Item -ItemType Directory -Force -Path $dist | Out-Null
@@ -80,6 +85,14 @@ function Add-Artifact {
     param([string]$Source, [string]$Name, [string]$Kind)
     if (-not (Test-Path $Source)) { throw "Expected build output not found: $Source" }
     $dest = Join-Path $outDir $Name
+    $abis = if ($Kind -eq 'universal') { 'armeabi-v7a,arm64-v8a,x86_64' } else { $Kind }
+    $reportName = "$Name.compatibility.json"
+    Invoke-Step "Verify $Kind APK metadata, native libraries, alignment and signatures" {
+        # Resolve provider separators before passing a path to a native tool;
+        # this also exercises the owner procedure on Linux PowerShell in CI.
+        $resolvedSource = (Resolve-Path $Source).Path
+        & $python.Source @pythonArgs scripts/verify_android_apk.py $resolvedSource --abis $abis --version $appVersion --version-code $appBuild --report (Join-Path $outDir $reportName)
+    }
     Copy-Item $Source $dest -Force
     $hash = (Get-FileHash -Algorithm SHA256 $dest).Hash.ToLower()
     $script:artifacts += [ordered]@{
@@ -87,6 +100,7 @@ function Add-Artifact {
         name    = $Name
         size_mb = [math]::Round((Get-Item $dest).Length / 1MB, 1)
         sha256  = $hash
+        compatibility_report = $reportName
     }
     Write-Host ("  {0}  {1} MB  {2}" -f $Name, ([math]::Round((Get-Item $dest).Length / 1MB, 1)), $hash.Substring(0, 16)) -ForegroundColor Yellow
 }

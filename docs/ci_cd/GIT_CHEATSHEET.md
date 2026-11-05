@@ -1,141 +1,66 @@
-# Git, day to day
+# Git workflow reference
 
-For someone who has used `git pull` and `git push` without knowing what
-they do. Read once, then keep it open for a week.
+Use a topic branch, review the exact diff and merge through a checked PR. [Branching policy](../../BRANCHING.md) defines repository roles and the one-way beta boundary. [Contribution guidelines](../../CONTRIBUTING.md) define review and test requirements.
 
----
+## Start from current development main
 
-## The mental model
-
-Git stores **save points** (commits). A **branch** is a line of save
-points. `main` is the official line — the version that ships.
-
-The whole discipline is one sentence:
-
-> Do your work on a branch. Merge into `main` only when the tests pass.
-
----
-
-## Starting a change
-
-```bash
-git checkout main          # go to the official line
-git pull                   # get everyone else's latest work
-git checkout -b fix/search-crash
+```sh
+git status --short                 # preserve existing local changes first
+git fetch origin
+git switch -c fix/short-description origin/main
 ```
 
-`checkout -b` makes a new branch and switches to it. Name it after the
-work: `fix/…`, `feature/…`, `docs/…`.
+Use `fix/`, `feature/` or `docs/` names appropriate to the scope. Verify the remote repository before publishing; do not put credentials in the remote URL.
 
-**Always branch from an up-to-date `main`.** Skipping `git pull` is the
-usual cause of painful merges later.
+## Review and commit
 
----
-
-## While working
-
-```bash
-git status                 # what changed — use this constantly
-git diff                   # show the actual edits
-git add -A                 # stage everything
-git commit -m "fix: reject unranked server rows"
+```sh
+git status
+git diff
+git diff --check
+# Run applicable tests against isolated synthetic data.
+git add path/to/reviewed-file
+git diff --staged
+git commit -m "fix: describe the behavior corrected"
+git push -u origin fix/short-description
 ```
 
-Commit often. Small commits are easy to undo; one giant commit is not.
+Stage explicit paths rather than accidentally including unrelated edits, generated files or credentials. Small coherent commits are easier to review and revert.
 
----
+## Open and merge a PR
 
-## Publishing
+1. Target development `main`, never from beta `dev`.
+2. Describe the source evidence, scope, tests and remaining limits.
+3. Inspect actual checks for the candidate SHA. Green checks are evidence for those checks, not proof of production readiness or complete behavior coverage.
+4. Stop for failed checks, conflicts, missing access or required reviews. Do not bypass protections or mark skipped coverage as passing.
+5. After merging, record the merge SHA and main-branch checks. Independently confirm development deployment and obtain owner acceptance. Production promotion needs separate authorization.
 
-```bash
-git push -u origin fix/search-crash
+After merge, with no local work pending:
+
+```sh
+git switch main
+git pull --ff-only origin main
+git branch -d fix/short-description
 ```
 
-`-u origin <branch>` is only needed the first time; afterwards just
-`git push`.
+## Inspect and recover safely
 
-Then open a **Pull Request** on GitHub. CI runs automatically. Green
-means safe to merge; red means read the log and push a fix to the same
-branch — the PR updates itself.
-
----
-
-## After it is merged
-
-```bash
-git checkout main
-git pull
-git branch -d fix/search-crash   # delete the finished branch
-```
-
----
-
-## The commands you will actually need
-
-| Command | What it does |
+| Command | Purpose / caution |
 |---|---|
-| `git status` | What has changed. Run it whenever unsure. |
-| `git log --oneline -10` | The last ten save points. |
-| `git diff` | Unstaged edits. |
-| `git diff --staged` | What is about to be committed. |
-| `git checkout -b <name>` | New branch. |
-| `git switch main` | Move back to `main`. |
-| `git pull` | Download the latest. |
-| `git push` | Upload your commits. |
+| `git log --oneline -10` | Inspect recent commits |
+| `git diff --staged` | Review exactly what the next commit includes |
+| `git restore --staged path/to/file` | Unstage without deleting working-file edits |
+| `git restore path/to/file` | **Discards** that file's uncommitted tracked edits; use only after reviewing/saving them |
+| `git stash push -u -m "context"` | Temporarily save tracked and untracked work; excludes ignored files and is not an external backup |
+| `git stash list` / `git stash apply` | Inspect and restore saved work; resolve conflicts before dropping the stash |
 
----
+If commits were made on the wrong local branch, first create a named safety branch at the current commit and preserve uncommitted/untracked work. Do not use `reset --hard`, delete a worktree or rewrite shared history as a routine recovery step. If the commit is already shared, coordinate a normal revert or corrective PR.
 
-## Getting out of trouble
+Amend only unpublished commits you own. Never force-push a shared branch, overwrite another contributor's work or merge beta `dev` into `main`.
 
-**Undo edits to a file (not yet committed)**
-```bash
-git restore path/to/file
-```
+## Credentials and artifacts
 
-**Unstage something added by mistake**
-```bash
-git restore --staged path/to/file
-```
-
-**Fix the last commit message**
-```bash
-git commit --amend -m "better message"
-```
-Only if you have not pushed it yet.
-
-**Committed to `main` by accident**
-```bash
-git branch my-work        # save the work on a branch
-git reset --hard origin/main   # put main back
-git checkout my-work      # carry on there
-```
-
-> ⚠️ `git reset --hard` **deletes uncommitted changes permanently**. Run
-> `git status` first and be sure.
-
-**Save half-finished work to deal with something urgent**
-```bash
-git stash          # put changes aside
-git stash pop      # bring them back
-```
-
----
-
-## Rules for this repo
-
-1. **Never commit to `main` directly.** Branch protection will refuse it.
-2. **Never commit secrets** — passwords, API keys, `.env`, `*_env.php`,
-   keystores. Git history is permanent; the CI hygiene job blocks these.
-3. **Never commit APKs or files over 20 MB.** They bloat every clone
-   forever.
-4. **Never force-push a shared branch** (`git push --force`). It deletes
-   other people's work.
-5. **Pull before you branch.**
-
----
-
-## If a token or password is ever committed
-
-Rotate it immediately — assume it is compromised. Removing it from
-history does **not** help: it already exists in every clone, fork and
-cache. Rotation is the only real fix.
+- Never commit real environment files, access tokens, private keys, keystores, APKs or machine-specific build files. Repository hygiene checks are a backstop, not a complete secret detector.
+- Use approved credential tooling; never paste credentials into command history, repository URLs, documentation, issue text or logs.
+- If a credential is exposed, rotate/revoke it immediately and report privately under [the security procedure](../SECURITY.md). Deleting a file or rewriting history does not revoke the credential.
+- Protection settings can change. Inspect current repository requirements instead of assuming a particular GitHub plan or protection rule.

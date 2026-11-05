@@ -29,7 +29,7 @@ Domain, local and technical terms used in the FKSS code and documentation. Code 
 | **Section / age group** | One concept with three values, defined in `MemberCategory.php`: **A ህጻናት** (Children, 7–13, `7_13`), **B ማዕከላዊያን** (Intermediate, 14–17, `14_17`), **C ወጣቶች** (Youth, 18+, `18_plus`) |
 | **Membership tier** | `temporary` or `permanent`. A temporary member is eligible for promotion after 6 months |
 | **Registration type** | How the person joined: `waiting` (waiting list), `transfer` (from another Sunday school), `direct` |
-| **Member type** | `regular`, `special_regular` (ልዩ መደበኛ), `honorary` |
+| **Member type** | `regular`, `special_regular` (ልዩ መደበኛ), `honorary`. Manually selected by an authorized editor; positions, teacher accounts, role flags and teaching assignments never change it. Omission on an existing-record update preserves the stored type; new registrations retain their initial defaults. Automatic batch synchronization is retired, with no automatic repair of historical values |
 | **Christian name** | Baptismal name, stored separately from the legal name |
 | **Identity code / member code** | `{PREFIX}-{5 digits}`. Students: `A-`, `B-`, `C-`. Staff: a department and position prefix. A smaller `N` marks ordinary (non-head) staff ([`MemberCodeFormat.php`](../../admin/backend/services/MemberCodeFormat.php)) |
 | **Promotion (upgrade)** | Converting a temporary member to permanent. Done by HR on the existing record |
@@ -62,7 +62,7 @@ Domain, local and technical terms used in the FKSS code and documentation. Code 
 |---|---|
 | **Class-day attendance** | One attendance record per member per class day (`attendance`) |
 | **Lesson attendance** | Per-lesson records for Education (`attendance_sessions`, `attendance_session_records`) |
-| **Taker** | A volunteer account that may only record attendance: `attendance_taker` (classes), `mezmur_attendance_taker`, `hr_attendance_taker` (department-owned) |
+| **Taker** | Attendance volunteer: `attendance_taker` is class-scoped; `mezmur_attendance_taker` is department-scoped. `hr_attendance_taker` is a retired identity, not an active HR attendance workflow |
 | **Draft / submit / reopen** | Sheet lifecycle. Drafts merge partial saves; submitted sheets are read-only until reopened |
 | **Backdating window** | Attendance may be recorded at most 45 days back and never for the future |
 | **Department status** | Whether a member is active or inactive in a department (`member_department_periods`) |
@@ -85,7 +85,7 @@ Domain, local and technical terms used in the FKSS code and documentation. Code 
 | **Shim** | A file in `backend/api/` that only `require`s an admin API file |
 | **REST v1** | `api/v1/`: the API used by the Android app |
 | **Access / refresh token** | A 15-minute signed token, plus a 90-day rotating refresh token. Custom format, **not JWT** ([API.md](../API.md#2-authentication)) |
-| **Authorization version** | A per-user counter, increased when role or access changes, which invalidates tokens and sessions (`users.authorization_version`) |
+| **Authorization version** | `users.authorization_version`, checked against signed/session scope to invalidate changed access. Legacy mobile enforcement also depends on the build/deadline compatibility configuration ([API](../API.md#2-authentication)) |
 | **Refresh family** | The chain of rotated refresh tokens. Replaying an old token revokes the whole family |
 | **Outbox** | An on-device queue of writes waiting to be sent (`pending_attendance`, `pending_grades`, `comm_outbox`, …) |
 | **Idempotency key** | A client-generated key (`Idempotency-Key` header) that lets the server de-duplicate retried writes |
@@ -95,5 +95,10 @@ Domain, local and technical terms used in the FKSS code and documentation. Code 
 | **Danger confirmation** | Tiered confirmation for destructive actions; high-risk actions need a typed phrase checked on the server |
 | **Runtime DDL** | Schema changes made by application code at request time (for example `MezmurSchemaReconciler`). Known debt |
 | **Secrets file** | `.fkss_env.php`, outside the web root; holds database credentials and keys. Never committed |
-| **`main` / `dev`** | `main` = production code. `dev` = `main` plus one commit that points the app at the beta server. Never merge `dev` into `main` ([BRANCHING.md](../../BRANCHING.md)) |
-| **Build number** | The integer after `+` in the app version (`1.7.3+40`); used for update and compatibility checks (`X-App-Build`) |
+| **`main` / `dev`** | Development `main` is reviewed integration; production is separately approved and may lag. Beta `dev` carries beta app settings and receives `main` one-way only; never merge it back ([branching policy](../../BRANCHING.md)) |
+| **Build number** | The integer after `+` in a source/artifact version (for example `1.7.4+41`), used for update/compatibility checks (`X-App-Build`); source metadata does not prove publication or installation |
+| **Read cache / durable work** | Read caches can be refreshed; unsent outbox/draft payloads are durable private work with owner/scope and explicit recovery/discard rules. Do not call both “cache” when describing deletion |
+| **Local PIN / account password** | The 4–8 digit local app-lock PIN is separate from online account credentials and is not SQLite encryption |
+| **Upload resume / download retry** | Browser APK upload has its own part/receipt reconciliation. Current mobile APK download retries restart from zero; one capability does not imply the other |
+| **Installer opened / installed** | Launching Android's package installer is not proof of successful installation; confirm the installed version independently |
+| **Observed / inferred state** | A monitor sees eligible server requests, not every unsent local row or future retry. Record unknown/ambiguous states instead of inventing success or zero pending work |

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 
 import 'api_service.dart';
@@ -80,6 +81,8 @@ class SyncService {
       syncing: false);
   SyncStatus get lastStatus => _lastStatus;
   String lastError = '';
+  static const _confirmationHeldMessage =
+      'Server confirmation is incomplete. Your saved work is kept.';
 
   // ── S2 Goal A.2 — the coordinated execution boundary ────────────────
   // The scheduler is the seam the future native layer attaches to. Until
@@ -423,15 +426,17 @@ class SyncService {
     return SyncResult(
       synced: synced,
       failed: failed,
-      message: synced > 0
-          ? (failed > 0
-              ? 'Sent $synced. $failed still waiting — will retry.'
-              : 'Sent to Education')
-          : failed > 0
-              ? 'Could not send yet. Will retry on its own.'
-              : supersededLocal
-                  ? 'Local work changed while sending. Checking the new copy.'
-                  : 'Nothing waiting to send',
+      message: passSummary.operationsNeedingAttention > 0
+          ? 'Saved work needs attention. Open Sync Center.'
+          : synced > 0
+              ? (failed > 0
+                  ? 'Sent $synced. $failed still waiting — will retry.'
+                  : 'Sent to Education')
+              : failed > 0
+                  ? 'Could not send yet. Will retry on its own.'
+                  : supersededLocal
+                      ? 'Local work changed while sending. Checking the new copy.'
+                      : 'Nothing waiting to send',
     );
   }
 
@@ -509,7 +514,12 @@ class SyncService {
         continue;
       }
 
-      final settlement = _legacySettlement(decision, response, claim);
+      final heldMessage = decision == OutboxDecision.needsAttention &&
+              evidence.requiresReceiptValidation
+          ? _confirmationHeldMessage
+          : null;
+      final settlement = _legacySettlement(decision, response, claim,
+          failureMessage: heldMessage);
       final category = classifySyncErrorCategory(evidence);
       final result = await _db.settleLegacyOperation(
         claim: claim,
@@ -529,7 +539,9 @@ class SyncService {
           ),
           httpStatus: response.statusCode,
           failureMessage:
-              decision == OutboxDecision.accepted ? null : response.message,
+              decision == OutboxDecision.accepted
+                  ? null
+                  : heldMessage ?? response.message,
           nextAttemptAt: settlement.nextAttemptAt,
           serverRef: response.serverRequestId,
         ),
@@ -569,7 +581,9 @@ class SyncService {
           decision == OutboxDecision.resolvedConflict) {
         failed++;
         operationsNeedingAttention++;
-        lastError = response.message ?? 'The school did not accept this work.';
+        lastError = heldMessage ??
+            response.message ??
+            'The school did not accept this work.';
       }
     }
 
@@ -686,8 +700,10 @@ class SyncService {
   }
 
   LegacySettlement _legacySettlement(OutboxDecision decision,
-      ApiResponse response, LegacyClaimSnapshot claim) {
-    final message = response.message ?? 'Could not send this work.';
+      ApiResponse response, LegacyClaimSnapshot claim,
+      {String? failureMessage}) {
+    final message =
+        failureMessage ?? response.message ?? 'Could not send this work.';
     final kind = switch (decision) {
       OutboxDecision.accepted => LegacySettlementKind.accepted,
       OutboxDecision.retryable => LegacySettlementKind.retryable,
@@ -700,11 +716,26 @@ class SyncService {
       OutboxDecision.supersededSession || OutboxDecision.supersededLocal =>
         throw StateError('Superseded work must not be settled.'),
     };
+    final isAccepted = decision == OutboxDecision.accepted;
+    // Exact atomic receipt: capture server's exact response for attendance + grades (v42).
+    String? receiptJson;
+    if (isAccepted && (claim.operation.kind == LegacyOperationKind.attendance || claim.operation.kind == LegacyOperationKind.grades)) {
+      try {
+        final data = response.data;
+        receiptJson = data != null ? data.toString() : null;
+        // Prefer JSON encoding when data is a Map/List for faithful receipt.
+        if (data is Map || data is List) {
+          receiptJson = _encodeReceipt(data);
+        }
+      } catch (_) {
+        receiptJson = null;
+      }
+    }
     return LegacySettlement(
       kind: kind,
       failureCode: response.errorCode,
       failureHttpStatus: response.statusCode == 0 ? null : response.statusCode,
-      failureMessage: decision == OutboxDecision.accepted ? null : message,
+      failureMessage: isAccepted ? null : message,
       nextAttemptAt: decision == OutboxDecision.retryable
           ? nextOutboxAttemptAt(
               attemptCount: claim.attemptCount,
@@ -712,7 +743,18 @@ class SyncService {
               randomUnit: _random.nextDouble(),
             )
           : null,
+      receiptJson: receiptJson,
+      serverRequestId: response.serverRequestId,
+      httpStatus: response.statusCode == 0 ? null : response.statusCode,
     );
+  }
+
+  String _encodeReceipt(dynamic data) {
+    try {
+      return jsonEncode(data);
+    } catch (_) {
+      return '$data';
+    }
   }
 
   SyncResult _pausedResult({int synced = 0, int failed = 0}) => SyncResult(

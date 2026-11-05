@@ -8,6 +8,7 @@ import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart' show getDatabasesPath;
 import 'services/app_lock_service.dart';
 import 'services/local_db.dart';
+import 'services/interrupted_database_migration.dart';
 import 'services/session_models.dart';
 import 'services/session_service.dart';
 import 'screens/lock/lock_screen.dart';
@@ -188,13 +189,14 @@ Future<void> runBootstrap() async {
       timeout: const Duration(seconds: 10),
     );
   } catch (error, stack) {
-    final detail = error is StartupStallException
-        ? '$error'
-        : await _writeBootstrapLog(error, stack);
+    final bool isStalled = error is StartupStallException;
+    final bool isRecovery = error is OfflineDatabaseRecoveryRequired;
+    final detail = isStalled ? '$error' : await _writeBootstrapLog(error, stack);
     _markStartupUiShown();
     runApp(OfflineDataProtectionFailureApp(
       detail: detail,
-      stalled: error is StartupStallException,
+      stalled: isStalled,
+      migrationRecoveryRequired: isRecovery,
     ));
     return;
   }
@@ -272,10 +274,16 @@ class OfflineDataProtectionFailureApp extends StatefulWidget {
   /// rather than failed — the copy then talks about "starting" instead of
   /// "opening offline storage", because storage may be perfectly healthy.
   final bool stalled;
+  // Kept constructor name also covers orphaned ordinary SQLite sidecars.
+  final bool migrationRecoveryRequired;
+  /// Defaults to the real bootstrap; injectable for isolated lifecycle tests.
+  final Future<void> Function() retryBootstrap;
   const OfflineDataProtectionFailureApp({
     super.key,
     required this.detail,
     this.stalled = false,
+    this.migrationRecoveryRequired = false,
+    this.retryBootstrap = runBootstrap,
   });
 
   @override
@@ -288,8 +296,15 @@ class _OfflineDataProtectionFailureAppState
   bool _retrying = false;
 
   Future<void> _retry() async {
+    if (_retrying) return;
     setState(() => _retrying = true);
-    await runBootstrap(); // replaces this app on success
+    try {
+      await widget.retryBootstrap(); // replaces this app on success
+    } finally {
+      // A handled failure can update this same State with a new error detail.
+      // Success may instead dispose it; never update an unmounted screen.
+      if (mounted) setState(() => _retrying = false);
+    }
   }
 
   @override
@@ -322,16 +337,22 @@ class _OfflineDataProtectionFailureAppState
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    widget.stalled
-                        ? 'One startup step on this phone did not answer in '
-                            'time. Your data has NOT been deleted. Tap Retry; '
-                            'if it continues, restart the phone and send the '
-                            'detail line below to the school administrator '
-                            '(Profile → App → Diagnostics also keeps it).'
-                        : 'The app could not open its offline storage on this phone. '
-                            'Your data has NOT been deleted. Free up some phone storage '
-                            'and tap Retry. If it continues, send the detail line below '
-                            'to the school administrator.',
+                    widget.migrationRecoveryRequired
+                        ? 'Offline database files need review. '
+                            'This attempt kept the database files unchanged. '
+                            'Do not clear app data or reinstall. Send the detail '
+                            'line below to the school administrator before '
+                            'retrying recovery.'
+                        : widget.stalled
+                            ? 'One startup step on this phone did not answer in '
+                                'time. Your data has NOT been deleted. Tap Retry; '
+                                'if it continues, restart the phone and send the '
+                                'detail line below to the school administrator '
+                                '(Profile → App → Diagnostics also keeps it).'
+                            : 'The app could not open its offline storage on this phone. '
+                                'Your data has NOT been deleted. Free up some phone storage '
+                                'and tap Retry. If it continues, send the detail line below '
+                                'to the school administrator.',
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 16),
@@ -478,12 +499,25 @@ class FKSSApp extends StatefulWidget {
 class _FKSSAppState extends State<FKSSApp> {
   final _appLock = AppLockService();
   final _session = SessionCoordinator();
+  bool _lastUpdateForce = AppUpdateService().decision.force;
+
+  void _onReleaseChanged() {
+    _session.reconcileReleaseGates();
+    final force = AppUpdateService().decision.force;
+    // Metadata/progress must not rebuild the entire kept-alive shell. Only a
+    // change to the mandatory root policy requires this root rebuild.
+    if (force != _lastUpdateForce) {
+      _lastUpdateForce = force;
+      if (mounted) setState(() {});
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     _appLock.addListener(_onRootStateChanged);
     _session.addListener(_onRootStateChanged);
+    AppUpdateService().revision.addListener(_onReleaseChanged);
     AppUpdateService().check().then((_) {
       _session.reconcileReleaseGates();
       if (mounted) setState(() {});
@@ -494,6 +528,7 @@ class _FKSSAppState extends State<FKSSApp> {
   void dispose() {
     _appLock.removeListener(_onRootStateChanged);
     _session.removeListener(_onRootStateChanged);
+    AppUpdateService().revision.removeListener(_onReleaseChanged);
     super.dispose();
   }
 

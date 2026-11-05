@@ -92,7 +92,20 @@ void main() {
     });
   });
 
-  group('buildReport — no PII, all facts', () {
+  group('buildReport — device facts and caller-supplied log tail', () {
+    test('raw log text is not universally redacted before copying', () {
+      const syntheticLog = 'Synthetic exception: PRIVATE_TEST_MARKER';
+      final report = CrashLogService.buildReport(
+        appVersion: '1.7.4',
+        appBuild: 41,
+        server: 'https://example.test',
+        crashLogTail: syntheticLog,
+      );
+      // This contract requires the UI to warn users to review logs privately;
+      // this fixture does not contain actual credentials or school records.
+      expect(report, contains(syntheticLog));
+    });
+
     test('contains device facts and log tail', () {
       final device = const DeviceInfoSnapshot(
         primaryAbi: 'armeabi-v7a',
@@ -117,7 +130,8 @@ void main() {
       expect(r, contains('1024 MB'));
       expect(r, contains('Android Go'));
       expect(r, contains('boom'));
-      // No user data in the report.
+      // This synthetic input has no token field. Arbitrary log text is
+      // preserved, so this assertion is not a universal privacy guarantee.
       expect(r.contains('token'), isFalse);
     });
 

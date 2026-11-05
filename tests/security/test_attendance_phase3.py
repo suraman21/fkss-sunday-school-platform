@@ -208,7 +208,7 @@ class Phase3StaticGuards(unittest.TestCase):
         mjs = read("frontend/js/mezmur.js")
         self.assertIn("=== 'mezmur_dept';", mjs)
         self.assertIn("opt.disabled = !deptOnly; opt.hidden = !deptOnly;", mjs)
-        self.assertIn("version: 1.7.3+40", (fl / "pubspec.yaml").read_text(encoding="utf-8"))
+        self.assertIn("version: 1.7.4+41", (fl / "pubspec.yaml").read_text(encoding="utf-8"))
 
     def test_php_syntax(self):
         php = shutil.which("php")

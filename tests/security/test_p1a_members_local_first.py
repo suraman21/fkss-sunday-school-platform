@@ -179,10 +179,14 @@ class P1ADoNotTouch(unittest.TestCase):
         self.assertIn('postTimeout = 60', config)
 
     def test_f8_guards_untouched(self):
-        # The four locked-day cleanup guards from cf84344 stay.
-        self.assertEqual(self.ldb.count('sync_error IS NULL'), 4)
-        for name in ('dropPendingAttendance', 'dropPendingGrades',
-                     'dropPendingMezmur', 'dropPendingHr'):
+        # Preserve other-domain F8 guards and enforce attendance no-delete policy.
+        # Attendance now refuses deletion entirely; other three F8 filters stay.
+        self.assertEqual(self.ldb.count('sync_error IS NULL'), 3)
+        attendance = method_body(self.ldb, 'Future<void> dropPendingAttendance(')
+        self.assertIn('throw StateError(', attendance)
+        self.assertNotIn('.delete(', attendance)
+        self.assertNotIn('await database', attendance)
+        for name in ('dropPendingGrades', 'dropPendingMezmur', 'dropPendingHr'):
             body = method_body(self.ldb, f'Future<void> {name}(')
             self.assertIn('sync_error IS NULL', body, name)
         body = method_body(

@@ -89,6 +89,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         SessionCoordinator().enterReauthentication(reason: 'no_authorized_tabs');
       });
     }
+    AppUpdateService().revision.addListener(_applyReleaseConfig);
     AppUpdateService().check().then((_) => _applyReleaseConfig());
   }
 
@@ -139,6 +140,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    AppUpdateService().revision.removeListener(_applyReleaseConfig);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }

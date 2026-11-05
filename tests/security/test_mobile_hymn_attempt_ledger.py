@@ -570,9 +570,14 @@ class HymnLedgerSourceContract(unittest.TestCase):
             self.assertNotIn("'background_hymn'", text)
             self.assertNotIn("hymnExecutionSource", text)
 
-    def test_no_new_schema_version_or_migration(self):
-        self.assertIn("const localDatabaseSchemaVersion = 37;", _schema_source())
-        self.assertNotIn("oldVersion < 38", _db_source())
+    def test_attendance_v38_does_not_migrate_hymn_or_attempt_schema(self):
+        self.assertIn("const localDatabaseSchemaVersion = 38;", _schema_source())
+        # v38 adds attendance provenance only; the hymn/attempt contract stays.
+        migration = _db_source().split("if (oldVersion < 38) {", 1)[1].split("}", 1)[0]
+        self.assertEqual(migration.strip(), "await migrateAttendanceOriginalYear(db);")
+        attendance = _read(MOBILE / "lib/services/attendance_original_year.dart")
+        self.assertNotIn("pending_hymn_ops", attendance)
+        self.assertNotIn("sync_attempts", attendance)
 
     def test_no_new_attempt_table_or_counter(self):
         self.assertNotIn("hymn_sync_attempts", _db_source())

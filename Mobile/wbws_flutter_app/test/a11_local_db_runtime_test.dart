@@ -173,7 +173,7 @@ void main() {
     expect(columnNames, contains('execution_source'));
 
     final userVersion = await rawDb.rawQuery('PRAGMA user_version');
-    expect(userVersion.single.values.single, 37);
+    expect(userVersion.single.values.single, 42);
 
     final attendanceRef = await db.saveAttendanceLocal(
       42,
@@ -191,6 +191,11 @@ void main() {
           'status': 'late',
         },
       ],
+      expectedSession: const LegacyWriteSession(
+        ownerUserId: 101,
+        authorizationVersion: 3,
+        runtimeGeneration: 7,
+      ),
     );
     expect(attendanceRef.clientOpId, isNotEmpty);
     expect(attendanceRef.ownerUserId, ownerUserId);
@@ -333,6 +338,11 @@ void main() {
       [
         {'member_id': 7003, 'status': 'present'},
       ],
+      expectedSession: const LegacyWriteSession(
+        ownerUserId: 101,
+        authorizationVersion: 3,
+        runtimeGeneration: 7,
+      ),
     );
     await db.persistLocalSession(
       state: SessionState.active,

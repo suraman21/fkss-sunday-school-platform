@@ -74,8 +74,12 @@ function fkssApkManifestCached(string $file, array $meta): ?array
     return $info;
 }
 
-/** Bytes of one ZIP entry (stored or deflated), CRC-checked; null if absent or invalid. */
-function fkssZipReadEntry(string $file, string $entryName, int $maxBytes): ?string
+/**
+ * Bytes of one ZIP entry, CRC-checked; null if absent or invalid.
+ * prefixOnly is exclusively for native ELF identity checks: bounded streaming
+ * decompression, NOT full-entry CRC/integrity/signature verification.
+ */
+function fkssZipReadEntry(string $file, string $entryName, int $maxBytes, bool $prefixOnly = false): ?string
 {
     $size = @filesize($file);
     if (!is_int($size) || $size < 22) {
@@ -109,14 +113,17 @@ function fkssZipReadEntry(string $file, string $entryName, int $maxBytes): ?stri
             $h = unpack('vflags/vmethod/vtime/vdate/Vcrc/Vcsize/Vusize/vnameLen/vextraLen/vcommentLen/vdiskStart/vintAttr/VextAttr/Vlocal',
                 substr($cd, $p + 8, 38));
             $name = substr($cd, $p + 46, $h['nameLen']);
+            $next = $p + 46 + $h['nameLen'] + $h['extraLen'] + $h['commentLen'];
+            if ($next > $cdLen) return null;
             if ($name === $entryName) {
+                if ($found !== null) return null; // ambiguous duplicate entry
                 $found = $h;
-                break;
             }
-            $p += 46 + $h['nameLen'] + $h['extraLen'] + $h['commentLen'];
+            $p = $next;
         }
-        if ($found === null || ($found['flags'] & 1) || $found['usize'] > $maxBytes
-            || $found['csize'] > $maxBytes + 1048576 || $found['local'] + 30 > $size) {
+        if ($p !== $cdLen || $found === null || ($found['flags'] & 1)
+            || (!$prefixOnly && ($found['usize'] > $maxBytes || $found['csize'] > $maxBytes + 1048576))
+            || $found['local'] + 30 > $cdOffset) {
             return null;
         }
         fseek($fh, (int)$found['local']);
@@ -125,7 +132,34 @@ function fkssZipReadEntry(string $file, string $entryName, int $maxBytes): ?stri
             return null;
         }
         $l = unpack('vnameLen/vextraLen', substr($lh, 26, 4));
-        fseek($fh, (int)$found['local'] + 30 + $l['nameLen'] + $l['extraLen']);
+        $dataOffset = (int)$found['local'] + 30 + $l['nameLen'] + $l['extraLen'];
+        if ($dataOffset + $found['csize'] > $cdOffset || $l['nameLen'] !== strlen($entryName)
+            || ($found['method'] === 0 && $found['csize'] !== $found['usize'])
+            || unpack('v', substr($lh, 8, 2))[1] !== $found['method']
+            || (unpack('v', substr($lh, 6, 2))[1] & 1)
+            || fread($fh, $l['nameLen']) !== $entryName) return null;
+        fseek($fh, $dataOffset);
+        if ($prefixOnly) {
+            // Consume at most 256 KiB of compressed input in 64-byte chunks.
+            // One inflate call therefore has bounded output (~64 KiB), even
+            // for a huge highly-compressible library. Never load full .so files.
+            if ($maxBytes < 1 || $maxBytes > 64 || $found['usize'] < $maxBytes) return null;
+            if ($found['method'] === 0) return fread($fh, $maxBytes) ?: null;
+            if ($found['method'] !== 8 || !function_exists('inflate_init')) return null;
+            $ctx = @inflate_init(ZLIB_ENCODING_RAW);
+            if ($ctx === false) return null;
+            $head = '';
+            $remaining = min((int)$found['csize'], 262144);
+            while ($remaining > 0 && strlen($head) < $maxBytes) {
+                $chunk = fread($fh, min(64, $remaining));
+                if ($chunk === false || $chunk === '') return null;
+                $remaining -= strlen($chunk);
+                $part = @inflate_add($ctx, $chunk, ZLIB_SYNC_FLUSH);
+                if ($part === false) return null;
+                $head .= substr($part, 0, $maxBytes - strlen($head));
+            }
+            return strlen($head) === $maxBytes ? $head : null;
+        }
         $raw = $found['csize'] > 0 ? (string)fread($fh, (int)$found['csize']) : '';
         if (strlen($raw) !== (int)$found['csize']) {
             return null;

@@ -80,6 +80,7 @@ if ($action === 'login' && $method === 'POST') {
     
     try {
         $refreshToken = $refreshService->issue($user, $clientIp, $userAgent);
+        $accessFamily = apiRefreshAccessBinding($refreshToken, (int)$user['id']);
     } catch (Throwable $error) {
         error_log('API refresh session creation failed. Apply migrations 010 and 048.');
         err('Authentication service is temporarily unavailable.', 503,
@@ -102,7 +103,8 @@ if ($action === 'login' && $method === 'POST') {
             $user['role'],
             $user['full_name'],
             $accessTokenExpiry,
-            max(1, (int)($user['authorization_version'] ?? 1))
+            max(1, (int)($user['authorization_version'] ?? 1)),
+            $accessFamily
         ),
         'refresh_token' => $refreshToken,
         'expires_in' => $accessTokenExpiry,
@@ -190,6 +192,13 @@ if ($action === 'refresh-token' && $method === 'POST') {
     }
 
     $user = $rotation['user'];
+    try {
+        $accessFamily = apiRefreshAccessBinding($rotation['token'], (int)$user['id']);
+    } catch (Throwable $error) {
+        error_log('API rotated refresh-family binding unavailable.');
+        err('Authentication service is temporarily unavailable.', 503,
+            ['code' => 'AUTH_SERVICE_UNAVAILABLE']);
+    }
     $hasImage = !empty($user['profile_image_path']);
     $profileVersion = \App\Services\ProfileService::profileVersion($user);
     $imageUrl = $hasImage
@@ -203,7 +212,8 @@ if ($action === 'refresh-token' && $method === 'POST') {
             $user['role'],
             $user['full_name'],
             $accessTokenExpiry,
-            max(1, (int)($user['authorization_version'] ?? 1))
+            max(1, (int)($user['authorization_version'] ?? 1)),
+            $accessFamily
         ),
         'refresh_token' => $rotation['token'],
         'expires_in' => $accessTokenExpiry,

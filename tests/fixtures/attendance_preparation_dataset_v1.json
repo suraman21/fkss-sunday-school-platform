@@ -1,0 +1,140 @@
+{
+  "description": "Synthetic full preparation payload for dataset validator; not a transport fixture, not issued by PHP HMAC.",
+  "payload": {
+    "preparation_version": 1,
+    "complete": true,
+    "owner_user_id": 7,
+    "authorization_version": 3,
+    "role": "teacher",
+    "family_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "issued_at": 1793872800,
+    "deadline": 1796464800,
+    "preparation_id": "824c5645ed41c2f8b4c387f7439c9105a69caf76783a210c23c00fb6f531d288",
+    "server_identity": "https://school.example/api/v1",
+    "server_today": "2026-11-04",
+    "from": "2026-11-02",
+    "to": "2026-11-04",
+    "backdate_days": 45,
+    "write_year": {
+      "id": 6,
+      "from": "2026-09-01",
+      "to": "2027-08-31",
+      "status": "active"
+    },
+    "lessons_enabled": false,
+    "members": [
+      {
+        "member_id": 1,
+        "student_name": "Alpha",
+        "father_name": "Beta",
+        "member_code": "M1"
+      },
+      {
+        "member_id": 2,
+        "student_name": "Zebra",
+        "father_name": "Gamma",
+        "member_code": "M2"
+      }
+    ],
+    "classes": [
+      {
+        "class_id": 3,
+        "class_name": "Class Three",
+        "class_name_en": "Class 3",
+        "section": "A",
+        "write_year_id": 6,
+        "roster_year_id": 6,
+        "roster_fallback": false,
+        "days": [
+          {
+            "date": "2026-11-02",
+            "member_ids": [
+              1,
+              2
+            ],
+            "calendar_code": "o",
+            "base_roster_compatible": true,
+            "records": [],
+            "packet": null,
+            "resolved_status": null,
+            "workflow_supported": true,
+            "teacher_workflow_open": true,
+            "lesson_derived": false,
+            "origin_year_ids": [],
+            "origin_unknown": false,
+            "origin_matches_write_year": true,
+            "capture_eligible": true,
+            "not_before": 1762040400,
+            "not_after": 1762126799,
+            "context_token": "eyJraW5kIjoiZGF5In0.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "date": "2026-11-03",
+            "member_ids": [
+              1
+            ],
+            "calendar_code": "n",
+            "base_roster_compatible": true,
+            "records": [
+              {
+                "member_id": 1,
+                "academic_year_id": 6,
+                "status": "present",
+                "note": ""
+              }
+            ],
+            "packet": {
+              "id": 90,
+              "academic_year_id": 6,
+              "status": "submitted",
+              "status_supported": true
+            },
+            "resolved_status": "submitted",
+            "workflow_supported": true,
+            "teacher_workflow_open": false,
+            "lesson_derived": false,
+            "origin_year_ids": [
+              6
+            ],
+            "origin_unknown": false,
+            "origin_matches_write_year": true,
+            "capture_eligible": false,
+            "not_before": 1762126800,
+            "not_after": 1762213199,
+            "context_token": "eyJraW5kIjoiZGF5In0.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          {
+            "date": "2026-11-04",
+            "member_ids": [
+              1,
+              2
+            ],
+            "calendar_code": "o",
+            "base_roster_compatible": false,
+            "records": [
+              {
+                "member_id": 1,
+                "academic_year_id": null,
+                "status": "absent",
+                "note": "late arrival"
+              }
+            ],
+            "packet": null,
+            "resolved_status": "submitted",
+            "workflow_supported": true,
+            "teacher_workflow_open": true,
+            "lesson_derived": false,
+            "origin_year_ids": [],
+            "origin_unknown": true,
+            "origin_matches_write_year": false,
+            "capture_eligible": false,
+            "not_before": 1762213200,
+            "not_after": 1762299599,
+            "context_token": "eyJraW5kIjoiZGF5In0.cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          }
+        ]
+      }
+    ],
+    "school_calendar": {}
+  }
+}

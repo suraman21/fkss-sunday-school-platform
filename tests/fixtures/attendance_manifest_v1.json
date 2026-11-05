@@ -1,0 +1,407 @@
+{
+  "encoding": "UTF-8 netstrings; independent Python hashlib reference",
+  "vectors": [
+    {
+      "name": "draft ordering",
+      "input": {
+        "owner_user_id": 101,
+        "client_op_id": "manifest.synthetic-001",
+        "packet_kind": "draft",
+        "class_id": 3,
+        "academic_year_id": 2018,
+        "date": "2026-11-05",
+        "records": [
+          {
+            "member_id": 31,
+            "status": "absent",
+            "notes": ""
+          },
+          {
+            "member_id": 30,
+            "status": "present",
+            "notes": "Synthetic note"
+          }
+        ]
+      },
+      "expected": {
+        "manifest_version": 1,
+        "domain": "attendance",
+        "owner_user_id": 101,
+        "client_op_id": "manifest.synthetic-001",
+        "packet_kind": "draft",
+        "class_id": 3,
+        "academic_year_id": 2018,
+        "date": "2026-11-05",
+        "record_count": 2,
+        "records_sha256": "650cda5b79bbaec19c3eec7876d800f4bc65701523a255e8041d76674d636e17",
+        "manifest_sha256": "9de4e30f28ebf15d37202f88e2a1008c44b1bad7d38e3a0ed63e1652138fe331"
+      },
+      "records_bytes_hex": "32363a73736d732e617474656e64616e63652e7265636f7264732e76312c313a322c323a33302c373a70726573656e742c31343a53796e746865746963206e6f74652c323a33312c363a616273656e742c303a2c",
+      "manifest_bytes_hex": "32373a73736d732e617474656e64616e63652e6d616e69666573742e76312c333a3130312c32323a6d616e69666573742e73796e7468657469632d3030312c353a64726166742c313a332c343a323031382c31303a323032362d31312d30352c313a322c36343a363530636461356237396262616563313963336565633738373664383030663462633635373031353233613235356538303431643736363734643633366531372c"
+    },
+    {
+      "name": "same reordered",
+      "input": {
+        "owner_user_id": 101,
+        "client_op_id": "manifest.synthetic-001",
+        "packet_kind": "draft",
+        "class_id": 3,
+        "academic_year_id": 2018,
+        "date": "2026-11-05",
+        "records": [
+          {
+            "member_id": 30,
+            "status": "present",
+            "notes": "Synthetic note"
+          },
+          {
+            "member_id": 31,
+            "status": "absent",
+            "notes": ""
+          }
+        ]
+      },
+      "expected": {
+        "manifest_version": 1,
+        "domain": "attendance",
+        "owner_user_id": 101,
+        "client_op_id": "manifest.synthetic-001",
+        "packet_kind": "draft",
+        "class_id": 3,
+        "academic_year_id": 2018,
+        "date": "2026-11-05",
+        "record_count": 2,
+        "records_sha256": "650cda5b79bbaec19c3eec7876d800f4bc65701523a255e8041d76674d636e17",
+        "manifest_sha256": "9de4e30f28ebf15d37202f88e2a1008c44b1bad7d38e3a0ed63e1652138fe331"
+      },
+      "records_bytes_hex": "32363a73736d732e617474656e64616e63652e7265636f7264732e76312c313a322c323a33302c373a70726573656e742c31343a53796e746865746963206e6f74652c323a33312c363a616273656e742c303a2c",
+      "manifest_bytes_hex": "32373a73736d732e617474656e64616e63652e6d616e69666573742e76312c333a3130312c32323a6d616e69666573742e73796e7468657469632d3030312c353a64726166742c313a332c343a323031382c31303a323032362d31312d30352c313a322c36343a363530636461356237396262616563313963336565633738373664383030663462633635373031353233613235356538303431643736363734643633366531372c"
+    },
+    {
+      "name": "submit identity",
+      "input": {
+        "owner_user_id": 101,
+        "client_op_id": "manifest.synthetic-001",
+        "packet_kind": "submit",
+        "class_id": 3,
+        "academic_year_id": 2018,
+        "date": "2026-11-05",
+        "records": [
+          {
+            "member_id": 31,
+            "status": "absent",
+            "notes": ""
+          },
+          {
+            "member_id": 30,
+            "status": "present",
+            "notes": "Synthetic note"
+          }
+        ]
+      },
+      "expected": {
+        "manifest_version": 1,
+        "domain": "attendance",
+        "owner_user_id": 101,
+        "client_op_id": "manifest.synthetic-001",
+        "packet_kind": "submit",
+        "class_id": 3,
+        "academic_year_id": 2018,
+        "date": "2026-11-05",
+        "record_count": 2,
+        "records_sha256": "650cda5b79bbaec19c3eec7876d800f4bc65701523a255e8041d76674d636e17",
+        "manifest_sha256": "a8ab984e2ba615aec79ed5448b851cb883fbb278862db06b096e26ffd11260e6"
+      },
+      "records_bytes_hex": "32363a73736d732e617474656e64616e63652e7265636f7264732e76312c313a322c323a33302c373a70726573656e742c31343a53796e746865746963206e6f74652c323a33312c363a616273656e742c303a2c",
+      "manifest_bytes_hex": "32373a73736d732e617474656e64616e63652e6d616e69666573742e76312c333a3130312c32323a6d616e69666573742e73796e7468657469632d3030312c363a7375626d69742c313a332c343a323031382c31303a323032362d31312d30352c313a322c36343a363530636461356237396262616563313963336565633738373664383030663462633635373031353233613235356538303431643736363734643633366531372c"
+    },
+    {
+      "name": "unicode and delimiters",
+      "input": {
+        "owner_user_id": 101,
+        "client_op_id": "manifest.synthetic-001",
+        "packet_kind": "draft",
+        "class_id": 3,
+        "academic_year_id": 2018,
+        "date": "2026-11-05",
+        "records": [
+          {
+            "member_id": 31,
+            "status": "absent",
+            "notes": "ሰላም 🌍\n0:literal,\u0000\r\n"
+          },
+          {
+            "member_id": 30,
+            "status": "present",
+            "notes": "Synthetic note"
+          }
+        ]
+      },
+      "expected": {
+        "manifest_version": 1,
+        "domain": "attendance",
+        "owner_user_id": 101,
+        "client_op_id": "manifest.synthetic-001",
+        "packet_kind": "draft",
+        "class_id": 3,
+        "academic_year_id": 2018,
+        "date": "2026-11-05",
+        "record_count": 2,
+        "records_sha256": "53ae5f9f34fd659a7468ec1474bfd18f5abcc9b546b93f726d341776403e782e",
+        "manifest_sha256": "512fdc78ac533ad92928293a365cc5ace38549b43e2b232a95cd4bb548587de9"
+      },
+      "records_bytes_hex": "32363a73736d732e617474656e64616e63652e7265636f7264732e76312c313a322c323a33302c373a70726573656e742c31343a53796e746865746963206e6f74652c323a33312c363a616273656e742c32383ae188b0e1888be1889d20f09f8c8d0a303a6c69746572616c2c000d0a2c",
+      "manifest_bytes_hex": "32373a73736d732e617474656e64616e63652e6d616e69666573742e76312c333a3130312c32323a6d616e69666573742e73796e7468657469632d3030312c353a64726166742c313a332c343a323031382c31303a323032362d31312d30352c313a322c36343a353361653566396633346664363539613734363865633134373462666431386635616263633962353436623933663732366433343137373634303365373832652c"
+    },
+    {
+      "name": "precomposed",
+      "input": {
+        "owner_user_id": 101,
+        "client_op_id": "manifest.synthetic-001",
+        "packet_kind": "draft",
+        "class_id": 3,
+        "academic_year_id": 2018,
+        "date": "2026-11-05",
+        "records": [
+          {
+            "member_id": 31,
+            "status": "absent",
+            "notes": "é"
+          },
+          {
+            "member_id": 30,
+            "status": "present",
+            "notes": "Synthetic note"
+          }
+        ]
+      },
+      "expected": {
+        "manifest_version": 1,
+        "domain": "attendance",
+        "owner_user_id": 101,
+        "client_op_id": "manifest.synthetic-001",
+        "packet_kind": "draft",
+        "class_id": 3,
+        "academic_year_id": 2018,
+        "date": "2026-11-05",
+        "record_count": 2,
+        "records_sha256": "49c61919eb12d8486ce64a102ac817bac20aa72ebc0d96598a36f03c12250a43",
+        "manifest_sha256": "8ef1667bf605362ea8a2ff52b6a572f66af659f7d0bd5787bcc5a37aa47fa848"
+      },
+      "records_bytes_hex": "32363a73736d732e617474656e64616e63652e7265636f7264732e76312c313a322c323a33302c373a70726573656e742c31343a53796e746865746963206e6f74652c323a33312c363a616273656e742c323ac3a92c",
+      "manifest_bytes_hex": "32373a73736d732e617474656e64616e63652e6d616e69666573742e76312c333a3130312c32323a6d616e69666573742e73796e7468657469632d3030312c353a64726166742c313a332c343a323031382c31303a323032362d31312d30352c313a322c36343a343963363139313965623132643834383663653634613130326163383137626163323061613732656263306439363539386133366630336331323235306134332c"
+    },
+    {
+      "name": "combining",
+      "input": {
+        "owner_user_id": 101,
+        "client_op_id": "manifest.synthetic-001",
+        "packet_kind": "draft",
+        "class_id": 3,
+        "academic_year_id": 2018,
+        "date": "2026-11-05",
+        "records": [
+          {
+            "member_id": 31,
+            "status": "absent",
+            "notes": "é"
+          },
+          {
+            "member_id": 30,
+            "status": "present",
+            "notes": "Synthetic note"
+          }
+        ]
+      },
+      "expected": {
+        "manifest_version": 1,
+        "domain": "attendance",
+        "owner_user_id": 101,
+        "client_op_id": "manifest.synthetic-001",
+        "packet_kind": "draft",
+        "class_id": 3,
+        "academic_year_id": 2018,
+        "date": "2026-11-05",
+        "record_count": 2,
+        "records_sha256": "c5320f5b80c46a6082bbf4ed3493154cbf1e0cd0aaf5324ac30db89e7afc1592",
+        "manifest_sha256": "2bf2829df82ceaac3a4b0fc09148b3597079b5ce65fe422a475e757e5a58911d"
+      },
+      "records_bytes_hex": "32363a73736d732e617474656e64616e63652e7265636f7264732e76312c313a322c323a33302c373a70726573656e742c31343a53796e746865746963206e6f74652c323a33312c363a616273656e742c333a65cc812c",
+      "manifest_bytes_hex": "32373a73736d732e617474656e64616e63652e6d616e69666573742e76312c333a3130312c32323a6d616e69666573742e73796e7468657469632d3030312c353a64726166742c313a332c343a323031382c31303a323032362d31312d30352c313a322c36343a633533323066356238306334366136303832626266346564333439333135346362663165306364306161663533323461633330646238396537616663313539322c"
+    },
+    {
+      "name": "portable integer and earliest date",
+      "input": {
+        "owner_user_id": 9007199254740991,
+        "client_op_id": "0",
+        "packet_kind": "draft",
+        "class_id": 9007199254740991,
+        "academic_year_id": 1,
+        "date": "0001-01-01",
+        "records": [
+          {
+            "member_id": 9007199254740991,
+            "status": "absent",
+            "notes": ""
+          },
+          {
+            "member_id": 30,
+            "status": "present",
+            "notes": "Synthetic note"
+          }
+        ]
+      },
+      "expected": {
+        "manifest_version": 1,
+        "domain": "attendance",
+        "owner_user_id": 9007199254740991,
+        "client_op_id": "0",
+        "packet_kind": "draft",
+        "class_id": 9007199254740991,
+        "academic_year_id": 1,
+        "date": "0001-01-01",
+        "record_count": 2,
+        "records_sha256": "c649cb88f52fd191c470a54a6a2d37d0ba549fed2c3bc3215e6a0b73a3837f23",
+        "manifest_sha256": "0c752494064ca8665f817e48d133725765ac4db1d87f75a00e7a84889406e4a2"
+      },
+      "records_bytes_hex": "32363a73736d732e617474656e64616e63652e7265636f7264732e76312c313a322c323a33302c373a70726573656e742c31343a53796e746865746963206e6f74652c31363a393030373139393235343734303939312c363a616273656e742c303a2c",
+      "manifest_bytes_hex": "32373a73736d732e617474656e64616e63652e6d616e69666573742e76312c31363a393030373139393235343734303939312c313a302c353a64726166742c31363a393030373139393235343734303939312c313a312c31303a303030312d30312d30312c313a322c36343a633634396362383866353266643139316334373061353461366132643337643062613534396665643263336263333231356536613062373361333833376632332c"
+    },
+    {
+      "name": "max unicode scalar note and leap date",
+      "input": {
+        "owner_user_id": 101,
+        "client_op_id": "manifest.synthetic-001",
+        "packet_kind": "draft",
+        "class_id": 3,
+        "academic_year_id": 2018,
+        "date": "2000-02-29",
+        "records": [
+          {
+            "member_id": 31,
+            "status": "absent",
+            "notes": "🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍"
+          },
+          {
+            "member_id": 30,
+            "status": "present",
+            "notes": "Synthetic note"
+          }
+        ]
+      },
+      "expected": {
+        "manifest_version": 1,
+        "domain": "attendance",
+        "owner_user_id": 101,
+        "client_op_id": "manifest.synthetic-001",
+        "packet_kind": "draft",
+        "class_id": 3,
+        "academic_year_id": 2018,
+        "date": "2000-02-29",
+        "record_count": 2,
+        "records_sha256": "f72e9be444edbd5be69cea1d6f102cbca78f3424419bb9a08e782bf209b1c4ec",
+        "manifest_sha256": "d57ab1fd7dd1a6c421747aafdef199f2ab38341a7d900ea72f849d2f1ff9b0f1"
+      },
+      "records_bytes_hex": "32363a73736d732e617474656e64616e63652e7265636f7264732e76312c313a322c323a33302c373a70726573656e742c31343a53796e746865746963206e6f74652c323a33312c363a616273656e742c323030303af09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8df09f8c8d2c",
+      "manifest_bytes_hex": "32373a73736d732e617474656e64616e63652e6d616e69666573742e76312c333a3130312c32323a6d616e69666573742e73796e7468657469632d3030312c353a64726166742c313a332c343a323031382c31303a323030302d30322d32392c313a322c36343a663732653962653434346564626435626536396365613164366631303263626361373866333432343431396262396130386537383262663230396231633465632c"
+    },
+    {
+      "name": "numeric not lexical ordering",
+      "input": {
+        "owner_user_id": 101,
+        "client_op_id": "manifest.synthetic-001",
+        "packet_kind": "draft",
+        "class_id": 3,
+        "academic_year_id": 2018,
+        "date": "2026-11-05",
+        "records": [
+          {
+            "member_id": 10,
+            "status": "late",
+            "notes": ""
+          },
+          {
+            "member_id": 2,
+            "status": "late",
+            "notes": ""
+          },
+          {
+            "member_id": 1,
+            "status": "late",
+            "notes": ""
+          }
+        ]
+      },
+      "expected": {
+        "manifest_version": 1,
+        "domain": "attendance",
+        "owner_user_id": 101,
+        "client_op_id": "manifest.synthetic-001",
+        "packet_kind": "draft",
+        "class_id": 3,
+        "academic_year_id": 2018,
+        "date": "2026-11-05",
+        "record_count": 3,
+        "records_sha256": "6057398bfeaefa080d0de5199fdf7c7d32156d1be00cf2ca65ba1cd7dee55cd9",
+        "manifest_sha256": "7395df4f319fb897f50515bda96fdb9c4c8f99e35e88ef409803b3796dd086ce"
+      },
+      "records_bytes_hex": "32363a73736d732e617474656e64616e63652e7265636f7264732e76312c313a332c313a312c343a6c6174652c303a2c313a322c343a6c6174652c303a2c323a31302c343a6c6174652c303a2c",
+      "manifest_bytes_hex": "32373a73736d732e617474656e64616e63652e6d616e69666573742e76312c333a3130312c32323a6d616e69666573742e73796e7468657469632d3030312c353a64726166742c313a332c343a323031382c31303a323032362d31312d30352c313a332c36343a363035373339386266656165666130383064306465353139396664663763376433323135366431626530306366326361363562613163643764656535356364392c"
+    },
+    {
+      "name": "maximum key and date",
+      "input": {
+        "owner_user_id": 101,
+        "client_op_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "packet_kind": "draft",
+        "class_id": 3,
+        "academic_year_id": 2018,
+        "date": "9999-12-31",
+        "records": [
+          {
+            "member_id": 31,
+            "status": "absent",
+            "notes": ""
+          },
+          {
+            "member_id": 30,
+            "status": "present",
+            "notes": "Synthetic note"
+          }
+        ]
+      },
+      "expected": {
+        "manifest_version": 1,
+        "domain": "attendance",
+        "owner_user_id": 101,
+        "client_op_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "packet_kind": "draft",
+        "class_id": 3,
+        "academic_year_id": 2018,
+        "date": "9999-12-31",
+        "record_count": 2,
+        "records_sha256": "650cda5b79bbaec19c3eec7876d800f4bc65701523a255e8041d76674d636e17",
+        "manifest_sha256": "10ee066f992fadd5dce5312759e06eb310a85ac9ee07ebf4bc2a58d078182fdf"
+      },
+      "records_bytes_hex": "32363a73736d732e617474656e64616e63652e7265636f7264732e76312c313a322c323a33302c373a70726573656e742c31343a53796e746865746963206e6f74652c323a33312c363a616273656e742c303a2c",
+      "manifest_bytes_hex": "32373a73736d732e617474656e64616e63652e6d616e69666573742e76312c333a3130312c38303a61616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161612c353a64726166742c313a332c343a323031382c31303a393939392d31322d33312c313a322c36343a363530636461356237396262616563313963336565633738373664383030663462633635373031353233613235356538303431643736363734643633366531372c"
+    }
+  ],
+  "max_case": {
+    "record_count": 2000,
+    "notes": "🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍🌍",
+    "expected": {
+      "manifest_version": 1,
+      "domain": "attendance",
+      "owner_user_id": 101,
+      "client_op_id": "manifest.synthetic-001",
+      "packet_kind": "draft",
+      "class_id": 3,
+      "academic_year_id": 2018,
+      "date": "2026-11-05",
+      "record_count": 2000,
+      "records_sha256": "abb5ee70532846b70042265fe6d21641427394d8753b0e4de2ad47bafca06b0b",
+      "manifest_sha256": "cc9b34fa2c80173ef982ba5bff87890a99f3d23caae58c0174e75d5f6fbf200b"
+    }
+  }
+}

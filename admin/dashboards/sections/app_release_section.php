@@ -256,14 +256,14 @@ $arFromApk = ($arRelease['version_source'] ?? '') === 'apk';
             <div id="apk-upload-engine-box">
                 <!-- State 1: Idle Drag & Drop -->
                 <div id="upload-idle-state" class="apk-drop-box" onclick="document.getElementById('upload-apk-input').click()">
-                    <input type="file" id="upload-apk-input" accept=".apk,application/vnd.android.package-archive" style="display:none" onchange="if(window.AppReleaseUI)window.AppReleaseUI.onFileInputChange(this)" onclick="event.stopPropagation()">
+                    <input type="file" id="upload-apk-input" accept=".apk,application/vnd.android.package-archive" style="display:none" onclick="event.stopPropagation()">
                     <i class="fa-solid fa-file-arrow-up" style="font-size:2.5rem;color:#38bdf8;margin-bottom:0.75rem;display:inline-block"></i>
                     <div style="font-size:0.95rem;font-weight:600;color:#f8fafc">Drag &amp; Drop APK File Here</div>
-                    <div style="font-size:0.8rem;color:#94a3b8;margin-top:0.25rem">or click anywhere in this box to browse</div>
+                    <div style="font-size:0.8rem;color:#94a3b8;margin-top:0.25rem">or click anywhere in this box to browse · Maximum 512 MiB (536,870,912 bytes)</div>
                     <div style="margin-top:0.75rem;display:flex;justify-content:center;gap:0.5rem;flex-wrap:wrap">
-                        <span class="apk-stat-pill"><i class="fa-solid fa-bolt" style="color:#38bdf8"></i> Resumable Chunks (2MB)</span>
+                        <span class="apk-stat-pill"><i class="fa-solid fa-bolt" style="color:#38bdf8"></i> Verified Parts (up to 512 KiB)</span>
                         <span class="apk-stat-pill"><i class="fa-solid fa-shield-halved" style="color:#10b981"></i> Auto-Retry Protection</span>
-                        <span class="apk-stat-pill"><i class="fa-solid fa-server" style="color:#a78bfa"></i> cPanel Safe</span>
+                        <span class="apk-stat-pill"><i class="fa-solid fa-server" style="color:#a78bfa"></i> Bounded Requests</span>
                     </div>
                 </div>
 
@@ -311,7 +311,7 @@ $arFromApk = ($arRelease['version_source'] ?? '') === 'apk';
                     </div>
 
                     <div id="upload-status-subtext" style="font-size:0.75rem;color:#94a3b8;margin-bottom:0.85rem;min-height:1rem">
-                        Automatic retry enabled for cPanel network tolerance.
+                        Interrupted transfers retain verified parts. Retry checks server progress before sending.
                     </div>
 
                     <button type="button" class="btn btn-outline btn-sm" onclick="AppReleaseUI.cancelUpload()" style="width:100%;justify-content:center;background:#1e293b;border-color:rgba(239,68,68,0.4);color:#f87171">
@@ -322,9 +322,9 @@ $arFromApk = ($arRelease['version_source'] ?? '') === 'apk';
                 <!-- State 4: Server Assembling & Checksum Hash -->
                 <div id="upload-assembling-state" style="display:none;background:#0f172a;border:1px solid #334155;border-radius:0.75rem;padding:1.5rem;text-align:center">
                     <i class="fa-solid fa-arrows-spin fa-spin" style="font-size:2.5rem;color:#a78bfa;margin-bottom:0.85rem;display:inline-block"></i>
-                    <div style="font-size:1rem;font-weight:700;color:#f8fafc">Assembling APK on Server</div>
+                    <div style="font-size:1rem;font-weight:700;color:#f8fafc">Validating and Publishing APK</div>
                     <div style="font-size:0.8rem;color:#cbd5e1;margin-top:0.4rem;max-width:380px;margin-left:auto;margin-right:auto">
-                        Merging <span id="assemble-chunks-count" style="color:#38bdf8;font-weight:700">--</span> chunks, writing storage, and computing cryptographic SHA-256 sidecar...
+                        Checking and merging <span id="assemble-chunks-count" style="color:#38bdf8;font-weight:700">--</span> chunks, writing storage, and computing cryptographic SHA-256 sidecar...
                     </div>
                 </div>
 
@@ -360,7 +360,7 @@ $arFromApk = ($arRelease['version_source'] ?? '') === 'apk';
                             <i class="fa-solid fa-rotate-right"></i> Retry Upload
                         </button>
                         <button type="button" class="btn btn-outline" onclick="AppReleaseUI.resetUploadState()" style="flex:1;justify-content:center;background:#0f172a;border-color:#334155;color:#e2e8f0">
-                            Reset
+                            Choose file again
                         </button>
                     </div>
                 </div>

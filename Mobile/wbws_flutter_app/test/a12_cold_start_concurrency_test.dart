@@ -57,6 +57,11 @@ Future<void> _workerMain(Map<String, Object?> message) async {
           {'member_id': 8801, 'status': 'present'},
           {'member_id': 8802, 'status': 'late'},
         ],
+        expectedSession: const LegacyWriteSession(
+          ownerUserId: 701,
+          authorizationVersion: 8,
+          runtimeGeneration: 41,
+        ),
       );
       final claim = await db.claimNextLegacyOperation(
         kind: LegacyOperationKind.attendance,

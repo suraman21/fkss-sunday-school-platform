@@ -395,7 +395,7 @@ switch ($action) {
         if ($stmt->execute()) {
             $newTeacherId = $conn->insert_id;
             
-            // If linked to member, mark member as teacher AND sync member_type
+            // If linked to a member, sync teacher flag/position, not manual member type.
             if ($memberId) {
                 syncMemberTeacherFlag($conn, $memberId, true);
             }
@@ -700,7 +700,7 @@ switch ($action) {
             $teacherId
         );
 
-        // Sync member is_teacher flag and member_type
+        // Sync the teacher flag/position; preserve the manually selected member type.
         if ($teacher['member_id']) {
             syncMemberTeacherFlag($conn, (int)$teacher['member_id'], false);
         }

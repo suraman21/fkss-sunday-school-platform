@@ -31,7 +31,7 @@ The following are explicitly **NOT YET SERVER-OBSERVABLE** as local mobile state
 
 ## Admin read-only surface
 
-The existing `admin/api_telemetry.php` boundary is extended with. The dashboard no longer presents the older aggregate installation-counter sync percentage as the authoritative sync-health card; the server-observed monitor is the single sync-health surface, while fleet telemetry remains available for installation/version/device context.
+The existing `admin/api_telemetry.php` session/role boundary exposes the three read-only sync-monitoring actions listed below. The dashboard no longer presents the older aggregate installation-counter sync percentage as the authoritative sync-health card; the server-observed monitor is the single sync-health surface, while fleet telemetry remains available for installation/version/device context.
 
 The read-only admin API exposes:
 

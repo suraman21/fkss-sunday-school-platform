@@ -1,9 +1,10 @@
-# Go-Live Runbook — FKSS
+# Deployment safeguards and historical go-live checklist
 
-> **Historical go-live runbook (marked 2026-10-22).** This 2026-10-06 runbook is retained unchanged. Individual steps may still be useful, but it is **not** the current procedure. Verify each step against [OPERATIONS.md](../OPERATIONS.md) and [DATABASE.md](../DATABASE.md) before using it.
+> **Historical baseline:** 2026-10-06 go-live checklist, marked historical on 2026-10-22. **2026-10-28 safety clarification:** this is not a current release authorization or a universal execution sequence. Migration ordering, uniqueness preflight, validated restore and private profile-image cleanup safeguards remain required references. Historical timings, role/UI descriptions and deployment assumptions are not freshly certified.
 
+Use [OPERATIONS.md](../OPERATIONS.md), [release policy](../PRODUCTION_WORKFLOW.md) and [DATABASE.md](../DATABASE.md) to choose the current target-specific procedure. Checked changes go to development first; server parity and owner acceptance are separate; production needs explicit separate authorization. Routine tests use isolated synthetic data, not the live-server actions below. Do not apply old migrations, create real test accounts or change a host merely because a box is unchecked here.
 
-**Read this ONE document to deploy.** It puts every "what you must do" step from the audit reports in the exact order to do them. Each step says what to do and how to confirm it worked. Do them top to bottom. Don't skip.
+The historical numbered stages preserve their sequence for context, but do **not** execute them blindly from top to bottom. Review prerequisites, data impact, private backups, compatibility and rollback for the accepted release. The profile cleanup section supplies a narrow CLI/storage contract; its installed schedule and actual host execution remain deployment dependencies.
 
 > **Build 24 authorization/outbox release:** also complete the mandatory staged
 > migration, build-23 compatibility, background-drain containment, device-drill,
@@ -74,9 +75,9 @@ The system now **refuses to start** without a secrets file — that's on purpose
 In cPanel → Terminal, from inside `public_html`:
 
 ```bash
-# Baseline: folders 755, files 644
-find . -type d -exec chmod 755 {} \;
-find . -type f -exec chmod 644 {} \;
+# Do not recursively chmod a mixed application tree: private files, cron locks
+# and environment-specific paths have narrower permissions. Inspect the exact
+# approved public directories below; private roots use their own 0700/0600 rules.
 
 # Public generated-QR directory is deployment-owned; requests never create it.
 install -d -m 755 admin/id_cards/assets/qr
@@ -181,7 +182,9 @@ chmod 755 admin/uploads admin/uploads/members admin/uploads/members/photos \
 ```
 [ ] 5.1  Open the health check using HTTP Basic authentication. Do NOT put the
          key in the URL (URLs are logged). With curl:
-            curl -u health:YOUR_HEALTH_KEY https://SITE/admin/tools/health_check.php
+            curl --user health https://SITE/admin/tools/health_check.php
+         Enter the health credential at the password prompt, not in the URL,
+         command history or a shared log. Run only against an authorized target.
          Confirm: Database = available (green), and the counts look sane.
 
 [ ] 5.2  Log in as Super Admin → Backup & Data → Create Encrypted Backup.
@@ -459,7 +462,9 @@ after the code deploy. Background: [ADR-0009](../adr/0009-attendance-ownership.m
 
 ---
 
-## ✅ You are live when…
+## Historical go-live acceptance checklist
+
+These observations were the original go-live criteria, not current production approval. Apply the current release-specific gates and record missing evidence rather than treating this checklist as a readiness certificate.
 - Stages 1–7 are all ticked.
 - The health check is green.
 - A backup file exists and the daily cron is set.
@@ -467,7 +472,9 @@ after the code deploy. Background: [ADR-0009](../adr/0009-attendance-ownership.m
   aggregate JSON result is verified from the outside-web-root log.
 - Every role passed its test checklist.
 
-## Still open (safe to launch, handle after) — from the audits
+## Historical follow-up items from the audits
+
+These dated items do not establish that a current launch is safe. Reassess impact and ownership for the accepted release.
 - **Editable member sync batches**: XLSX round trips remain intentionally bounded to 2,000 rows; use the complete streaming CSV export for large read-only extracts.
 - **Legacy cron path**: `admin/backend/cron_backup.php` is now a CLI-only compatibility adapter to the same encrypted streaming service. New schedules should use `admin/tools/backup.php`.
 - **Code cleanup (Phase B)**: only after the above is stable and tested on a staging copy.
@@ -488,11 +495,13 @@ then applies each constraint individually so that **every** constraint is
 validated against real rows, and it reports any that the data rejects:
 
 ```
-./scripts/restore_production_dump.sh <new_database> <export.sql> \
-    -h 127.0.0.1 -u <user> -p<password>
+./scripts/restore_production_dump.sh <new_disposable_database> <synthetic_export.sql> \
+    --defaults-extra-file=<private_client_options_file>
 ```
 
-Expected results — anything else is a signal, and the script exits 2:
+Use a protected outside-repository client options file with owner-only access; do not put database passwords in arguments or logs. Routine drills use synthetic exports and a **new disposable database**. A real backup restore requires separate data/target authorization. Verify the script's expected inventory against the approved export; the following counts describe the historical export, not every current schema.
+
+Historical expected results — anything else requires investigation; the script exits 2 for an unexpected inventory:
 
 | Export taken | Foreign keys | Meaning |
 |---|---|---|
@@ -513,11 +522,10 @@ self-contained and already emits its own `FOREIGN_KEY_CHECKS` guards, so it
 does not need this procedure. The 0.1 phpMyAdmin export does.)
 
 ## If something breaks
-1. You have the file zip (0.2) and DB export (0.1) — restore them to undo.
-   Restore the database with `scripts/restore_production_dump.sh`, not with a
-   phpMyAdmin import — see "Restoring the 0.1 export" above.
-2. Check the health check page — it usually points at the problem (DB down, disk full, env missing).
-3. The real error detail is in the server error log (not shown to users, by design).
+
+Follow [incident response](../INCIDENT_RESPONSE.md) and the release-specific [rollback procedure](../OPERATIONS.md#3-rollback). Preserve evidence and unsent work; obtain the required target/data authorization before changing anything. A backup file is not proof of a tested restore, and forward-only schema/client changes may prevent a simple code downgrade.
+
+Use the authorized health/error evidence privately; do not force errors on production as a routine test. For the historical phpMyAdmin export, retain `scripts/restore_production_dump.sh` and the foreign-key checks above. Test restoration into a new disposable database before considering any approved recovery; do not blindly overwrite the live database.
 
 ---
 
@@ -560,10 +568,8 @@ tracked by hand.
 
 * **Existing production deployments** — continue applying new migrations
   individually, in number order, as you have been. Nothing here changes that.
-* **Standing up a new environment** — take a `mysqldump` of the live schema
-  (`mysqldump --no-data`) and restore that as the baseline, *then* apply any
-  migrations newer than the dump. Do not attempt to replay `sql/` from
-  scratch.
+* **Standing up an isolated test environment** — use the reviewed synthetic provisioner (`tests/e2e/provision_env.sh`) and record its prerequisites/repairs. Do not copy real school data or assume numeric SQL replay builds an empty database.
+* **Reconciling an authorized deployment** — a structure-only export (`mysqldump --no-data` or the approved equivalent) can establish a dated target baseline, but requires explicit access authorization and may contain private identifiers. Keep it private, compare migrations carefully and do not treat an old export as the current production schema.
 * **Before sign-off** — run `sql/preflight/uniqueness_preflight.sql` and
   resolve every `BLOCK` row.
 

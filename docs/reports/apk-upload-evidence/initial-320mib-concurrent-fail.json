@@ -1,0 +1,15 @@
+{
+  "status": "FAIL",
+  "size_bytes": 335545212,
+  "upload_kib_per_second": 256,
+  "latency_ms": 250,
+  "source_sha256": "61b4e30fc0944db19c8ad48afbe6c2557137be76ad2f0c6d5d698fccd1ba3ba5",
+  "verified_parts_before_reload": 40,
+  "error": "TimeoutError('Locator.inner_text: Timeout 30000ms exceeded.\\nCall log:\\n  - waiting for locator(\"#upload-pct-display\")\\n')",
+  "duration_seconds": 963.66,
+  "events": [
+    "Injected retryable HTTP 503 on part 8",
+    "Server stored part 14; its acknowledgment was discarded",
+    "Injected terminal stop before reload"
+  ]
+}

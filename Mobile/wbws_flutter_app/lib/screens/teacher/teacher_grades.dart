@@ -6,6 +6,10 @@ import '../../services/api_service.dart';
 import '../../services/app_nav.dart';
 import '../../services/catalog_service.dart';
 import '../../services/connectivity_service.dart';
+import '../../services/grades_preparation_adapter.dart';
+import '../../services/grades_preparation_fetcher.dart';
+import '../../services/grades_preparation_readiness.dart';
+import '../../services/grades_preparation_store.dart';
 import '../../services/legacy_outbox_models.dart';
 import '../../services/local_db.dart';
 import '../../widgets/sync_attention.dart';
@@ -69,6 +73,20 @@ class TeacherGradesScreenState extends State<TeacherGradesScreen> {
   int _pendingGrades = 0;
   int _rejectedCount = 0;
   StreamSubscription<bool>? _netSub;
+  GradesPreparationResolution? _prepResolution;
+  final _prepAdapter = GradesPreparationAdapter();
+  bool _refreshingPrep = false;
+  String? get _prepBanner {
+    final r = _prepResolution;
+    if (r == null) return null;
+    switch (r.reason) {
+      case GradesReadinessReason.ready: return null;
+      case GradesReadinessReason.missing: return 'No offline preparation yet — connect and refresh to download your classes, subjects and roster.';
+      case GradesReadinessReason.staleSession: return 'Your sign-in changed — refresh your preparation before entering grades offline.';
+      case GradesReadinessReason.expired: return 'Your offline preparation expired — connect and refresh to renew it.';
+      case GradesReadinessReason.clockSkew: return 'Your phone clock looks wrong — fix the date/time, then refresh.';
+    }
+  }
 
   @override
   void initState() {
@@ -78,6 +96,7 @@ class TeacherGradesScreenState extends State<TeacherGradesScreen> {
       if (!mounted || _isOffline == !hasLink) return;
       setState(() => _isOffline = !hasLink);
     });
+    _loadPreparationStatus();
     _loadClasses();
     _updatePendingCount();
     _sync.syncStream.listen((s) {
@@ -136,6 +155,33 @@ class TeacherGradesScreenState extends State<TeacherGradesScreen> {
       _selectedClassId = id;
       _selectedClassName = classes[0]['class_name'];
       _loadSubjects();
+    }
+  }
+
+  Future<void> _loadPreparationStatus() async {
+    try {
+      final res = await _prepAdapter.resolve();
+      if (!mounted) return;
+      setState(() => _prepResolution = res);
+    } catch (_) {}
+  }
+
+  Future<void> _refreshPreparation() async {
+    if (_refreshingPrep) return;
+    setState(() => _refreshingPrep = true);
+    try {
+      final rec = await _db.getLocalSession();
+      final session = LegacyWriteSession(ownerUserId: rec.ownerUserId ?? _api.userId, authorizationVersion: rec.authorizationVersion ?? _api.authorizationVersion, runtimeGeneration: rec.generation);
+      final fetcher = GradesPreparationFetcher(store: GradesPreparationStore(db: _db));
+      await fetcher.fetchAndPublish(session: session, get: (p) => _api.get(p));
+      await _loadPreparationStatus();
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Preparation refreshed'), backgroundColor: AppTheme.success));
+    } on GradesPreparationFetchException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), backgroundColor: AppTheme.warning));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Refresh failed: $e'), backgroundColor: AppTheme.warning));
+    } finally {
+      if (mounted) setState(() => _refreshingPrep = false);
     }
   }
 
@@ -295,6 +341,7 @@ class TeacherGradesScreenState extends State<TeacherGradesScreen> {
                 child: const Icon(Icons.sync, size: 22),
               ),
             ),
+          TextButton(onPressed: _refreshingPrep ? null : _refreshPreparation, child: Text(_refreshingPrep ? 'Refreshing…' : 'Refresh preparation', style: const TextStyle(fontSize: 12, color: Colors.white))),
           IconButton(icon: const Icon(Icons.refresh, size: 20), onPressed: refresh),
         ],
       ),
@@ -311,6 +358,13 @@ class TeacherGradesScreenState extends State<TeacherGradesScreen> {
                         padding: const EdgeInsets.all(16),
                         children: [
                           if (_isOffline) _offlineBanner(),
+                          if (_prepBanner != null)
+                            Container(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                              decoration: BoxDecoration(color: AppTheme.warning.withOpacity(0.12), borderRadius: BorderRadius.circular(8)),
+                              child: Row(children: [Icon(Icons.info_outline, size: 16, color: AppTheme.warning), const SizedBox(width: 8), Expanded(child: Text(_prepBanner!, style: TextStyle(fontSize: 11, color: AppTheme.warning, fontWeight: FontWeight.w500)))]),
+                            ),
                           if (_rejectedCount > 0)
                             SyncAttentionBanner(rejectedCount: _rejectedCount),
                           _buildClassSelector(),
@@ -793,9 +847,7 @@ class _GradeEntryScreenState extends State<_GradeEntryScreen> {
       final locked = PacketLock.isLocked(packet, flagged: res.data['locked'] == true);
       final termInfo = (res.data['assessment'] is Map) ? res.data['assessment'] as Map : null;
       final termLockedNow = termInfo?['term_locked'] == true;
-      if (locked) {
-        await _db.dropPendingGrades(widget.assessmentId);
-      }
+      // Preserve pending grades: this packet lock does not settle their intent.
       setState(() {
         _isOffline = !ConnectivityService().hasLink;
         _loading = false;
@@ -836,7 +888,7 @@ class _GradeEntryScreenState extends State<_GradeEntryScreen> {
     if (cacheLocked) {
       _packetStatus = '${meta?['submission_status'] ?? widget.initialStatus}';
       if (_packetStatus.isEmpty) _packetStatus = 'submitted';
-      await _db.dropPendingGrades(widget.assessmentId);
+      // Cached locks cannot acknowledge or delete this phone's pending work.
     }
     final pending = cacheLocked ? <int, Map<String, dynamic>>{} : await _pendingByMember();
     final sheet = meta == null ? null : List<Map<String, dynamic>>.from(meta['students'] as List);

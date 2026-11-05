@@ -1,0 +1,30 @@
+{
+  "status": "PASS",
+  "size_bytes": 335545212,
+  "upload_kib_per_second": 256,
+  "latency_ms": 250,
+  "source_sha256": "a9df5915f67614f930462193151a96b56bbdc4b5d56b3e3f8c5d0682146d0aad",
+  "verified_parts_before_reload": 40,
+  "duration_seconds": 1309.59,
+  "browser": "156.0.8078.4",
+  "published_sha256": "a9df5915f67614f930462193151a96b56bbdc4b5d56b3e3f8c5d0682146d0aad",
+  "total_parts": 641,
+  "chunk_requests": 644,
+  "finalize_requests": 1,
+  "resumed_already_verified_parts_resent": 0,
+  "events": [
+    "Injected retryable HTTP 503 on part 8",
+    "Server stored part 14; its acknowledgment was discarded",
+    "Injected terminal stop before reload",
+    "Server published APK; final HTTP response was discarded"
+  ],
+  "page_errors": [],
+  "php_memory_limit": "128M",
+  "policy_preserved": true,
+  "limitations": [
+    "Synthetic login bootstrap/no real database",
+    "Loopback server; no hosting quota/WAF parity",
+    "All actual payload requests use native Chromium/CDP; only explicit synthetic rejections/lost responses are injected",
+    "Synthetic unsigned structurally valid APK; not owner device/signature acceptance"
+  ]
+}

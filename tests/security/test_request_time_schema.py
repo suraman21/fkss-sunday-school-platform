@@ -19,6 +19,25 @@ DDL_TEXT_ALLOWLIST = {
 }
 
 
+# Read-only metadata text, NOT a whole-file DDL exemption. Keep every other
+# CREATE/ALTER occurrence in this service subject to the normal guard. The
+# result key and regex inspect a definition; neither is an executable command.
+PREPARATION_METADATA_READER = "admin/backend/services/AttendancePreparationReadBoundary.php"
+PREPARATION_METADATA_TEXT = (
+    "SHOW CREATE TABLE",
+    "['Create Table']",
+    "'/^CREATE TABLE\\s/Di'",
+)
+
+
+def contains_runtime_ddl_text(source, relative):
+    if relative == PREPARATION_METADATA_READER:
+        for literal in PREPARATION_METADATA_TEXT:
+            source = source.replace(literal, "READ_ONLY_METADATA_TEXT")
+    source = source.upper()
+    return "CREATE TABLE" in source or "ALTER TABLE" in source
+
+
 class RequestTimeSchemaTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -41,10 +60,21 @@ class RequestTimeSchemaTests(unittest.TestCase):
                 or relative in DDL_TEXT_ALLOWLIST
             ):
                 continue
-            source = path.read_text(encoding="utf-8", errors="replace").upper()
-            if "CREATE TABLE" in source or "ALTER TABLE" in source:
+            source = path.read_text(encoding="utf-8", errors="replace")
+            if contains_runtime_ddl_text(source, relative):
                 offenders.append(relative)
         self.assertEqual([], offenders)
+
+    def test_metadata_reader_exception_cannot_hide_runtime_ddl(self):
+        source = (ROOT / PREPARATION_METADATA_READER).read_text(encoding="utf-8")
+        self.assertFalse(contains_runtime_ddl_text(source, PREPARATION_METADATA_READER))
+        for statement in (
+            "$conn->query('CREATE TABLE injected (id INT)');",
+            "$conn->query('ALTER TABLE injected ADD n INT');",
+            "$conn->query('SHOW CREATE TABLE known; CREATE TABLE injected (id INT)');",
+        ):
+            self.assertTrue(contains_runtime_ddl_text(source + statement, PREPARATION_METADATA_READER))
+        self.assertTrue(contains_runtime_ddl_text(source, "unrelated.php"))
 
     def test_hot_services_keep_contract_hooks_without_schema_queries(self):
         services = [

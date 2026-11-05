@@ -32,6 +32,7 @@
  * Scenarios: all | success | duplicate | concurrent | precommit_failure
  *            | postcommit_crash | lease_expiry | replay | error_pinning
  *            | comm_append | attendance_converge | atomic_completion
+ *            | attendance_response | attendance_response_failures
  */
 
 if (PHP_SAPI !== 'cli') {
@@ -377,6 +378,203 @@ function scenarioAtomicCompletion(array $payload): void
     check((int)($rec4['status_code'] ?? 0) === 201, 'I-4: a late complete() cannot overwrite the status code');
 }
 
+// Database-backed attendance response boundary; executes shipped middleware.
+function responseContext(string $key, array $payload): array
+{
+    $svc = service();
+    $reservation = $svc->begin(1, $key, SCOPE, requestHash($payload));
+    check(($reservation['state'] ?? '') === 'acquired', 'J: acquired response reservation');
+    $_SERVER['HTTP_IDEMPOTENCY_KEY'] = $key;
+    $GLOBALS['conn'] = db();
+    $GLOBALS['_fkss_idem'] = ['service' => $svc, 'reservation' => $reservation, 'monitor_id' => null];
+    return $reservation;
+}
+
+function scenarioAttendanceResponse(array $payload): void
+{
+    require_once dirname(__DIR__, 2) . '/api/v1/core/response.php';
+    require_once dirname(__DIR__, 2) . '/api/v1/core/middleware.php';
+    resetSchema();
+    $r = responseContext('op-response-atomic', $payload);
+    // Shadow only this connection: advisory monitoring must not write inside
+    // the business transaction after the authoritative receipt checkpoint.
+    db()->query("CREATE TEMPORARY TABLE api_sync_attempts (
+        id INT PRIMARY KEY, status VARCHAR(30), idempotency_state VARCHAR(30),
+        retry_decision VARCHAR(30), error_category VARCHAR(50), error_code VARCHAR(100),
+        http_status INT, completed_at DATETIME, updated_at DATETIME
+    ) ENGINE=InnoDB");
+    db()->query("INSERT INTO api_sync_attempts (id,status) VALUES (17,'in_flight')");
+    $GLOBALS['_fkss_idem']['monitor_id'] = 17;
+    $data = ['message' => 'Synthetic ተሳክቷል', 'saved' => 2, 'class_id' => 7, 'date' => $payload['date'], 'submission_id' => 42, 'submission_status' => 'draft'];
+    $wire = apiEncodeJsonResponse(apiSuccessPayload($data));
+    db()->begin_transaction();
+    db()->query("INSERT INTO probe_messages (thread_id,sender_id,body) VALUES (9,1,'synthetic attendance effect')");
+    check(apiIdempotencyCompleteDatabaseSuccess($data, 201), 'J: response recorded before business commit');
+    check(db()->query('SELECT status FROM api_sync_attempts WHERE id=17')->fetch_assoc()['status'] === 'in_flight',
+        'J: advisory monitoring performs no precommit write after the receipt checkpoint');
+    db()->commit(); // Simulate crash here: no ordinary response completion.
+    $replay = service()->begin(1, 'op-response-atomic', SCOPE, requestHash($payload));
+    check($replay['state'] === 'replay' && $replay['body'] === $wire, 'J: lost response replays byte-identical success');
+    check($replay['status_code'] === 201 && countRows('probe_messages') === 1, 'J: one effect and original 201');
+    apiIdempotencyStore($wire, 201); // normal sender, AFTER business commit
+    check(db()->query('SELECT status FROM api_sync_attempts WHERE id=17')->fetch_assoc()['status'] === 'completed',
+        'J: ordinary postcommit sender still completes advisory monitoring');
+    service()->complete($r, '{"status":"error"}', 500);
+    check(recordState($r['record_hash'])['response_body'] === $wire, 'J: late completion cannot replace committed success');
+    db()->query('DROP TEMPORARY TABLE api_sync_attempts');
+
+    resetSchema();
+    responseContext('op-response-rollback', $payload);
+    db()->begin_transaction();
+    db()->query("INSERT INTO probe_messages (thread_id,sender_id,body) VALUES (9,1,'synthetic rollback')");
+    apiIdempotencyCompleteDatabaseSuccess($data, 201);
+    apiIdempotencyRollbackResponse(db());
+    check(countRows('probe_messages') === 0 && countRows('api_idempotency_records') === 0, 'J: rollback removes effect and abandons processing reservation');
+    apiIdempotencyStore('{"status":"error"}', 503);
+    check(countRows('api_idempotency_records') === 0, 'J: retryable 503 is not pinned');
+    check(service()->begin(1, 'op-response-rollback', SCOPE, requestHash($payload))['state'] === 'acquired', 'J: identical rolled-back operation can retry');
+}
+
+function scenarioAttendanceResponseFailures(array $payload): void
+{
+    require_once dirname(__DIR__, 2) . '/api/v1/core/response.php';
+    require_once dirname(__DIR__, 2) . '/api/v1/core/middleware.php';
+    foreach (['encoding', 'owner', 'write', 'oversize'] as $failure) {
+        resetSchema();
+        $r = responseContext('op-response-' . $failure, $payload);
+        if ($failure === 'owner') {
+            $GLOBALS['_fkss_idem']['reservation']['owner_token'] = 'wrong-owner';
+        }
+        if ($failure === 'write') {
+            db()->query("CREATE TRIGGER refuse_response BEFORE UPDATE ON api_idempotency_records FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='synthetic refusal'");
+        }
+        db()->begin_transaction();
+        db()->query("INSERT INTO probe_messages (thread_id,sender_id,body) VALUES (9,1,'synthetic must rollback')");
+        $failed = false;
+        try {
+            $data = ['saved' => 2, 'message' => $failure === 'encoding' ? "\xB1" : 'Synthetic'];
+            if ($failure === 'oversize') $data['message'] = str_repeat('x', 8388609);
+            apiIdempotencyCompleteDatabaseSuccess($data, 201);
+        } catch (ApiIdempotencyResponseNotRecorded $error) {
+            $failed = true;
+            apiIdempotencyRollbackResponse(db());
+        }
+        check($failed, 'K: ' . $failure . ' refuses business commit');
+        check(countRows('probe_messages') === 0, 'K: ' . $failure . ' leaves no effect');
+        apiIdempotencyStore('{"status":"error"}', 503);
+        check((recordState($r['record_hash'])['record_state'] ?? '') !== 'completed', 'K: failure does not pin a completed 503');
+        if ($failure === 'owner') {
+            check(recordState($r['record_hash'])['record_state'] === 'processing', 'K: foreign reservation is not deleted');
+        }
+    }
+    resetSchema();
+    $r = responseContext('op-response-rollback-denied', $payload);
+    $ctx = $GLOBALS['_fkss_idem'];
+    $refusal = new class extends mysqli {
+        public function __construct() {}
+        public function rollback(int $flags = 0, ?string $name = null): bool { return false; }
+    };
+    $failed = false;
+    try { apiIdempotencyRollbackResponse($refusal); } catch (RuntimeException $error) { $failed = true; }
+    apiIdempotencyStore('{"status":"error"}', 500); // outer API exception handler
+    check($failed && !isset($GLOBALS['_fkss_idem']), 'K: failed rollback detaches ordinary error recording');
+    check(recordState($r['record_hash'])['record_state'] === 'processing', 'K: failed rollback cannot abandon reservation');
+    $throwing = new class extends mysqli {
+        public function __construct() {}
+        public function rollback(int $flags = 0, ?string $name = null): bool { throw new RuntimeException('synthetic rollback failure'); }
+    };
+    $GLOBALS['_fkss_idem'] = $ctx;
+    $failed = false;
+    try { apiIdempotencyRollbackResponse($throwing); } catch (RuntimeException $error) { $failed = true; }
+    apiIdempotencyStore('{"status":"error"}', 500);
+    check($failed && !isset($GLOBALS['_fkss_idem']), 'K: throwing rollback also detaches ordinary error recording');
+    check(recordState($r['record_hash'])['record_state'] === 'processing', 'K: throwing rollback preserves processing proof, never a cached 500');
+
+    resetSchema();
+    $r = responseContext('op-response-completed', $payload);
+    service()->complete($r, '{"status":"success","data":{"saved":2}}', 201);
+    $before = recordState($r['record_hash']);
+    db()->begin_transaction();
+    db()->query("INSERT INTO probe_messages (thread_id,sender_id,body) VALUES (9,1,'synthetic duplicate')");
+    $failed = false;
+    try { apiIdempotencyCompleteDatabaseSuccess(['saved' => 2], 201); }
+    catch (ApiIdempotencyResponseNotRecorded $error) { $failed = true; apiIdempotencyRollbackResponse(db()); }
+    check($failed && countRows('probe_messages') === 0, 'K: already-completed reservation cannot commit another effect');
+    check(recordState($r['record_hash']) === $before, 'K: rollback cleanup never deletes or changes completed outcome');
+
+    unset($GLOBALS['_fkss_idem']);
+    $failed = false;
+    try { apiIdempotencyCompleteDatabaseSuccess(['saved' => 2], 201); } catch (ApiIdempotencyResponseNotRecorded $error) { $failed = true; }
+    check($failed, 'K: missing keyed context is not an unkeyed write');
+    unset($_SERVER['HTTP_IDEMPOTENCY_KEY']);
+    check(!apiIdempotencyCompleteDatabaseSuccess(['saved' => 2], 201), 'K: unkeyed legacy mode unchanged, not strict');
+    $GLOBALS['_fkss_idem'] = ['service' => service(), 'reservation' => ['backend' => 'file'], 'monitor_id' => null];
+    check(!apiIdempotencyCompleteDatabaseSuccess(['saved' => 2], 201), 'K: known file compatibility mode unchanged, not strict');
+    $GLOBALS['_fkss_idem'] = ['service' => service(), 'reservation' => ['backend' => 'unknown']];
+    $failed = false;
+    try { apiIdempotencyCompleteDatabaseSuccess(['saved' => 2], 201); } catch (ApiIdempotencyResponseNotRecorded $error) { $failed = true; }
+    check($failed, 'K: unknown backend fails closed');
+    unset($GLOBALS['_fkss_idem']);
+    foreach ([null, [], 0, ['message' => 'Synthetic'], ['message' => 'Synthetic', 'saved' => 2], ['message' => null]] as $data) {
+        $original = $data;
+        $expected = ['status' => 'success'];
+        if ($data !== null) {
+            if (is_array($data) && isset($data['message'])) {
+                $expected['message'] = $data['message']; unset($data['message']);
+                if ($data) $expected['data'] = $data;
+            } else $expected['data'] = $data;
+        }
+        check(apiSuccessPayload($original) === $expected, 'K: legacy success envelope');
+    }
+}
+
+/** Inspecting uncertainty must not claim, renew, recover or expose a response. */
+function scenarioReadOnlyLookup(array $payload): void
+{
+    resetSchema();
+    $svc = service();
+    $hash = requestHash($payload);
+    $snapshot = static fn() => db()->query('SELECT * FROM api_idempotency_records ORDER BY record_hash')->fetch_all(MYSQLI_ASSOC);
+    check($svc->lookup(1, 'lookup-op', SCOPE, $hash)['state'] === 'unknown', 'L: absent operation is unknown');
+    check(countRows('api_idempotency_records') === 0, 'L: lookup never inserts a reservation');
+    $r = $svc->begin(1, 'lookup-op', SCOPE, $hash);
+    $before = $snapshot();
+    check($svc->lookup(1, 'lookup-op', SCOPE, $hash)['state'] === 'processing', 'L: observes processing');
+    check($before === $snapshot(), 'L: processing lookup changes no fields');
+    expireLease($r['record_hash']);
+    $before = $snapshot();
+    check($svc->lookup(1, 'lookup-op', SCOPE, $hash)['state'] === 'processing', 'L: expired lease stays processing, never reacquired');
+    check($before === $snapshot(), 'L: expired lease owner and timestamps preserved');
+    check($svc->lookup(1, 'lookup-op', SCOPE, str_repeat('a', 64))['state'] === 'payload_mismatch', 'L: changed payload has no outcome evidence');
+    check($svc->lookup(2, 'lookup-op', SCOPE, $hash)['state'] === 'unknown', 'L: another owner sees unknown');
+    check($svc->lookup(1, 'lookup-op', SCOPE . '/submit', $hash)['state'] === 'unknown', 'L: another route sees unknown');
+    check($before === $snapshot(), 'L: mismatch/owner/route checks are nonmutating');
+    db()->begin_transaction();
+    db()->query("INSERT INTO probe_messages (thread_id,sender_id,body) VALUES (9,1,'synthetic lookup effect')");
+    check($svc->completeWithinTransaction($r, '{"status":"success","private_note":"never expose"}', 201), 'L: stage completion');
+    $reader = new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME);
+    $readerSvc = new \App\Services\ApiIdempotencyService($reader, fallbackDir());
+    check($readerSvc->lookup(1, 'lookup-op', SCOPE, $hash)['state'] === 'processing', 'L: reader never observes uncommitted acceptance');
+    db()->commit();
+    $before = $snapshot();
+    $found = $readerSvc->lookup(1, 'lookup-op', SCOPE, $hash);
+    check($found === ['state' => 'completed', 'cached_http_status' => 201], 'L: only bounded cached metadata, never raw response');
+    check($before === $snapshot(), 'L: completed lookup changes no fields');
+    db()->query("UPDATE api_idempotency_records SET expires_at=DATE_SUB(NOW(),INTERVAL 1 SECOND)");
+    $before = $snapshot();
+    check($svc->lookup(1, 'lookup-op', SCOPE, $hash)['state'] === 'unknown', 'L: expired completion is unknown, NOT permission to retry');
+    check($before === $snapshot(), 'L: expired proof is not deleted, renewed or reset');
+    $r2 = $svc->begin(1, 'lookup-error', SCOPE, $hash);
+    $svc->complete($r2, '{"status":"error","private_note":"never expose"}', 500);
+    check($svc->lookup(1, 'lookup-error', SCOPE, $hash) === ['state' => 'completed', 'cached_http_status' => 500], 'L: cached failure is NOT inferred business rejection');
+    $offline = new \App\Services\ApiIdempotencyService(null, '/unusable-status-fallback');
+    check($offline->lookup(1, 'lookup-op', SCOPE, $hash)['state'] === 'unavailable', 'L: missing DB does not create/read file fallback');
+    check($svc->lookup(0, 'lookup-op', SCOPE, $hash)['state'] === 'unavailable', 'L: invalid owner fails closed');
+    db()->query('DROP TABLE api_idempotency_records');
+    check($svc->lookup(1, 'lookup-op', SCOPE, $hash)['state'] === 'unavailable', 'L: missing schema does not create/fallback');
+    $reader->close();
+}
+
 $PAYLOAD = ['class_id' => 7, 'date' => '2026-03-01', 'records' => [
     ['member_id' => 101, 'status' => 'present'],
     ['member_id' => 102, 'status' => 'absent'],
@@ -587,6 +785,9 @@ switch ($SCENARIO) {
     case 'replay':              scenarioReplay($PAYLOAD); break;
     case 'error_pinning':       scenarioErrorPinning($PAYLOAD); break;
     case 'atomic_completion':   scenarioAtomicCompletion($PAYLOAD); break;
+    case 'readonly_lookup': scenarioReadOnlyLookup($PAYLOAD); break;
+    case 'attendance_response': scenarioAttendanceResponse($PAYLOAD); break;
+    case 'attendance_response_failures': scenarioAttendanceResponseFailures($PAYLOAD); break;
     case 'all':
         scenarioSuccess($PAYLOAD);
         scenarioDuplicate($PAYLOAD);
@@ -598,6 +799,9 @@ switch ($SCENARIO) {
         scenarioReplay($PAYLOAD);
         scenarioErrorPinning($PAYLOAD);
         scenarioAtomicCompletion($PAYLOAD);
+        scenarioAttendanceResponse($PAYLOAD);
+        scenarioAttendanceResponseFailures($PAYLOAD);
+        scenarioReadOnlyLookup($PAYLOAD);
         break;
     default:
         fwrite(STDERR, "unknown scenario: $SCENARIO\n");

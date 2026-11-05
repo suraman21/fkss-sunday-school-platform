@@ -11,6 +11,8 @@ enum ApiFailureKind {
   authorizationScope,
   http,
   unknown,
+  // Diagnostic/capability metadata is never an operation acceptance receipt.
+  nonSettlement,
 }
 
 enum OutboxDecision {
@@ -88,6 +90,12 @@ final class OutboxResponseEvidence {
   final bool supersededLocal;
   final int automaticAttemptCount;
 
+  /// Negative evidence only: no flag can grant acceptance or bypass receipt
+  /// validation. A future positive contract needs its own exact validator.
+  bool get requiresReceiptValidation =>
+      failureKind == ApiFailureKind.nonSettlement ||
+      errorCode == 'ATTENDANCE_RECEIPT_CONTRACT_UNSUPPORTED';
+
   const OutboxResponseEvidence({
     required this.success,
     required this.statusCode,
@@ -134,7 +142,9 @@ OutboxDecision classifyOutboxResponse(
   // A failed refresh transport/protocol attempt is not evidence that either
   // the credential or its authorization scope was definitively rejected.
   if (evidence.refreshOutcome == AuthRefreshOutcome.transientFailure) {
-    return OutboxDecision.retryable;
+    return evidence.requiresReceiptValidation
+        ? OutboxDecision.needsAttention
+        : OutboxDecision.retryable;
   }
   if (evidence.refreshOutcome == AuthRefreshOutcome.scopeChanged ||
       evidence.failureKind == ApiFailureKind.authorizationScope ||
@@ -145,6 +155,10 @@ OutboxDecision classifyOutboxResponse(
       evidence.failureKind == ApiFailureKind.authentication ||
       _definitiveAuthCodes.contains(evidence.errorCode)) {
     return OutboxDecision.pauseForAuthentication;
+  }
+
+  if (evidence.requiresReceiptValidation) {
+    return OutboxDecision.needsAttention;
   }
 
   final status = evidence.statusCode;

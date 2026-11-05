@@ -31,6 +31,9 @@ class SyncCenterScreen extends StatefulWidget {
 }
 
 class _SyncCenterScreenState extends State<SyncCenterScreen> {
+  static const _attendanceConfirmationMessage =
+      'Attendance stays saved until its exact outcome is confirmed by the server.';
+
   final _db = LocalDb();
   OutboxInventory _inventory = const OutboxInventory();
   List<SyncRecoveryItem> _items = const [];
@@ -215,10 +218,13 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
     SyncRecoveryActionResult result, {
     required String appliedMessage,
   }) {
+    final message = switch (result) {
+      SyncRecoveryActionResult.applied => appliedMessage,
+      SyncRecoveryActionResult.stale => 'This item changed. The list was reloaded.',
+      SyncRecoveryActionResult.serverConfirmationRequired => _attendanceConfirmationMessage,
+    };
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(result == SyncRecoveryActionResult.applied
-          ? appliedMessage
-          : 'This item changed. The list was reloaded.'),
+      content: Text(message),
       duration: const Duration(seconds: 2),
     ));
   }
@@ -535,6 +541,12 @@ class _SyncCenterScreenState extends State<SyncCenterScreen> {
                       size: 18, color: AppTheme.textSecondary),
                 ]),
               ),
+            ),
+          if (item.requiresServerConfirmation && (item.needsAttention || item.isConflict))
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text(_attendanceConfirmationMessage,
+                  style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
             ),
           if (item.canRetry || item.canAcknowledge || item.canDiscard)
             Wrap(spacing: 4, children: [

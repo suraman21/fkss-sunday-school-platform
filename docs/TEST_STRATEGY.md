@@ -1,77 +1,81 @@
 # Test strategy
 
-**Status:** proposed baseline, written 2026-10-23 against `main` at `46fbaa7`. It describes how quality is assured today, which risks each kind of test covers, and the agreed path to a green pipeline. Suite inventory, local commands and the current CI result are in [DEVELOPMENT_AND_TESTING.md](DEVELOPMENT_AND_TESTING.md); this document does not repeat them.
+**Status:** maintained risk and gate reference, updated 2026-10-28 against source baseline `7209278`. Exact setup, workflow definitions and dated check results are in [DEVELOPMENT_AND_TESTING.md](DEVELOPMENT_AND_TESTING.md).
 
 ## 1. Goals
 
-1. **Protect what can hurt people or the school:** personal data of members (many are minors), authentication, role scoping, and the integrity of attendance and grade records.
-2. **Keep the field app working offline:** installed Android builds must keep syncing after every server change.
-3. **Make releases evidence-based:** a change is releasable when the pipeline, not a person's memory, says so.
+1. Protect member/family personal data, authentication, role scope and the integrity of attendance and grade records.
+2. Preserve installed-client compatibility and owner-bound offline work across server, session and authorization changes.
+3. Base integration and release decisions on evidence for the exact candidate, not a previous run or an unsupported coverage claim.
 
 ## 2. Principles
 
-- **Test data only.** Tests run against provisioned test databases. No test reads, writes or copies production data, and fixtures contain synthetic values only.
-- **Risk first.** Effort follows impact: security and data integrity, then offline sync, then workflows, then presentation.
-- **Every skip is explained.** A skipped test must state why in the test and in the CI log; unexplained skips fail the pipeline (already enforced by the *Fail if any test skipped* step).
-- **Regression tests with fixes.** Every security or data-integrity fix lands with a test that fails without the fix.
-- **One rule, one place.** When the admin endpoints and `/api/v1` enforce the same rule, the rule lives in a shared service under `admin/backend/services/`, and the test targets that service.
+- **Synthetic, isolated data only.** Provision disposable databases. Do not copy, query or modify real school records for routine tests.
+- **Risk first.** Prioritize security and data integrity, then sync/state transitions, workflows and presentation.
+- **Zero skips in the backend gate.** The configured job fails on any skip, even if explained. Fix missing prerequisites rather than reporting skipped tests as passes.
+- **Regression tests accompany changes.** Prefer a test that fails for the original defect and passes with the correction; preserve meaningful assertions.
+- **Trace all consumers.** Web endpoints, compatibility shims and REST routes may enforce similar rules separately. A test of one service does not prove every caller uses it correctly.
+- **Name the evidence level.** Source assertions, unit tests, real-database integration, browser journeys, device acceptance and hosted checks prove different things.
 
 ## 3. Test levels
 
-| Level | What it proves | Where | In CI today |
-|---|---|---|---|
-| Static checks | Every PHP file parses; migrations are numbered and not silently destructive; no secrets or build artifacts are tracked | `php -l` job, *Migration numbering* job, *Production integrity* workflow | Yes |
-| Unit and contract (PHP) | Services and endpoint contracts behave as specified, including role gates and escaping | `tests/security/` (pytest driving PHP and source assertions), `tests/fixtures/` | Yes |
-| Unit (Flutter) | App logic: outbox policy, sync execution and recovery, version and update checks, Mezmur playback and download policy | `Mobile/wbws_flutter_app/test/` | Yes |
-| Integration (real database) | Idempotent replay and transactional writes against MariaDB | `tests/e2e/idempotency_lifecycle.php` | Yes (this one harness) |
-| End-to-end journeys | A user can complete a workflow in the browser or against the API | `tests/e2e/` (Python Playwright journeys, PHP harnesses) | No; run locally against a provisioned server |
-| Smoke | A deployed or local instance answers its key pages and endpoints | `tests/smoke/` | No |
-| Build | A debug Android APK builds from `main` | *Android debug APK* job | Yes |
-| Manual and visual | Layout, language and usability on real devices | Manual check on a phone, a tablet and a desktop before release | Manual |
-| Security assessment | External view of the deployed site | Dynamic scans. OWASP ZAP Phase 1 findings were remediated (for example `18c5801`: CORS wildcard removed, CSP and HSTS on the API) | Periodic, manual |
+| Level | What it establishes | Execution boundary |
+|---|---|---|
+| Static and structure | PHP parses; migration/repository guards pass; links, includes and served-folder boundaries resolve | Configured automatic CI jobs and `tests/security` structure tests |
+| PHP service/contract | Validation, role gates, transaction and response rules covered by the specific fixture/assertions | `tests/security/`, `tests/fixtures/`; source-only assertions do not execute a request |
+| Flutter service/storage/UI | Covered client policies, queue transitions, cache behavior and widget interactions | `Mobile/wbws_flutter_app/test/`; not a real Android installation |
+| Real-database integration | Covered requests, idempotency and writes against disposable MariaDB fixtures | Backend live-guard environment and separate lifecycle harness; not every browser journey |
+| Browser acceptance | The exercised browser workflow works against its local test server | `tests/e2e/`; APK-transfer acceptance has a separate manual workflow |
+| Build | Configured Android debug build and manifest/dex checks succeed | Backend CI; no release signing or installed-fleet acceptance |
+| Manual/visual/device | Layout, text scaling, keyboard/touch/accessibility and signed upgrade behavior on tested devices | Record device, build, scenarios and observed results; do not infer from CI |
+| Hosted acceptance | An explicitly authorized environment matches its acceptance criteria | Separate owner/operator action; never run production checks under ordinary local-test authorization |
 
 ## 4. Coverage by risk area
 
-Examples are real files under `tests/security/` unless stated otherwise.
+| Risk | Existing protection/examples | Remaining evidence boundary |
+|---|---|---|
+| Authentication, authorization and PII | Auth/rate-limit/CSRF tests, `test_feature_gate_enforcement.py`, role and class-scope fixtures | No complete reviewed per-action web/REST permission matrix; inspect action-level guards |
+| Destructive actions | `test_danger_confirm.py`, `test_destructive_guard.py` | Confirm entity/scope and forward-only data effects in each release |
+| Attendance and calendar | Attendance phase tests, `test_school_calendar.py`, offline-calendar/class-day tests | Source/runtime flags, clock/calendar boundaries and installed-device acceptance remain separate |
+| Grades and assessments | `test_score_limit.py`, `test_education_config_endpoints.py`, Flutter grade tests | Delayed responses, approval locks and old-client compatibility need scenario-specific evidence |
+| Members/import/Family Link | `test_member_import_v2.py`, duplicate/registration/guardian fixtures | Successful fixtures do not establish correctness of real imported school data |
+| Mobile sync and sessions | Outbox/recovery/session tests and idempotency lifecycle | No claim that every installed older build has been exercised against the candidate server |
+| Output/files/diagnostics | Escaping, report scaling, upload, error-disclosure and deployment-tool tests | A public user message or code comment promising privacy does not establish redaction of every diagnostic |
+| APK transfer/update | Upload fixtures, slow-link/exact-size browser harnesses, Flutter update/UI tests | Browser upload recovery is different from mobile APK download resume; signing and installer acceptance require a phone |
+| Documentation | Link/anchor, include-path and folder-boundary tests; documentation review contract | Link validity and a source inventory do not prove that every control's behavior is documented or tested |
 
-| Risk area | Main protection | Example tests | Known gap |
-|---|---|---|---|
-| Authentication and tokens | Token format and lifetime, refresh rotation, login rate limit, CSRF on admin writes | `test_api_rate_limiting.py` and the auth/token tests | Session and token edge cases are covered by unit tests only, not by an end-to-end journey in CI |
-| Authorization and personal data | Role gates, teacher scoping, PII field shaping | `test_feature_gate_enforcement.py`, role and scope tests | Per-action rules of `admin/api_*` are not tabulated |
-| Destructive actions | Typed confirmation, server-side guards | `test_danger_confirm.py`, `test_destructive_guard.py` | None known |
-| Attendance and alerting | Class-day rule, submission workflow, warnings | attendance phase tests, `test_school_calendar.py` | 71 server-dependent tests skip in CI (see §6) |
-| Grades and assessments | Score limit, "Did not take", report-card rules | `test_score_limit.py`, `test_education_config_endpoints.py` | One assertion currently fails on a comment (see §6) |
-| Members, import, Family Link | Duplicate policy, import rules, guardian linkage | `test_member_import_v2.py`, fixtures `member_duplicate_policy`, `member_registration_policy` | Import tests skip in CI without `openpyxl` |
-| Mobile contract and sync | Build compatibility, idempotency, outbox classification | mobile and sync tests, Flutter unit tests, the idempotency harness | No automated test drives an old installed build against a new server |
-| Output escaping and file handling | HTML escaping, CSV formula guard, upload and deployment-tool hardening | `test_onclick_arg_escaping.py`, `test_member_report_scaling.py`, `test_deployment_tool_hardening.py` | None known |
-| Error disclosure | No internal detail in responses | `test_error_disclosure.py` | None known |
+A passing test is evidence for the assertions it executes, not a complete security certification or exhaustive user-journey guarantee.
 
 ## 5. Quality gates
 
-| Gate | Required |
+| Stage | Required evidence |
 |---|---|
-| Pull request | CI green, or every failure linked to an acknowledged known issue; PR template completed; for schema changes, a reviewed migration |
-| Merge to `main` | As above, plus maintainer approval (see [BRANCHING.md](../BRANCHING.md)) |
-| Production deployment | The release acceptance policy in [DEVELOPMENT_AND_TESTING.md §6](DEVELOPMENT_AND_TESTING.md#6-release-acceptance-policy) and the deployment steps in [OPERATIONS.md §2](OPERATIONS.md#2-code-deployment-manual-sftp) |
-| Android release | Flutter tests green, the build installs over the previous field build, and offline sync is checked on a real device |
+| Pull request | Reviewed scoped diff, applicable tests and all configured checks green for the exact head; no bypassed or accepted failures |
+| Development-main merge | Authorized review/merge, successful head checks, then verification of the merged revision and its checks |
+| Development acceptance | Independently observed development-server update and owner test results; merge does not prove cron execution |
+| Production promotion | Separate explicit owner authorization after development acceptance; production review/checks and [operational safeguards](OPERATIONS.md) |
+| Android release | Signed build, compatible signer, installation over the prior field build, preserved offline work and tested sync/accessibility scenarios on the owner's phone |
 
-## 6. Path to a green pipeline (proposed; each step needs approval)
+No production approval is implied by green CI. [PRODUCTION_WORKFLOW.md](PRODUCTION_WORKFLOW.md) defines repository/environment separation.
 
-| # | Step | Effect | Risk |
-|---|---|---|---|
-| 1 | Decide the intended `per_page` cap (100 or 200), then align the test or the code | Fixes failure 1 | Low |
-| 2 | Make the report-card assertion ignore comments | Fixes failure 2 | Low; test-only |
-| 3 | Install `openpyxl` in the CI job | Removes 8 skips | Low; CI-only |
-| 4 | Start a seeded PHP server in CI with the existing provisioning script | Removes most of the 71 server-dependent skips | Medium; CI time grows |
-| 5 | Add `flutter analyze` as a CI step | Catches app issues earlier | Low |
-| 6 | Run the e2e smoke journeys nightly against a provisioned CI environment | Workflow-level regression signal | Medium |
+## 6. Path to a green pipeline (historical repair and remaining work)
 
-Until steps 1–4 are done, releases rely on targeted local runs as evidence, and that evidence is recorded in the pull request.
+The earlier roster-cap/comment assertions were repaired on 2026-10-24. PR #41 then installed the missing import dependency, provisioned/started the guarded synthetic HTTP world and fixed fixture database selection. All eight baseline checks on `7209278` passed on 2026-10-28; see [baseline evidence](reports/DOCUMENTATION_BASELINE_2026-10-28.md).
+
+Remaining improvements require scoped review; they are not already implemented merely because they appear here:
+
+- Run backend behavioral suites on PHP 8.5, not only its lint job.
+- Evaluate an enforced Flutter analysis step using the existing analysis baseline.
+- Expand automated browser/device journeys and installed-old-client compatibility coverage.
+- Complete the source-reviewed role/screen/control manual and per-action permission ledger.
+
+Do not weaken the current zero-skip policy or fold unrelated infrastructure changes into a documentation patch.
 
 ## 7. Writing a new test
 
-1. Choose the lowest level that proves the behaviour (see §3).
-2. Put PHP/endpoint tests in `tests/security/test_<area>.py`; keep fixtures synthetic and place them in `tests/fixtures/`.
-3. Name the rule being protected in the test docstring, and link the decision record if one exists (for example `docs/adr/0020-score-limit-and-did-not-take.md`).
-4. If the test needs a server or an optional package, skip with an explicit reason rather than failing silently.
-5. Run the affected suite locally and attach the result to the pull request.
+1. Identify the workflow, affected roles, shared consumers and failure/edge conditions before choosing a level.
+2. Use existing isolated fixtures and the lowest level that proves the rule. Add integration or UI coverage where a source assertion cannot establish the outcome.
+3. Name the protected rule and link the relevant ADR. Keep fixtures synthetic and test-only.
+4. If prerequisites are missing locally, report an incomplete environment explicitly. An optional local skip must state its reason, but it still cannot satisfy the backend zero-skip release gate.
+5. Run affected and neighboring regressions, then the applicable full suites. Attach commands, versions, exit codes and counts without adding overlapping targeted/full totals together.
+6. Report unexecuted scenarios, runtime dependencies and phone/hosting gates separately.

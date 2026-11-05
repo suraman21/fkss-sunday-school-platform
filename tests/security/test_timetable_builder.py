@@ -140,7 +140,9 @@ class TimetableLive(unittest.TestCase):
             db(f"DELETE FROM timetable_periods WHERE class_id={c}")
             # restore the seeded default row (deleting it would break later
             # tests and the next run — class-day rules need it)
-            db(f"UPDATE timetable_class_days SET working_days='1,2,3,4,5,6,7' WHERE class_id={c}")
+            db(f"INSERT INTO timetable_class_days (class_id,academic_year_id,working_days) "
+               f"VALUES ({c},{cls.year_id},'1,2,3,4,5,6,7') "
+               "ON DUPLICATE KEY UPDATE working_days=VALUES(working_days)")
             db(f"DELETE FROM timetable_makeup_classes WHERE class_id={c}")
         db("DELETE FROM activity_logs WHERE entity_type='timetable'")
 
@@ -165,6 +167,9 @@ class TimetableLive(unittest.TestCase):
         st, d = edu.get_json("/admin/api_timetable.php?action=classes")
         self.assertEqual(st, 200); self.assertEqual(d["status"], "success"); self.assertTrue(d["classes"])
 
+        # Exercise the editor's unconfigured preset, not the seeded seven-day row.
+        # _clean() restores that seed with an upsert even if this test fails early.
+        db(f"DELETE FROM timetable_class_days WHERE class_id IN ({A},{B}) AND academic_year_id={self.year_id}")
         st, d = edu.get_json(f"/admin/api_timetable.php?action=class_setup&class_id={A}")
         self.assertEqual(d["status"], "success")
         self.assertEqual(d["working_days"], [6, 7])  # default Saturday + Sunday
@@ -172,6 +177,8 @@ class TimetableLive(unittest.TestCase):
 
         # working days: Wednesday + Sunday for class A
         st, d = self.post(edu, "save_days", {"class_id": A, "days[]": [3, 7]})
+        self.assertEqual(d.get("code"), "confirm_phrase_required", d)
+        st, d = self.post(edu, "save_days", {"class_id": A, "days[]": [3, 7], "confirm_phrase": "REMOVE DAY"})
         self.assertEqual(d["status"], "success", d); self.assertEqual(d["working_days"], [3, 7])
 
         # periods
@@ -219,6 +226,8 @@ class TimetableLive(unittest.TestCase):
 
         # copy bell schedule B → A (A gets B's days + periods)
         st, d = self.post(edu, "copy_bell", {"class_id": A, "from_class_id": B})
+        self.assertEqual(d.get("code"), "confirm_phrase_required", d)
+        st, d = self.post(edu, "copy_bell", {"class_id": A, "from_class_id": B, "confirm_phrase": "REPLACE SCHEDULE"})
         self.assertEqual(d["status"], "success", d)
         st, d = edu.get_json(f"/admin/api_timetable.php?action=class_setup&class_id={A}")
         self.assertEqual(d["working_days"], [6, 7]); self.assertEqual(len(d["periods"]), 1)
@@ -226,6 +235,8 @@ class TimetableLive(unittest.TestCase):
 
         # delete period cascades lessons (class B has 1 lesson on bp1)
         st, d = self.post(edu, "delete_period", {"class_id": B, "period_id": bp1})
+        self.assertEqual(d.get("code"), "confirm_phrase_required", d)
+        st, d = self.post(edu, "delete_period", {"class_id": B, "period_id": bp1, "confirm_phrase": "DELETE PERIOD"})
         self.assertEqual(d["status"], "success", d); self.assertIn("1 scheduled lesson", d["message"])
 
         # makeup classes

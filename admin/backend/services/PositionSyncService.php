@@ -22,8 +22,6 @@ use RuntimeException;
 require_once __DIR__ . '/IdentityCodeService.php';
 require_once __DIR__ . '/MemberCategory.php';
 require_once __DIR__ . '/SecurityAuditService.php';
-// NOTE: member_sync.php is required at call time (not here) to avoid a
-// load cycle — member_sync hooks back into this service.
 
 final class PositionSyncService
 {
@@ -185,14 +183,8 @@ final class PositionSyncService
 
             self::deriveFlags($conn, $memberId);
 
-            // Long-standing business rule, preserved: any role flips the
-            // tier to special_regular, clearing all roles reverts to
-            // regular (honorary is never touched). Flags are now derived
-            // from positions, so the rule follows the position picker.
-            if (!function_exists('syncMemberType')) {
-                require_once __DIR__ . '/../member_sync.php';
-            }
-            \syncMemberType($conn, $memberId);
+            // Member type is manually selected, independent of positions
+            // and their derived flags. Do not reclassify it here.
 
             SecurityAuditService::record(
                 $conn,

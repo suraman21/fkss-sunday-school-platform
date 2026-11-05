@@ -539,6 +539,62 @@ paths:
           $ref: '#/components/responses/Unprocessable'
         '500':
           $ref: '#/components/responses/ServerError'
+  /attendance/write-context:
+    get:
+      tags: [attendance]
+      summary: Describe current server write dimensions; not offline authority.
+      operationId: getAttendanceWriteContext
+      description: >-
+        Requires current authorization even for old builds and current class access.
+        Never uses roster fallback year. No roster, lease, receipt or mobile activation.
+        Calendar/workflow eligibility and snapshot consistency are not established.
+      parameters:
+      - name: class_id
+        in: query
+        required: true
+        schema: {type: integer, minimum: 1, maximum: 9007199254740991}
+      - name: date
+        in: query
+        required: true
+        schema: {type: string, format: date}
+        description: Explicit exact Gregorian YYYY-MM-DD; not defaulted.
+      responses:
+        '200':
+          description: No-store point-in-time dimensions; both authority flags are false.
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/SuccessEnvelope'
+                - type: object
+                  properties:
+                    data:
+                      type: object
+                      additionalProperties: false
+                      required: [context_version, owner_user_id, authorization_version, class_id, academic_year_id, date, authorizes_offline_work, authorizes_settlement]
+                      properties:
+                        context_version: {type: integer, const: 1}
+                        owner_user_id: {type: integer, minimum: 1}
+                        authorization_version: {type: integer, minimum: 1}
+                        class_id: {type: integer, minimum: 1}
+                        academic_year_id: {type: integer, minimum: 1}
+                        date: {type: string, format: date}
+                        authorizes_offline_work: {type: boolean, const: false}
+                        authorizes_settlement: {type: boolean, const: false}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Unknown class or subpath.
+        '405':
+          description: GET required.
+        '409':
+          description: Existing profile claims must be refreshed.
+        '422':
+          description: Missing, malformed or client-nominated scope dimensions.
+        '503':
+          description: Current authority or positive write year unavailable.
   /attendance/submit:
     post:
       tags:

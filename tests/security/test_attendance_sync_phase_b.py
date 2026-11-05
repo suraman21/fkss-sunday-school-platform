@@ -225,7 +225,7 @@ class TestCoordinatorContract:
         # the current-version pin moves when a later migration lands (v36
         # added the S1 operation/attempt ledger; v37 added its
         # execution_source column).
-        assert "const localDatabaseSchemaVersion = 37;" in self.schema
+        assert "const localDatabaseSchemaVersion = 38;" in self.schema
         assert "if (oldVersion < 35)" in self.local_db
         assert "await db.execute(localSyncStateV35Sql);" in self.local_db
 
@@ -267,7 +267,7 @@ class TestCoordinatorContract:
 
     def test_bootstrap_clears_cache_and_cursor_together(self):
         match = re.search(
-            r"Future<void> resetAttendanceSyncForBootstrap\(\) async \{.*?Future<void> completeAttendanceBootstrap",
+            r"Future<void> resetAttendanceSyncForBootstrap\(\s*\{required LegacyWriteSession expectedSession\}\) async \{.*?Future<void> completeAttendanceBootstrap",
             self.local_db, re.S,
         )
         assert match, "resetAttendanceSyncForBootstrap not found"

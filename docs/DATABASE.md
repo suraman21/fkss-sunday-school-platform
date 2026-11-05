@@ -1,6 +1,10 @@
 # Database and migrations
 
-**Status:** canonical. **Verified against:** `main` at `46fbaa7` (2026-10-22), from source files only. **No production database was queried for this document.** Statements about production are marked as reported or unverified. This document deliberately contains no ERD, row counts or schema dump, because none could be verified.
+**Status:** maintained migration reference. Original review: `46fbaa7` (2026-10-22); numbered-file count and `CREATE TABLE` targets rechecked at `7e28157` (2026-10-28), excluding SQL comments. **No production database was queried.** Source diagrams and historical table definitions are in the [table-level dictionary](DATA_DICTIONARY.md); neither is a verified live-schema export. Source inventories do not establish applied migrations, column parity or real row counts.
+
+## Source-defined ledger columns
+
+The [Finance/Materials column reference](database/LEDGER_COLUMNS.md), source-reviewed at `591e23d` (2026-10-28), records all columns in eight defining CREATE statements, their source indexes, later declared foreign keys and conditional index additions. It distinguishes literal DDL from runtime input defaults/validation and from an applied schema. It does not regenerate the historical dictionary or verify live database metadata.
 
 ## 1. Engine and access
 
@@ -27,7 +31,7 @@
 | Runtime DDL | `MezmurSchemaReconciler::apply`, called from `admin/api_mezmur.php`, can create or alter Mezmur tables at request time | Production can drift from `sql/` |
 | `tests/e2e/provision_env.sh` | Encodes the apply order that produces a working test database | The best available **executable** description of the schema; test-only |
 
-Distinct table names created across `sql/`: **103**, counted from `CREATE TABLE` statements on 2026-10-22. Tables created before `sql/` existed, or by legacy scripts, are not included in that count.
+At `7e28157` (2026-10-28), the **76 numbered migration files** (`001`–`078`, with gaps) contain **102 distinct `CREATE TABLE` target names**, excluding block/line comments and including archive/quarantine definitions. This is a lexical source inventory, not the number of active business tables or proof that every conditional statement ran. Legacy PHP/snapshot definitions are outside this count. The former count of 103 incorrectly treated the word `only` in migration 026's comment as a table.
 
 ## 3. Migration rules in force
 
@@ -82,7 +86,7 @@ The summaries are based on each file's header comment. "Tables created" lists `C
 | `023_mezmur_date_attendance.sql` | 2026-08-27 | Date-based Mezmur attendance, grouped by section | mezmur_days |
 | `024_mezmur_submissions.sql` | 2026-08-27 | Mezmur submission packets (same workflow as Education) | mezmur_submissions |
 | `025_mezmur_hymn_offline.sql` | 2026-08-28 | Offline Mezmur hymns on mobile | mezmur_categories |
-| `026_hr_attendance.sql` | 2026-08-28 | HR department attendance (section-based) | hr_attendance, hr_attendance_audit, hr_submissions, only |
+| `026_hr_attendance.sql` | 2026-08-28 | HR department attendance (section-based; now retired) | hr_attendance, hr_attendance_audit, hr_submissions |
 | `027_attendance_rollup.sql` | 2026-08-28 | Attendance analytics read model | attendance_rollup |
 | `028_analytics_scale.sql` | 2026-08-28 | Scale hardening for the analytics hub (100,000+ rows) |  |
 | `029_subject_codes_and_limits.sql` | 2026-08-31 | Subject codes that survive Amharic names; safe field limits |  |

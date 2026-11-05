@@ -289,7 +289,10 @@ class OfflineCalendarTests(unittest.TestCase):
         self.assertEqual(body["data"]["etag"], after)
 
     def test_every_rule_input_changes_the_etag(self):
-        d = self.today + dt.timedelta(days=3)
+        # today+3 equals the seeded Sunday on Thursdays (and Wednesday on
+        # Sundays), turning an intended mutation into a no-op with a valid 304.
+        d = max(self.sun, self.wed) + dt.timedelta(days=1)
+        self.assertNotIn(d, (self.sun, self.wed))
         self.assert_change_detected(f"INSERT INTO school_day_offs (day_date,is_off,reason) VALUES ('{d}',1,'new')")
         self.assert_change_detected(f"INSERT INTO school_day_offs (day_date,is_off,reason) VALUES ('{d}',0,'reopen')")
         self.assert_change_detected("UPDATE school_day_offs SET reason = 'Feast day' WHERE reason = 'Feast'")

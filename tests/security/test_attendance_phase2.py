@@ -385,7 +385,7 @@ class Phase2LiveGuards(unittest.TestCase):
             self.skipTest("PHP CLI is not installed")
         for d in ["2026-10-05", "2026-10-06", "2026-10-07", "2026-10-08", "2026-10-09", "2026-10-12"]:
             db(f"INSERT IGNORE INTO attendance (member_id,class_id,attendance_date,status,recorded_by) VALUES ({self.ROLLOUT_MID},1,'{d}','absent',1)")
-        env = dict(os.environ, SSMS_AUDIT_TESTING="1")
+        env = dict(os.environ, SSMS_AUDIT_TESTING="1", SSMS_DB_NAME="ssms_test")
         bells_before = db("SELECT COUNT(*) FROM notifications WHERE type='attendance_warning'")
         dry = subprocess.run([php, "-d", "error_reporting=24575", str(ROOT / "scripts/attendance_rollout_2026.php"), "--department=edu"], capture_output=True, text=True, env=env, cwd=str(ROOT))
         self.assertEqual(dry.returncode, 0, dry.stderr)

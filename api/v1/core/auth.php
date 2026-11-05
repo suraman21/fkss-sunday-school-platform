@@ -5,6 +5,7 @@
  */
 
 require_once __DIR__ . '/../../../admin/backend/services/ProfileService.php';
+require_once __DIR__ . '/../../../admin/backend/services/RefreshTokenService.php';
 
 define('API_TOKEN_SECRET', defined('JWT_SECRET') ? JWT_SECRET : EXPORT_PREFIX . '_api_v1_' . DB_NAME . '_' . md5(DB_PASS));
 define('API_TOKEN_EXPIRY', 900);              // 15-minute access token
@@ -49,7 +50,8 @@ function createToken(
     $role,
     $fullName,
     $expiry = null,
-    $authorizationVersion = 1
+    $authorizationVersion = 1,
+    $refreshBinding = null
 ) {
     $exp = $expiry ?? API_TOKEN_EXPIRY;
     $payload = [
@@ -63,8 +65,34 @@ function createToken(
         'typ' => 'access',
         'jti' => bin2hex(random_bytes(16))
     ];
+    // Additive signed claim: old six-argument callers remain unbound and do
+    // not qualify for a future family-bound preparation grant.
+    if ($refreshBinding !== null) {
+        if (!is_array($refreshBinding) || count($refreshBinding) !== 2
+            || !is_string($refreshBinding['family_id'] ?? null)
+            || !preg_match('/^[a-f0-9]{64}$/D', $refreshBinding['family_id'])
+            || !is_string($refreshBinding['session_id'] ?? null)
+            || !preg_match('/^[a-f0-9]{64}$/D', $refreshBinding['session_id'])) {
+            throw new InvalidArgumentException('Invalid access refresh-family binding.');
+        }
+        $payload['fid'] = $refreshBinding['family_id'];
+        $payload['rsid'] = $refreshBinding['session_id'];
+    }
     $b64 = base64_encode(json_encode($payload));
     return $b64 . '.' . hash_hmac('sha256', $b64, API_TOKEN_SECRET);
+}
+
+/** Extract binding only from this server's valid, owner-matching refresh. */
+function apiRefreshAccessBinding(string $refreshToken, int $userId): array {
+    $payload = verifyToken($refreshToken);
+    $family = $payload['fid'] ?? null;
+    if (!is_array($payload) || ($payload['typ'] ?? '') !== 'refresh'
+        || (int)($payload['uid'] ?? 0) !== $userId || $userId <= 0
+        || !is_string($family) || !preg_match('/^[a-f0-9]{64}$/D', $family)
+        || !is_string($payload['jti'] ?? null) || !preg_match('/^[a-f0-9]{64}$/D', $payload['jti'])) {
+        throw new RuntimeException('Refresh-family binding is unavailable.');
+    }
+    return ['family_id'=>$family, 'session_id'=>$payload['jti']];
 }
 
 /**
@@ -186,10 +214,11 @@ function apiAuthorizationScopeEnforcedForClient(): bool {
  * unavailable authority fails closed with a typed response.
  *
  * @param array<string,mixed> $payload verified access-token payload
+ * @param bool $requireCurrentScope server-only opt-in; never relaxes authority
  * @return array<string,mixed>
  */
-function apiRevalidateAuthorizationScope(array $payload): array {
-    if (!apiAuthorizationScopeEnforcedForClient()) {
+function apiRevalidateAuthorizationScope(array $payload, bool $requireCurrentScope = false): array {
+    if (!$requireCurrentScope && !apiAuthorizationScopeEnforcedForClient()) {
         return $payload;
     }
 
@@ -284,6 +313,29 @@ function apiRequireAuth() {
     if (time() > API_LEGACY_CLIENT_COMPAT_UNTIL
         && ((int)$payload['exp'] - (int)$payload['iat']) > (API_TOKEN_EXPIRY + 60)) {
         err('Access token must be refreshed. Please try again.', 401);
+    }
+    // A signed bound token cannot escape this guard by changing a build
+    // header or choosing a legacy route. Keep old unbound compatibility tokens
+    // explicitly separate; they do not prove family/device revocation.
+    if (array_key_exists('fid', $payload) || array_key_exists('rsid', $payload)) {
+        global $conn;
+        try {
+            if (!isset($conn) || !($conn instanceof mysqli)) {
+                throw new RuntimeException('API session database unavailable.');
+            }
+            $familyActive = is_string($payload['fid'] ?? null) && is_string($payload['rsid'] ?? null)
+                && \App\Services\RefreshTokenService::accessSessionIsActive(
+                    $conn, (int)$payload['uid'], $payload['fid'], $payload['rsid']
+                );
+        } catch (Throwable $error) {
+            error_log('API refresh-family revalidation unavailable.');
+            err('Session could not be revalidated. Please try again.', 503,
+                ['code' => 'AUTH_SESSION_REVALIDATION_UNAVAILABLE']);
+        }
+        if (!$familyActive) {
+            err('This session is no longer active. Please sign in again.', 401,
+                ['code' => 'SESSION_REVOKED']);
+        }
     }
     return apiRevalidateAuthorizationScope($payload);
 }

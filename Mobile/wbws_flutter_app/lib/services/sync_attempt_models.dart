@@ -163,6 +163,19 @@ SyncErrorCategory classifySyncErrorCategory(OutboxResponseEvidence evidence) {
     return SyncErrorCategory.authExpired;
   }
 
+  if (evidence.requiresReceiptValidation) {
+    // Preserve the authoritative policy's auth precedence, but never label a
+    // held observation as successful execution or idempotency replay.
+    final decision = classifyOutboxResponse(evidence);
+    if (decision == OutboxDecision.pauseForAuthentication) {
+      return SyncErrorCategory.authExpired;
+    }
+    if (decision == OutboxDecision.pauseForAuthorizationScope) {
+      return SyncErrorCategory.authScopeChanged;
+    }
+    return SyncErrorCategory.protocolError;
+  }
+
   final status = evidence.statusCode;
 
   // Success first: a replayed 2xx is a materially different fact from a fresh
@@ -186,6 +199,7 @@ SyncErrorCategory classifySyncErrorCategory(OutboxResponseEvidence evidence) {
     case ApiFailureKind.authorizationScope:
       return SyncErrorCategory.authScopeChanged;
     case ApiFailureKind.none:
+    case ApiFailureKind.nonSettlement:
     case ApiFailureKind.protocol:
     case ApiFailureKind.http:
     case ApiFailureKind.unknown:

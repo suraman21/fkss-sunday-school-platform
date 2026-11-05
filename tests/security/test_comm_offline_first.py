@@ -177,9 +177,9 @@ class OfflineFirstClientTests(unittest.TestCase):
         # Bumped 2026-10-19 for attendance warnings, Phase 2 mobile (build 37).
         config = (MOBILE / "utils/config.dart").read_text(encoding="utf-8")
         pubspec = (ROOT / "Mobile/wbws_flutter_app/pubspec.yaml").read_text(encoding="utf-8")
-        self.assertIn("appVersion = '1.7.3'", config)
-        self.assertIn("appBuild = 40", config)
-        self.assertIn("version: 1.7.3+40", pubspec)
+        self.assertIn("appVersion = '1.7.4'", config)
+        self.assertIn("appBuild = 41", config)
+        self.assertIn("version: 1.7.4+41", pubspec)
 
 
 if __name__ == "__main__":

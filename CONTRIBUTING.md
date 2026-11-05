@@ -26,7 +26,7 @@ Recommended first reads, in order: [PRD](docs/product/PRD.md) → [Technical des
 4. **Commit messages** follow the Conventional Commits style already used in the history: `feat(attendance): …`, `fix(grades): …`, `docs: …`, `test: …`, `ci: …`, `security: …`. Write the subject in the imperative and explain the *why* in the body.
 5. **Open a pull request** into `main` and complete the PR template checklist.
 6. **Review:** at least one reviewer other than the author. Changes to authentication, authorization, personal-data handling, migrations or the mobile API contract also need a security-minded reviewer.
-7. **After merge:** a maintainer schedules deployment. Then `main` is merged into `dev` (`git checkout dev && git merge main && git push origin dev`).
+7. **After merge:** verify development-main checks and the development-server update, then obtain owner acceptance. Production promotion requires separate explicit authorization; do not automatically push both mains. Synchronizing accepted main changes into the beta `dev` branch is a separate maintainer action that must preserve its beta-only configuration ([BRANCHING.md](BRANCHING.md)).
 
 ## 4. Coding standards
 
@@ -82,7 +82,7 @@ Recommended first reads, in order: [PRD](docs/product/PRD.md) → [Technical des
   cd Mobile/wbws_flutter_app && flutter test
   ```
 - Add or update tests for every behaviour change, especially authorization (one test per role that must be refused), personal-data exposure and validation rules.
-- **Known state:** *Backend checks* currently fails on `main` because 79 tests are skipped. Your PR must not add failures or unexplained skips. Making the skipped tests run is welcome ([DEVELOPMENT_AND_TESTING.md §3](docs/DEVELOPMENT_AND_TESTING.md#3-current-ci-status)).
+- **Gate:** all eight baseline checks on `7209278` passed (2026-10-28). Every candidate needs its own successful checks. The backend job fails on **any** skipped test; an explanation is not a passing result. Use the isolated live-test world described in [DEVELOPMENT_AND_TESTING.md §3](docs/DEVELOPMENT_AND_TESTING.md#3-current-ci-status).
 - Never weaken or delete a test to make CI pass without an agreed reason in the PR.
 
 ## 7. Documentation
@@ -92,7 +92,7 @@ Update documentation in the same PR as the code:
 - **[PRD](docs/product/PRD.md):** if a requirement or business rule changes.
 - **[ADR](docs/adr/README.md):** for any significant architecture or product decision.
 - **Canonical docs** (API, database, roles, operations, security) when their subject changes.
-- Follow the status labels in [docs/README.md](docs/README.md). Do not rewrite historical documents; add a new one or a banner.
+- Follow [DOCUMENTATION_STANDARD.md](docs/DOCUMENTATION_STANDARD.md) and the status labels in [docs/README.md](docs/README.md). Keep the [manual coverage ledger](docs/user_manual/COVERAGE.md) current when a screen/control changes. Do not rewrite historical outcomes; add a dated follow-up or banner. Retire obsolete artifacts only after the knowledge/reference checks in [DOCUMENT_LIFECYCLE.md](docs/DOCUMENT_LIFECYCLE.md).
 
 ## 8. Definition of done
 

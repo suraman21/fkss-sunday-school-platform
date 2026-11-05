@@ -236,7 +236,7 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
       setState(() {
         _packetStatus = '${cached?['submission_status']}';
       });
-      await _db.dropPendingMezmur(_selectedDate, section);
+      // Keep local operations: a cached lock is not their acceptance receipt.
     }
 
     // 2. Local pending packet overrides (draft marks on this phone)
@@ -272,9 +272,7 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
       final packet = '${data['submission_status'] ?? ''}';
       final locked =
           PacketLock.isLocked(packet, flagged: data['locked'] == true);
-      if (locked) {
-        await _db.dropPendingMezmur(_selectedDate, section);
-      }
+      // A server sheet lock also does not acknowledge this phone's exact intent.
       _applySheet(
           data,
           locked ? {} : pendingMap,

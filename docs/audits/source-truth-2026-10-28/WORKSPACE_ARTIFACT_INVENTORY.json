@@ -1,0 +1,188 @@
+[
+  {
+    "path": "/home/user/FKSS_API_Database_Permissions_Report_2026-10-28.md",
+    "bytes": 13336,
+    "sha256": "af4804d2b3ff11f624000d1b37bea534055c91662f7bea645c714d96feada126",
+    "review_status": "UNREVIEWED; attribution/edition pending"
+  },
+  {
+    "path": "/home/user/FKSS_APK_512MiB_End_to_End_Report.md",
+    "bytes": 15735,
+    "sha256": "8699de9087b8c4e53e66c684a52403b5bb8e33835ac5499b6227419e7a5282d8",
+    "review_status": "UNREVIEWED; attribution/edition pending"
+  },
+  {
+    "path": "/home/user/FKSS_APK_Release_Status_2026-10-28.md",
+    "bytes": 7325,
+    "sha256": "b6514ea2355250d25b5388632f48c58be125ee8c55495968f02218a4fc9e1e17",
+    "review_status": "UNREVIEWED; attribution/edition pending"
+  },
+  {
+    "path": "/home/user/FKSS_APK_Upload_Deep_Analysis.md",
+    "bytes": 27172,
+    "sha256": "eda9684441611c5b130778ef3ae0ff115ee493a34493e503966874261b6bc4f5",
+    "review_status": "UNREVIEWED; attribution/edition pending"
+  },
+  {
+    "path": "/home/user/FKSS_APK_Upload_Implementation_Report.md",
+    "bytes": 16179,
+    "sha256": "73aeb43b8e70621f8965d2b0b53a621eb7a60c12bb20c8dbcee8fa21696d879f",
+    "review_status": "UNREVIEWED; attribution/edition pending"
+  },
+  {
+    "path": "/home/user/FKSS_App_Update_UX_Concept.html",
+    "bytes": 24856,
+    "sha256": "bb2649ac61ac5c3abeae2983ac4ac160807cbd9ca2d3485451c5c7f59101c455",
+    "review_status": "UNREVIEWED; attribution/edition pending"
+  },
+  {
+    "path": "/home/user/FKSS_Codebase_Analysis.md",
+    "bytes": 110488,
+    "sha256": "09ca6486ddcdc54783ea15be88dc5209a65e6a54b78c2d8a4b5dc3fc4ddd2da1",
+    "review_status": "UNREVIEWED; attribution/edition pending"
+  },
+  {
+    "path": "/home/user/FKSS_Developer_Handbook_2026-10-28.docx",
+    "bytes": 60196,
+    "sha256": "7f79f4438549ed80845729a45eef5aad5122c9f5eafe4b369bf5d78d534c804f",
+    "review_status": "UNREVIEWED; attribution/edition pending"
+  },
+  {
+    "path": "/home/user/FKSS_Developer_Handbook_2026-10-28.md",
+    "bytes": 48688,
+    "sha256": "6e2f2b6aabc272f559cff14d1fb6f967835ee98014dd10d8063b52dee5f4c1ea",
+    "review_status": "UNREVIEWED; attribution/edition pending"
+  },
+  {
+    "path": "/home/user/FKSS_Developer_Readiness_2026-10-28.bundle",
+    "bytes": 39891,
+    "sha256": "d166a5b93a6163573eaa79818b0a4652b802afc1a51f417a0b4de9d189f82173",
+    "review_status": "UNREVIEWED; attribution/edition pending"
+  },
+  {
+    "path": "/home/user/FKSS_Developer_Readiness_2026-10-28.patch",
+    "bytes": 106178,
+    "sha256": "09fc698320890f7a97784d2232443ceb40a7dfc435048814f5f7d183940e3196",
+    "review_status": "UNREVIEWED; attribution/edition pending"
+  },
+  {
+    "path": "/home/user/FKSS_Developer_Readiness_Report_2026-10-28.md",
+    "bytes": 17362,
+    "sha256": "69d01cbd0370d33a61920913efdd85f70a4ddfbf8c6a4706e9201352376e1a44",
+    "review_status": "UNREVIEWED; attribution/edition pending"
+  },
+  {
+    "path": "/home/user/FKSS_Documentation_Completion_2026-10-28.patch",
+    "bytes": 152525,
+    "sha256": "2c701dee6c6ae8dffcc57d9869686d5193a10a8ba94eb7860949d67737200c8b",
+    "review_status": "UNREVIEWED; attribution/edition pending"
+  },
+  {
+    "path": "/home/user/FKSS_Documentation_Renewal_Status_2026-10-28.md",
+    "bytes": 16154,
+    "sha256": "d153731015f44129bc2231f4c17f0fb716feab10b01fa9b4930edc9de94390ac",
+    "review_status": "UNREVIEWED; attribution/edition pending"
+  },
+  {
+    "path": "/home/user/FKSS_Documentation_Reviewed_Scope_2026-10-28.patch",
+    "bytes": 212417,
+    "sha256": "eb9eda4e0914dd6d5082c1e896d094a6b2647b5dcc52f6c7d3eba0513d49a03c",
+    "review_status": "UNREVIEWED; attribution/edition pending"
+  },
+  {
+    "path": "/home/user/FKSS_Documentation_Update_2026-10-28.bundle",
+    "bytes": 102656,
+    "sha256": "4ede583ad281a1c75c85704bc59faa691fc5a7c20d397d4657750e4e7c3275c4",
+    "review_status": "UNREVIEWED; attribution/edition pending"
+  },
+  {
+    "path": "/home/user/FKSS_Documentation_Update_Report_2026-10-28.md",
+    "bytes": 20281,
+    "sha256": "5f10fea22032b15eb8bf354b23497c628472e576ac8ae932c9b28026e8238dc2",
+    "review_status": "UNREVIEWED; attribution/edition pending"
+  },
+  {
+    "path": "/home/user/FKSS_Ledger_API_Database_Permissions_2026-10-28.docx",
+    "bytes": 59677,
+    "sha256": "1a7285c0c39f55a4f1e412e77ed8040512e484bdacf2d1cc40b922e3e581ccb1",
+    "review_status": "UNREVIEWED; attribution/edition pending"
+  },
+  {
+    "path": "/home/user/FKSS_Ledger_API_Database_Permissions_2026-10-28.md",
+    "bytes": 48308,
+    "sha256": "05c7a4c11c89c8d465021bb92370b9016e0d35265b450dae4e06ce5cbcec53cb",
+    "review_status": "UNREVIEWED; attribution/edition pending"
+  },
+  {
+    "path": "/home/user/FKSS_Ledger_Reference_Depth_2026-10-28.bundle",
+    "bytes": 24688,
+    "sha256": "e3e186f3a4781891e4b649ac4f1af65a3e1531f0be103fad16838d4cd766f027",
+    "review_status": "UNREVIEWED; attribution/edition pending"
+  },
+  {
+    "path": "/home/user/FKSS_Ledger_Reference_Depth_2026-10-28.patch",
+    "bytes": 67600,
+    "sha256": "eaae2062120b4bca9ea34948ca68ef89cdcea5cc626be6df66e676b06e50de2e",
+    "review_status": "UNREVIEWED; attribution/edition pending"
+  },
+  {
+    "path": "/home/user/FKSS_Mobile_1_7_4_Patch_Report.md",
+    "bytes": 19201,
+    "sha256": "44891e935ed12c2ec019c5e4d6516e864021b9c8b39c2cf2586b1d0ffbe0da67",
+    "review_status": "UNREVIEWED; attribution/edition pending"
+  },
+  {
+    "path": "/home/user/FKSS_Profile_App_Updates_First_Batch.patch",
+    "bytes": 69760,
+    "sha256": "7b2062b9b672bc7dd7b2f5e844ed42580e03bb20815104b6246aa666fef3f58d",
+    "review_status": "UNREVIEWED; attribution/edition pending"
+  },
+  {
+    "path": "/home/user/FKSS_Profile_App_Updates_Implementation_2026-10-28.md",
+    "bytes": 14605,
+    "sha256": "5c421fd09867aa9cf70999bcadcf866a4b980f732ce4a9a79aee8117c99e77f5",
+    "review_status": "UNREVIEWED; attribution/edition pending"
+  },
+  {
+    "path": "/home/user/FKSS_Profile_App_Updates_UX_Research_2026-10-28.md",
+    "bytes": 43848,
+    "sha256": "1c0bb7321c049f0eaf4cceae9a4e70b5fba996fc3c8090a294557e305527f7d6",
+    "review_status": "UNREVIEWED; attribution/edition pending"
+  },
+  {
+    "path": "/home/user/FKSS_Repository_Sync_Audit.md",
+    "bytes": 32656,
+    "sha256": "fe9e730cab2ca20da45ced8764138b6359df4b329e61841b76fd60b4b337f96b",
+    "review_status": "UNREVIEWED; attribution/edition pending"
+  },
+  {
+    "path": "/home/user/FKSS_Silent_App_Update_Research_2026-10-28.md",
+    "bytes": 61578,
+    "sha256": "5c9754c9c5f084a65c13330a105cef7335f6053b25b4e82f969c1618488157f2",
+    "review_status": "UNREVIEWED; attribution/edition pending"
+  },
+  {
+    "path": "/home/user/FKSS_User_Manual_Expanded_Reviewed_Chapters_2026-10-28.docx",
+    "bytes": 69823,
+    "sha256": "c7ee9ae2df0b429f6c456b4b8b1e56569d1ee93fe92580aa48d2c70fcc1d80f6",
+    "review_status": "UNREVIEWED; attribution/edition pending"
+  },
+  {
+    "path": "/home/user/FKSS_User_Manual_Expanded_Reviewed_Chapters_2026-10-28.md",
+    "bytes": 80074,
+    "sha256": "d1131594f21cb118d3864c21e928bb49b57cdfd8e4d95eaa0755b2d14dc26601",
+    "review_status": "UNREVIEWED; attribution/edition pending"
+  },
+  {
+    "path": "/home/user/FKSS_User_Manual_Reviewed_Mobile_Chapters_2026-10-28.docx",
+    "bytes": 58004,
+    "sha256": "daf642222bb63607a02e0c8993848db50e08fdedcc9883dca25b03a7368f8fec",
+    "review_status": "UNREVIEWED; attribution/edition pending"
+  },
+  {
+    "path": "/home/user/FKSS_User_Manual_Reviewed_Mobile_Chapters_2026-10-28.md",
+    "bytes": 52201,
+    "sha256": "33cad50b7d1f5b0f0be19831bc1bc0e1cb2b310cb44af79fc43c8fadf051fd6b",
+    "review_status": "UNREVIEWED; attribution/edition pending"
+  }
+]

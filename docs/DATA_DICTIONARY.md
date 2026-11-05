@@ -2,7 +2,13 @@
 
 **Status:** generated 2026-10-23 from `main` at `46fbaa7` by scanning every schema source (`sql/legacy/database_schema.sql`, the legacy PHP migration scripts (now in `sql/legacy/php-migrations/`), `sql/*.sql`) for `CREATE TABLE` statements and declared foreign keys, and by counting references in application code. **Not compared with the production database**; the applied production state is unverified (see [DATABASE.md §4](DATABASE.md#4-applied-state-in-production-unverified)).
 
+**2026-10-28 applicability:** this is a **historical source-generated, table-level inventory**, not a regenerated current-schema or column-level dictionary. The definition/foreign-key/code-reference counts below retain the stated `46fbaa7` boundary; code-reference counts are lexical mentions, not proof of live reads or reachability. For the corrected current numbered-migration inventory (102 distinct targets, excluding comments), see [DATABASE.md](DATABASE.md#2-sources-of-schema-truth-and-their-limits). Legacy, runtime and conditional DDL prevent equating these inventories with a deployed schema. No real school data was used to refresh this documentation.
+
 **Scope:** one row per table, grouped by domain. Column-level detail lives in the defining migration and in later `ALTER TABLE` migrations; this page tells you where to look. Purpose lines are one-sentence summaries taken from the defining migration and the code that uses each table.
+
+## Source-reviewed column supplement
+
+For a newer, bounded column-level review, see [Finance/Materials ledger columns](database/LEDGER_COLUMNS.md), baseline `591e23d` (2026-10-28). It preserves the eight ledger CREATE definitions and identified later source constraints/indexes individually. It is not an applied-schema export and does not refresh this page's historical counts or the other domains.
 
 ## 1. Summary
 

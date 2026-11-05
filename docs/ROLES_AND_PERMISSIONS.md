@@ -1,6 +1,10 @@
 # Roles and permissions
 
-**Status:** canonical for what is listed. **Verified against:** `main` at `46fbaa7` (2026-10-22). Sources: `admin/access_control.php`, `api/v1/core/acl.php`, `admin/backend/user-save.php`. Anything not evidenced in code is marked **Unresolved**.
+**Status:** maintained role reference. The page-level matrix was recorded against `46fbaa7` (2026-10-22); HR retirement/navigation was additionally traced at `7209278` (2026-10-28). Sources: `admin/access_control.php`, `api/v1/core/acl.php`, `admin/backend/user-save.php`. This is not a fresh complete per-action permission audit. Anything not evidenced in code is marked **Unresolved**.
+
+## Source-reviewed ledger action permissions
+
+The [Finance/Materials gate and action matrix](api/LEDGER_PERMISSIONS.md), baseline `591e23d` (2026-10-28), follows the actual HTTP handler/shim role and feature checks, bootstrap ordering, methods, CSRF, confirmation and per-action record conditions. Read its source exceptions and limits before extrapolating this older page-level matrix into action-level guarantees. This supplement does not re-audit every other module or verify hosted permission effectiveness.
 
 ## 1. Roles defined in code
 
@@ -20,7 +24,7 @@
 | `attendance_taker` | AT | Class-scoped attendance |
 | `content_editor` | CE | Public website content (CMS) |
 | `mezmur_attendance_taker` | MEZ-T | Department-owned attendance taker, created through `api_dept_takers.php` |
-| `hr_attendance_taker` | HR-T | Department-owned attendance taker, created through `api_dept_takers.php` |
+| `hr_attendance_taker` | HR-T | Legacy department-taker identifier retained for account compatibility; HR attendance is retired. Mobile navigation is Home/Profile, not an attendance-entry workflow (`lib/utils/config.dart`, source baseline `7209278`) |
 
 `user-save.php` is limited to `super_admin` by `ROLE_MAP`. In practice, therefore, only super admins create staff accounts through it, even though its internal `$rolePermissions` table also lists `school_admin` and `edu_dept`. Department takers are created through `api_dept_takers.php`.
 
@@ -99,7 +103,7 @@ These are standing product decisions. The table shows where they are visible in 
 | Rule | Evidence |
 |---|---|
 | Registration and promotion belong to HR; Information is a viewer/updater only | `hr_register_member.php`, `api_import_members.php`, `api_check_duplicate.php` are HR-only in `ROLE_MAP` |
-| HR does not take attendance | [ADR-0009](adr/0009-attendance-ownership.md) (HR attendance retired). `api_hr_attendance.php` still exists and is HR-gated. **Unresolved:** current behaviour |
+| HR does not take attendance | **VERIFIED at `7209278`:** `admin/api_hr_attendance.php` authenticates, checks the HR/admin role, checks CSRF on POST and rate limits, then returns 410 `HR_ATTENDANCE_RETIRED` for every action. `api/v1/routes/hr.php` requires authentication and returns the same retired-domain code for reads and writes. HR uses Education/Mezmur analytics instead; the legacy identifier does not restore attendance entry. See [ADR-0009](adr/0009-attendance-ownership.md) |
 | Sensitive reporting datasets are restricted to Information | [ADR-0012](adr/0012-reporting-centre-and-data-boundary.md). Enforcement per dataset is in `api_reports_v2.php`; not tabulated |
 | Only Education writes school holidays and days off | `api_school_calendar.php` in-file checks; not tabulated |
 

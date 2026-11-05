@@ -15,6 +15,7 @@ enum SyncRecoveryDomain {
 enum SyncRecoveryActionResult {
   applied,
   stale,
+  serverConfirmationRequired,
 }
 
 final class SyncRecoveryItem {
@@ -47,9 +48,13 @@ final class SyncRecoveryItem {
       state == 'failed' ||
       state == 'blocked_dependency';
 
-  // A dependency-blocked operation must be repaired/opened or discarded;
+  // A dependency-blocked operation must be repaired/opened;
   // retrying it before its prerequisite resolves would only hide it again.
   bool get canRetry => state == 'needs_attention' || state == 'failed';
-  bool get canAcknowledge => isConflict;
-  bool get canDiscard => needsAttention || isConflict;
+  // A local terminal label is not an exact server-confirmed disposition.
+  bool get requiresServerConfirmation =>
+      domain == SyncRecoveryDomain.attendance;
+  bool get canAcknowledge => !requiresServerConfirmation && isConflict;
+  bool get canDiscard =>
+      !requiresServerConfirmation && (needsAttention || isConflict);
 }

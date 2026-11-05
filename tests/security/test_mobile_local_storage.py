@@ -1,10 +1,10 @@
 """Regression checks for the mobile local-storage posture.
 
-The offline database is a sandboxed cache of server data protected by the OS
-(device file-based encryption + app sandbox), the mainstream pattern used by
-large consumer apps. Tokens and the staff profile stay in platform secure
-storage. Startup must degrade gracefully instead of dead-ending the app, and
-an interrupted 1.1.15 SQLCipher upgrade must self-heal without losing data.
+The offline database includes caches and durable unsynchronized work. It uses
+ordinary SQLite with OS sandbox protection, not verified SQLCipher. Tokens and
+the staff profile stay in platform secure storage. Ambiguous historical
+migration survivors must block writable open without deleting or replacing
+files; diagnostic retry is not permission to guess which copy is newest.
 """
 from pathlib import Path
 import unittest
@@ -18,6 +18,9 @@ class MobileLocalStorageTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.database = (APP / "lib/services/local_db.dart").read_text(encoding="utf-8")
+        cls.migration_guard = (
+            APP / "lib/services/interrupted_database_migration.dart"
+        ).read_text(encoding="utf-8")
         cls.api = (APP / "lib/services/api_service.dart").read_text(encoding="utf-8")
         cls.main = (APP / "lib/main.dart").read_text(encoding="utf-8")
         cls.pubspec = (APP / "pubspec.yaml").read_text(encoding="utf-8")
@@ -55,11 +58,39 @@ class MobileLocalStorageTests(unittest.TestCase):
         self.assertNotIn("sqflite_sqlcipher", self.proguard)
         self.assertIn("io.flutter.plugins.sqflite", self.proguard)
 
-    def test_interrupted_encryption_upgrade_self_heals(self):
-        self.assertIn("_recoverFromInterruptedEncryptionUpgrade", self.database)
-        self.assertIn(".plaintext-migration-backup", self.database)
-        self.assertIn(".encrypted-migration", self.database)
-        self.assertIn("await backup.rename(path)", self.database)
+    def test_interrupted_upgrade_preserves_candidates_before_writable_open(self):
+        guard_call = "await ensureNoInterruptedDatabaseMigration(path);"
+        self.assertIn(guard_call, self.database)
+        self.assertLess(self.database.index(guard_call),
+                        self.database.index("return await openDatabase("))
+        for suffix in (".plaintext-migration-backup", ".encrypted-migration",
+                       ".plaintext-migration-backup-wal",
+                       ".encrypted-migration-journal"):
+            self.assertIn(suffix, self.migration_guard)
+        self.assertIn("directory.list(followLinks: false)", self.migration_guard)
+        self.assertIn("throw InterruptedDatabaseMigration(entryName)",
+                      self.migration_guard)
+        # Unknown/read-failed states must not be flattened into a clean open.
+        self.assertNotIn("catch (", self.migration_guard)
+        self.assertNotIn("catch (_)", self.migration_guard)
+        for mutation in (".delete(", ".rename(", ".writeAs", "openDatabase("):
+            self.assertNotIn(mutation, self.migration_guard)
+        self.assertNotIn("await main.delete()", self.database)
+        self.assertNotIn("await backup.rename(path)", self.database)
+
+    def test_migration_failure_gets_specific_preservation_guidance(self):
+        self.assertIn("migrationRecoveryRequired: error is OfflineDatabaseRecoveryRequired",
+                      self.main)
+        self.assertIn("Do not clear app data or reinstall", self.main)
+        self.assertIn("Offline database files need review", self.main)
+
+    def test_orphaned_main_sidecars_cannot_authorize_empty_main(self):
+        self.assertIn("'$name-wal', '$name-shm', '$name-journal'", self.migration_guard)
+        self.assertIn("entryName == name && entity is File", self.migration_guard)
+        self.assertIn("!hasRegularMain && sidecarName != null", self.migration_guard)
+        self.assertIn("throw OrphanedDatabaseSidecar(sidecarName)", self.migration_guard)
+        self.assertIn("class OrphanedDatabaseSidecar extends OfflineDatabaseRecoveryRequired",
+                      self.migration_guard)
 
     def test_tokens_and_profile_stay_in_platform_secure_storage(self):
         self.assertIn("flutter_secure_storage", self.pubspec)

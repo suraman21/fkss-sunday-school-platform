@@ -1,54 +1,66 @@
-# BRANCHING — read this before you merge, rebase or push anything
+# Branching and environment boundaries
 
-> **Rule (binding since 2026‑10‑20):**
-> **`dev` is NEVER merged, rebased, cherry‑picked or pushed into `main`, and
-> NEVER pushed to the production repository.** Direction is one‑way only:
-> `main` → `dev`.
+**Maintained policy, clarified 2026-10-28.** Development-main integration, server deployment, APK publication and production promotion are separate events. See [release policy](docs/PRODUCTION_WORKFLOW.md) and [ADR-0021](docs/adr/0021-development-acceptance-before-production.md).
 
-## The two branches
+## Branch roles
 
-| Branch | Lives in | What it is | Who deploys from it |
-|---|---|---|---|
-| **`main`** | `suraman21/fkss-sunday-school-platform` **and** `Felege-Kidusan/felegekidusan` (identical commits) | The real system. Production web server + **production phone app "FKSS"** (`https://felegekidusan.com/api/v1`, package `com.arkeonethiopia.fkss`). | Production server (manual SFTP upload of changed files; see `docs/OPERATIONS.md`), dev server, production APK builds. |
-| **`dev`** | `suraman21/fkss-sunday-school-platform` **only** | `main` **+ exactly one commit** that re‑targets the *phone app* at the test server: **"FKSS Beta"**, `https://felegekidusan.arkeonethiopia.com/api/v1`, package `com.arkeonethiopia.fkss.beta`, BETA chip on the login screen. Server code is byte‑identical to `main`. | Beta APK builds only (`Mobile/HOW_TO_BUILD_BETA.md`, a file that exists on `dev` only; *Branch guard* rejects it on `main`). It may also be pulled on the dev server — the server files are the same as `main`. |
-
-`dev` always contains the full latest system: after every push to `main`, `main` is merged **into** `dev` (`git checkout dev && git merge main`). Pulling `dev` therefore gives *everything that is on main* plus the beta app settings.
-
-## Rules
-
-1. **Never** `git merge dev` / `git rebase dev` / `git cherry-pick <dev commit>` while on `main` (or any branch that will reach `main`).
-2. **Never** open or accept a pull request whose base is `main` and head is `dev`.
-3. **Never** push `dev` to `Felege-Kidusan/felegekidusan` (`git push <prod> dev` is forbidden in any form).
-4. Features are developed on `main` (or a feature branch merged into `main`), **never on `dev`**. The only commit that may exist on `dev` but not on `main` is the beta‑target commit (and merge commits from `main`).
-5. Keep `dev` current after every push to `main`: `git checkout dev && git merge main && git push origin dev`. Never force‑push either branch.
-
-## What stops an accident
-
-| Guard | Where | Effect |
+| Branch / repository | Purpose | Release boundary |
 |---|---|---|
-| `tests/security/test_mobile_target_environment.py` | `main` pins production values; `dev` carries a different version pinning beta values | A merge `dev → main` conflicts on this file, and if resolved wrongly the test fails on `main`. |
-| `.github/workflows/branch-guard.yml` | runs on every push / PR to `main` | Fails CI if beta values (`arkeonethiopia.com/api`, `fkss.beta`, `FKSS Beta`, `isBeta`) appear on `main`, or if a PR into `main` comes from `dev`. |
-| `.github/PULL_REQUEST_TEMPLATE.md` | every PR | Checklist item "not from `dev`". |
-| Build step | `Mobile/wbws_flutter_app/scripts/build-release.ps1` runs `flutter test` before building (unless `-SkipTests` is passed). A plain `flutter build apk` does **not** run tests | A production APK built through the script fails if the tree carries beta values. |
+| Development repository `main` | Reviewed integration branch; feature/documentation PRs target this branch | Owner's workflow updates the development server by cron, then the owner tests. A merge does not verify cron execution, deployed files, schema or acceptance |
+| Development repository `dev` | Beta Android settings layered on `main` | Separate API target, package ID and beta branding. Not a feature-integration branch and never a source for `main` |
+| Production repository `main` | Separately approved production state | May intentionally lag development. Requires explicit owner authorization after development acceptance; never automatically mirror every development merge |
 
-## Day‑to‑day
+`main` retains the production Android identity/API settings so beta configuration cannot enter a production-target build. This build configuration does **not** mean every development-main commit is published, installed or production-approved. Source checkpoint 1.7.4+41 is not an installed-fleet inventory.
 
-```bash
-# Beta app for testing (dev server):
-git checkout dev && git pull origin dev
-cd Mobile/wbws_flutter_app && flutter build apk --release        # → FKSS Beta
+## One-way beta synchronization
 
-# Production app (after testing):
-git checkout main && git pull origin main
-cd Mobile/wbws_flutter_app && flutter build apk --release        # → FKSS
-# (for a real release use scripts/build-release.ps1; see Mobile/wbws_flutter_app/docs/RELEASE.md)
+The rule established on 2026-10-20 remains in force:
 
-# Servers:
-#   production server  → manual SFTP upload of the changed files of an approved
-#                        main commit (docs/OPERATIONS.md). The production server
-#                        does not deploy with git pull.
-#   dev server         → updated from main or dev (server files are identical);
-#                        the exact mechanism is not documented here.
+**Never merge, rebase, cherry-pick or push `dev` into `main`, and never push `dev` to the production repository.** Direction is `main` → `dev` only.
+
+Features and fixes originate from current development `main`. The intended `dev` delta is beta-target configuration plus merge history, not unrelated features. Inspect the actual divergence before synchronizing; do not assume two servers or two branches are identical.
+
+After an approved development-main change, a maintainer may synchronize beta:
+
+```sh
+git status --short                    # stop if local work is present
+git fetch origin
+git switch dev
+git pull --ff-only origin dev
+git merge origin/main                 # stop on conflicts; preserve beta-only settings
+# Inspect the diff and run beta-specific tests before pushing.
+git push origin dev
 ```
 
-If a task seems to require breaking rules 1–3, **stop and ask the maintainers** before going further.
+Do not force-push either shared branch. If divergence or conflicts require changing the environment boundary, stop for maintainer review.
+
+## Normal change workflow
+
+```sh
+git status --short
+git fetch origin
+git switch -c docs/topic origin/main
+# Make and review scoped edits; run relevant isolated checks.
+git diff --check
+git add path/to/reviewed-file
+git diff --staged
+git commit -m "docs: clarify topic"
+git push -u origin docs/topic
+```
+
+Open a PR into development `main`. Inspect every applicable check, not only the minimum configured protection, and do not bypass a failure, review requirement or conflict. Record the merged SHA and check results. Confirm development deployment independently and record owner acceptance; production remains a separate decision.
+
+## Guards and their limits
+
+| Guard | Source | What it establishes |
+|---|---|---|
+| Target-environment regression | `tests/security/test_mobile_target_environment.py` | Pins expected production settings on `main`; the beta branch has its own expected settings |
+| Branch guard | `.github/workflows/branch-guard.yml` | Rejects beta markers on `main` and PRs from `dev` into `main` |
+| PR checklist | `.github/PULL_REQUEST_TEMPLATE.md` | Requires the author to acknowledge the branch/environment boundary |
+| Release script | `Mobile/wbws_flutter_app/scripts/build-release.ps1` | Runs Flutter tests unless explicitly skipped and creates versioned artifacts; skipping tests is not release acceptance |
+
+A plain `flutter build apk` does not run tests. A successful debug build is not production-signing evidence. Build and install only under the [Android release guide](Mobile/wbws_flutter_app/docs/RELEASE.md); the owner controls signing, phone acceptance and publication. Never change app targets, minimum build or signing policy as a workaround for a failed check.
+
+## Exceptions
+
+If a task appears to require reversing the beta direction, changing production settings, bypassing protections or promoting an unaccepted revision, stop and obtain explicit maintainer authorization. Existing development-merge authorization does not authorize production operations.

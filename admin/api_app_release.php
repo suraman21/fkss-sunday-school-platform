@@ -12,11 +12,34 @@
  */
 
 header('Content-Type: application/json; charset=utf-8');
+header('Cache-Control: no-store');
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/backend/services/AppReleaseManager.php';
 require_once __DIR__ . '/backend/danger_confirm.php';
 
 use App\Services\AppReleaseManager;
+use App\Services\AppReleaseUploadException;
+
+/** Audit failure is visible but cannot unpublish an already committed artifact. */
+function appReleaseAudit(mixed $connection, string $action, string $details): bool
+{
+    try {
+        if (!$connection instanceof mysqli) return false;
+        $uid = (int)($_SESSION['admin_id'] ?? 0);
+        $user = (string)($_SESSION['admin_username'] ?? 'admin');
+        $ip = (string)($_SERVER['REMOTE_ADDR'] ?? '');
+        $stmt = $connection->prepare('INSERT INTO activity_logs (user_id, username, action, details, ip_address, created_at) VALUES (?, ?, ?, ?, ?, NOW())');
+        if (!$stmt) throw new RuntimeException('Audit statement could not be prepared.');
+        try {
+            $stmt->bind_param('issss', $uid, $user, $action, $details, $ip);
+            if (!$stmt->execute()) throw new RuntimeException('Audit insert was not acknowledged.');
+        } finally { $stmt->close(); }
+        return true;
+    } catch (Throwable $error) {
+        error_log('AppRelease audit write failed after commit: ' . $error->getMessage());
+        return false;
+    }
+}
 
 // 1. Strict Authentication & Authorization
 if (empty($_SESSION['admin_id']) || empty($_SESSION['admin_logged_in'])) {
@@ -103,23 +126,14 @@ try {
 
             $updated = AppReleaseManager::saveConfig(ROOT_PATH, $input);
 
-            // Audit log
-            if (isset($conn) && $conn instanceof mysqli) {
-                $uid = (int)($_SESSION['admin_id'] ?? 0);
-                $uname = (string)($_SESSION['admin_username'] ?? 'admin');
-                $ip = (string)($_SERVER['REMOTE_ADDR'] ?? '');
-                $details = "Updated app release policy: v{$updated['latest_version']} (Build {$updated['latest_build']})";
-                $stmt = $conn->prepare("INSERT INTO activity_logs (user_id, username, action, details, ip_address, created_at) VALUES (?, ?, 'App Release Config Updated', ?, ?, NOW())");
-                if ($stmt) {
-                    $stmt->bind_param('isss', $uid, $uname, $details, $ip);
-                    $stmt->execute();
-                    $stmt->close();
-                }
-            }
+            $auditLogged = appReleaseAudit($conn ?? null, 'App Release Config Updated',
+                "Updated app release policy: v{$updated['latest_version']} (Build {$updated['latest_build']})");
 
             echo json_encode([
                 'status' => 'success',
-                'message' => 'App release configuration saved successfully.',
+                'audit_logged' => $auditLogged,
+                'message' => $auditLogged ? 'App release configuration saved successfully.'
+                    : 'Settings saved. Audit logging failed; ask the administrator to check the server log.',
                 'data' => $updated,
             ], JSON_UNESCAPED_UNICODE);
             exit;
@@ -205,9 +219,18 @@ try {
         case 'upload_status': {
             $uploadId = trim((string)($_REQUEST['upload_id'] ?? ''));
             $totalChunks = (int)($_REQUEST['total_chunks'] ?? 0);
+            $descriptor = [];
+            if (isset($_POST['fingerprint'])) {
+                $hashes = json_decode((string)($_POST['part_hashes'] ?? ''), true);
+                if (!is_array($hashes)) throw new InvalidArgumentException('Invalid upload checksum descriptor.');
+                $descriptor = ['fingerprint' => (string)$_POST['fingerprint'],
+                    'part_size' => (int)($_POST['part_size'] ?? 0), 'part_hashes' => $hashes,
+                    'abi' => (string)($_POST['abi'] ?? '')];
+            }
             echo json_encode([
                 'status' => 'success',
-                'data' => AppReleaseManager::uploadStatus(ROOT_PATH, $uploadId, $totalChunks),
+                'data' => AppReleaseManager::uploadStatus(ROOT_PATH, $uploadId, $totalChunks,
+                    (int)($_REQUEST['total_size'] ?? 0), $descriptor),
             ]);
             exit;
         }
@@ -246,23 +269,14 @@ try {
                 $abi
             );
 
-            // Audit log
-            if (isset($conn) && $conn instanceof mysqli) {
-                $uid = (int)($_SESSION['admin_id'] ?? 0);
-                $uname = (string)($_SESSION['admin_username'] ?? 'admin');
-                $ip = (string)($_SERVER['REMOTE_ADDR'] ?? '');
-                $details = "Assembled and published APK ($abi): {$fileName} (" . number_format($totalSize) . " bytes in {$totalChunks} chunks)";
-                $stmt = $conn->prepare("INSERT INTO activity_logs (user_id, username, action, details, ip_address, created_at) VALUES (?, ?, 'APK Uploaded (Chunked)', ?, ?, NOW())");
-                if ($stmt) {
-                    $stmt->bind_param('isss', $uid, $uname, $details, $ip);
-                    $stmt->execute();
-                    $stmt->close();
-                }
-            }
+            $auditLogged = appReleaseAudit($conn ?? null, 'APK Uploaded (Chunked)',
+                "Published APK ($abi): {$fileName}; upload={$uploadId}; bytes={$totalSize}; chunks={$totalChunks}");
 
             echo json_encode([
                 'status' => 'success',
-                'message' => 'APK assembled, cryptographically verified, and published successfully!',
+                'audit_logged' => $auditLogged,
+                'message' => $auditLogged ? 'APK validated and published successfully (SHA-256 recorded).'
+                    : 'APK published. Audit logging failed; ask the administrator to check the server log.',
                 'data' => $updated,
             ], JSON_UNESCAPED_UNICODE);
             exit;
@@ -307,23 +321,14 @@ try {
 
             $updated = AppReleaseManager::handleApkUpload(ROOT_PATH, $_FILES['apk_file'], $abi);
 
-            // Audit log
-            if (isset($conn) && $conn instanceof mysqli) {
-                $uid = (int)($_SESSION['admin_id'] ?? 0);
-                $uname = (string)($_SESSION['admin_username'] ?? 'admin');
-                $ip = (string)($_SERVER['REMOTE_ADDR'] ?? '');
-                $details = "Uploaded new APK ($abi): " . ($_FILES['apk_file']['name'] ?? 'fkss.apk') . " (" . number_format((int)$_FILES['apk_file']['size']) . " bytes)";
-                $stmt = $conn->prepare("INSERT INTO activity_logs (user_id, username, action, details, ip_address, created_at) VALUES (?, ?, 'APK Uploaded', ?, ?, NOW())");
-                if ($stmt) {
-                    $stmt->bind_param('isss', $uid, $uname, $details, $ip);
-                    $stmt->execute();
-                    $stmt->close();
-                }
-            }
+            $auditLogged = appReleaseAudit($conn ?? null, 'APK Uploaded',
+                "Uploaded APK ($abi): " . ($file['name'] ?? 'unknown'));
 
             echo json_encode([
                 'status' => 'success',
-                'message' => 'APK uploaded and published successfully!',
+                'audit_logged' => $auditLogged,
+                'message' => $auditLogged ? 'APK uploaded and published successfully!'
+                    : 'APK published. Audit logging failed; ask the administrator to check the server log.',
                 'data' => $updated,
             ], JSON_UNESCAPED_UNICODE);
             exit;
@@ -357,15 +362,21 @@ try {
             echo json_encode(['status' => 'error', 'message' => 'Invalid action.']);
             exit;
     }
+} catch (AppReleaseUploadException $e) {
+    http_response_code($e->httpStatus);
+    echo json_encode(['status' => 'error', 'code' => $e->errorCode, 'message' => $e->clientMessage,
+        'retryable' => $e->retryable, 'details' => $e->details]);
+    exit;
 } catch (InvalidArgumentException $e) {
     $err = $e->getMessage();
     http_response_code(422);
-    echo json_encode(['status' => 'error', 'message' => $err]);
+    echo json_encode(['status' => 'error', 'code' => 'validation_error', 'retryable' => false, 'message' => $err]);
     exit;
 } catch (Throwable $e) {
     $err = $e->getMessage();
     error_log('AppRelease API error: ' . $err);
     http_response_code(500);
-    echo json_encode(['status' => 'error', 'message' => 'Failed to process app release request: ' . $err]);
+    echo json_encode(['status' => 'error', 'code' => 'storage_or_server_error', 'retryable' => true,
+        'message' => 'Unable to process the app release request. Saved parts are retained; check server logs for details.']);
     exit;
 }

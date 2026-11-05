@@ -239,8 +239,9 @@ def _run_v37_upgrade(connection: sqlite3.Connection, old_version: int) -> list[s
             if "execution_source" not in columns:
                 connection.execute(_v37_alter_sql())
                 performed.append("alter")
-    # sqflite, not app code, records the new version once onUpgrade returns.
-    connection.execute(f"PRAGMA user_version = {_target_schema_version()}")
+    # This historical mirror executes ONLY v37, not the new v38 attendance
+    # migration. Never stamp an unexecuted current version into this fixture.
+    connection.execute("PRAGMA user_version = 37")
     connection.commit()
     return performed
 
@@ -295,20 +296,20 @@ class V36FixtureFidelity(unittest.TestCase):
 
 
 class UpgradeBranchSelection(unittest.TestCase):
-    """Only the v37 branch may run for a v36 device."""
+    """Historical v37 remains; current opens also require attendance v38."""
 
     def test_the_migration_declares_a_v37_branch(self):
         self.assertIn(37, _upgrade_branch_versions())
 
-    def test_a_v36_device_enters_exactly_one_branch(self):
+    def test_a_v36_device_enters_v37_and_attendance_v38_once(self):
         entered = [v for v in _upgrade_branch_versions() if 36 < v]
         self.assertEqual(
-            entered, [37],
-            "a v36 install must run the v37 branch and nothing else",
+            entered, [37, 38],
+            "a v36 install must run each required v37/v38 branch exactly once",
         )
 
     def test_the_target_version_comes_from_the_production_constant(self):
-        self.assertEqual(_target_schema_version(), 37)
+        self.assertEqual(_target_schema_version(), 38)
 
     def test_the_extracted_alter_is_the_production_statement(self):
         self.assertEqual(
@@ -346,7 +347,7 @@ class PopulatedUpgrade(unittest.TestCase):
     def test_the_version_moved_to_37(self):
         self.assertEqual(
             self.connection.execute("PRAGMA user_version").fetchone()[0],
-            _target_schema_version(),
+            37,
         )
 
     def test_every_pre_existing_row_survived_byte_for_byte(self):

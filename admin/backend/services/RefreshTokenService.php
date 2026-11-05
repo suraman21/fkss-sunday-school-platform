@@ -49,6 +49,48 @@ final class RefreshTokenService
         return $this->exchangeLegacy($presentedToken, $payload, $clientIp, $userAgent);
     }
 
+    // Existing migration010 session primary key provides a bounded lookup;
+    // do not scan a family's accumulated rotation history on every API call.
+    private const ACCESS_SESSION_SQL =
+        'SELECT session_id FROM api_refresh_sessions
+         WHERE session_id=? AND family_id=? AND user_id=?
+           AND revoked_at IS NULL AND expires_at>CURRENT_TIMESTAMP
+         LIMIT 2';
+
+    /**
+     * The signed access token's issuing refresh session must still exist,
+     * match owner/family, be unrevoked and unexpired. Consumption is NOT
+     * revocation: legitimate refresh rotation must not invalidate unexpired
+     * access. Family revocation marks ALL sessions, including consumed ones.
+     * Query failure throws, never masquerades as revoked/empty. No transaction
+     * ownership; future mutators must serialize revocation in their transaction.
+     * This does not certify a complete preparation grant/current family roster.
+     */
+    public static function accessSessionIsActive(\mysqli $database, int $userId, string $familyId, string $sessionId): bool
+    {
+        if ($userId <= 0 || !preg_match('/^[a-f0-9]{64}$/D', $familyId)
+            || !preg_match('/^[a-f0-9]{64}$/D', $sessionId)) {
+            return false;
+        }
+        $statement = $database->prepare(self::ACCESS_SESSION_SQL);
+        if (!$statement) throw new \RuntimeException('Refresh-family lookup unavailable.');
+        try {
+            if (!$statement->bind_param('ssi', $sessionId, $familyId, $userId) || !$statement->execute()) {
+                throw new \RuntimeException('Refresh-family lookup failed.');
+            }
+            $result = $statement->get_result();
+            if (!$result) throw new \RuntimeException('Refresh-family result unavailable.');
+            try {
+                $row = $result->fetch_assoc();
+                return $result->num_rows === 1 && ($row['session_id'] ?? null) === $sessionId;
+            } finally {
+                $result->free();
+            }
+        } finally {
+            $statement->close();
+        }
+    }
+
     /** @param array<string,mixed> $payload */
     public function revokePresented(string $presentedToken, array $payload): void
     {

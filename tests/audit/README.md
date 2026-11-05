@@ -27,11 +27,15 @@ The SDKs, database state and installed packages are disposable runtime dependenc
    # deduplicated safely by the legacy migration on repeated executions.
    # The file is archived in sql/legacy/php-migrations/ and cannot run from
    # there (by design). Copy it back to its old folder for this one run only,
-   # then remove the copy. Disposable test machines only — never production.
+   # then remove only that copy. Confirm the exact destination is absent
+   # before copying; stop rather than overwrite existing local work.
+   # Disposable test machines only — never production.
    mkdir -p admin/migrations
    cp sql/legacy/php-migrations/admin/004_add_finance_material_tables.php admin/migrations/
    php admin/migrations/004_add_finance_material_tables.php
-   rm -r admin/migrations
+   rm -- admin/migrations/004_add_finance_material_tables.php
+   # Remove the temporary directory only if it is empty; never delete other work.
+   rmdir admin/migrations 2>/dev/null || true
    ```
 
 5. Serve the checkout through Apache with `AllowOverride All` and the rewrite, headers, expires and deflate modules. Use an appropriate PHP handler for the test machine. Preserve the repository's cPanel handler stanza for production; any local handler override belongs in local Apache configuration, not the patch. The root and `admin/.htaccess` denials must both be exercised.

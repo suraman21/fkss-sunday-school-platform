@@ -91,8 +91,39 @@ android {
     }
 }
 
+// mobile_scanner 5.2.3 requests older bundled ML Kit/CameraX binaries whose
+// 64-bit LOAD segments are only 4 KiB aligned. Keep its Dart API and bundled
+// offline model; minimally align these existing native dependency families.
+// The app's API24 floor, SDK/NDK pins, permissions and signer are unchanged.
+dependencies {
+    constraints {
+        implementation('com.google.mlkit:barcode-scanning:17.3.0') {
+            because 'Bundled barcode native libraries must support 16 KiB pages'
+        }
+        ['camera-core', 'camera-camera2', 'camera-lifecycle'].each { module ->
+            implementation("androidx.camera:${module}:1.4.2") {
+                because 'Keep the existing CameraX runtime family aligned with 16 KiB native libraries'
+            }
+        }
+    }
+}
+
 flutter {
     source = "../.."
+}
+
+// FKSS's server and updater require the same assigned build code for the
+// universal and per-device APKs. Flutter's split default adds ABI offsets,
+// which would break that contract and ordinary cross-artifact upgrades.
+// Register after Flutter's variant callback; preserve the existing base code,
+// signing, SDKs and dependency versions. Actual artifacts are checked in CI.
+android.applicationVariants.configureEach { variant ->
+    if (variant.buildType.name == 'release'
+            && project.findProperty('split-per-abi')?.toString()?.toBoolean()) {
+        variant.outputs.each { output ->
+            output.versionCodeOverride = flutter.versionCode
+        }
+    }
 }
 
 

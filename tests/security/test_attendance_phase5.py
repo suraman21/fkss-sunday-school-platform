@@ -331,14 +331,17 @@ class Phase5LiveGuards(unittest.TestCase):
     def test_05_report_card_shows_the_makeup_and_keeps_the_original(self):
         fid = self._fid()
         php = (
-            "define('SSMS_AUDIT_TESTING',1); require '/home/user/SSMS/admin/config.php';"
-            "require_once '/home/user/SSMS/admin/backend/services/ReportCardService.php';"
+            "define('SSMS_AUDIT_TESTING',1); "
+            f"require {json.dumps(str(ROOT / 'admin/config.php'))};"
+            f"require_once {json.dumps(str(ROOT / 'admin/backend/services/ReportCardService.php'))};"
             f"$c=\\App\\Services\\ReportCardService::getCard($conn,{self.MID},{self.CLASS_ID},1,0);"
             "$o=[];foreach(($c['subjects']??[]) as $s){foreach(($s['assessments']??[]) as $a){$o[]=$a;}}"
             "echo json_encode($o);"
         )
         out = subprocess.run(["php", "-d", "error_reporting=24575", "-r", php], capture_output=True, text=True,
-                             env={"SSMS_AUDIT_TESTING": "1", "PATH": "/usr/bin:/bin"})
+                             env={"SSMS_AUDIT_TESTING": "1", "SSMS_DB_NAME": "ssms_test", "PATH": "/usr/bin:/bin"})
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertTrue(out.stdout.strip(), out.stderr)
         rows = json.loads(out.stdout.strip().splitlines()[-1])
         mk = [a for a in rows if a["assessment_name"] == "P5 Inside Window"]
         self.assertEqual(len(mk), 1, rows)

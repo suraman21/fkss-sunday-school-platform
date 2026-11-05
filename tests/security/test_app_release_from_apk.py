@@ -21,6 +21,7 @@ import subprocess
 import tempfile
 import textwrap
 import unittest
+import zipfile
 from pathlib import Path
 
 from apk_fixture import write_apk
@@ -294,6 +295,67 @@ class ReleaseFromApkTests(unittest.TestCase):
         self.assertFalse(self.inspect(newer, "arm64-v8a")["ok"])
         self.assertTrue(self.inspect(same, "arm64-v8a")["ok"])
 
+    def test_native_slot_rejects_missing_or_wrong_architecture(self):
+        self.cfg()
+        write_apk(self.universal)
+        for abis in [(), ('arm64-v8a',), ('armeabi-v7a',), ('arm64-v8a', 'x86_64')]:
+            with self.subTest(abis=abis):
+                apk = write_apk(self.tmp / 'wrong-slot.apk', abis=abis)
+                self.assertFalse(self.inspect(apk)['ok'])
+        arm64 = write_apk(self.tmp / 'arm64.apk', abis=('arm64-v8a',))
+        arm32 = write_apk(self.tmp / 'arm32.apk', abis=('armeabi-v7a',))
+        self.assertTrue(self.inspect(arm64, 'arm64-v8a')['ok'])
+        self.assertTrue(self.inspect(arm32, 'armeabi-v7a')['ok'])
+        self.assertFalse(self.inspect(arm64, 'armeabi-v7a')['ok'])
+        self.assertFalse(self.inspect(arm32, 'arm64-v8a')['ok'])
+        self.assertFalse(self.inspect(arm64, '../../other')['ok'])
+
+    def test_native_slot_rejects_invalid_and_duplicate_elf_headers(self):
+        self.cfg()
+        write_apk(self.universal)
+        for defect in ('wrong-machine', 'missing-app', 'not-elf', 'duplicate'):
+            apk = write_apk(self.tmp / (defect + '.apk'))
+            with zipfile.ZipFile(apk) as source:
+                entries = [(i.filename, source.read(i)) for i in source.infolist()]
+            with zipfile.ZipFile(apk, 'w', zipfile.ZIP_DEFLATED) as dest:
+                for name, data in entries:
+                    if name == 'lib/armeabi-v7a/libapp.so':
+                        if defect == 'missing-app': continue
+                        if defect == 'not-elf': data = bytes(len(data))
+                        if defect == 'wrong-machine': data = data[:18] + b'\xb7\x00' + data[20:]
+                    dest.writestr(name, data)
+                    if defect == 'duplicate' and name == 'lib/armeabi-v7a/libapp.so':
+                        with self.assertWarns(UserWarning):
+                            dest.writestr(name, data)
+            with self.subTest(defect=defect):
+                self.assertFalse(self.inspect(apk)['ok'])
+
+    def test_native_prefix_check_handles_large_compressed_library(self):
+        self.cfg()
+        apk = write_apk(self.tmp / 'compressed.apk')
+        with zipfile.ZipFile(apk) as source:
+            entries = [(i.filename, source.read(i)) for i in source.infolist()]
+        with zipfile.ZipFile(apk, 'w', zipfile.ZIP_DEFLATED) as dest:
+            for name, data in entries:
+                if name == 'lib/armeabi-v7a/libapp.so': data += bytes(16 * 1024 * 1024)
+                dest.writestr(name, data)
+        self.assertTrue(self.inspect(apk)['ok'])
+        # A 16MiB decompressed library must not be allocated by the PHP gate.
+        proc = subprocess.run(['php', '-d', 'memory_limit=8M', str(self.harness), str(self.web),
+                               json.dumps({'op': 'inspect', 'file': str(apk), 'abi': 'universal'})],
+                              capture_output=True, text=True, timeout=30)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertTrue(json.loads(proc.stdout)['ok'])
+
+    def test_wrong_abi_upload_preserves_published_artifact_and_policy(self):
+        self.cfg(force_update=True, min_build=30, background_drains_enabled=False)
+        old = write_apk(self.universal).read_bytes()
+        previous = self.saved()
+        wrong = write_apk(self.tmp / 'wrong.apk', version_code=42, abis=('arm64-v8a',))
+        self.fails(op='upload', abi='universal', b64=base64.b64encode(wrong.read_bytes()).decode())
+        self.assertEqual(self.universal.read_bytes(), old)
+        self.assertEqual(self.saved(), previous)
+
     def test_first_upload_and_switching_apps_after_delete(self):
         self.cfg()
         beta = write_apk(self.tmp / "beta.apk", package="com.arkeonethiopia.fkss.beta", version_code=5)
@@ -332,7 +394,7 @@ class ReleaseWiringTests(unittest.TestCase):
         # A new cache tag makes browsers fetch the script that sends the
         # background-sync checkbox and shows the version read from the APK.
         page = (ROOT / "admin/dashboards/super-admin.php").read_text(encoding="utf-8")
-        self.assertTrue('src="/admin/js/app_release.js?v=20261026rel"' in page)
+        self.assertTrue('src="/admin/js/app_release.js?v=20261027upload3"' in page)
 
     def test_drains_checkbox_is_always_sent_and_read(self):
         js = (ROOT / "admin/js/app_release.js").read_text(encoding="utf-8")

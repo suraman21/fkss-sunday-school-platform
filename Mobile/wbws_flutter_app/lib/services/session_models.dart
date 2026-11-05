@@ -292,3 +292,11 @@ SessionState stateForMissingCredentials({
   if (inventory.hasPrivateData) return SessionState.orphanedLocalData;
   return SessionState.anonymousClean;
 }
+
+/// A download may not mutate cache or cursor state after its session changes.
+final class StaleAttendanceSyncSession implements Exception {
+  const StaleAttendanceSyncSession();
+
+  @override
+  String toString() => 'Attendance sync session changed; this update was not applied.';
+}

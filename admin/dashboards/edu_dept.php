@@ -2381,17 +2381,8 @@ async function loadEnrollOverview() {
             <div class="sc" style="background:linear-gradient(135deg,#0ea5e9,#3b82f6);padding:.85rem"><div style="font-size:1.4rem;font-weight:700">${s.total_classes||0}</div><div style="font-size:.6rem;opacity:.8">Classes</div></div>
             <div class="sc" style="background:linear-gradient(135deg,#10b981,#34d399);padding:.85rem"><div style="font-size:1.2rem;font-weight:700">${tb.regular||0}<span style="font-size:.6rem;opacity:.7"> (${eb.regular||0} enrolled)</span></div><div style="font-size:.6rem;opacity:.8">መደበኛ Regular</div></div>
             <div class="sc" style="background:linear-gradient(135deg,#f59e0b,#fbbf24);padding:.85rem;color:#78350f"><div style="font-size:1.2rem;font-weight:700">${tb.special_regular||0}<span style="font-size:.6rem;opacity:.7"> (${eb.special_regular||0} enrolled)</span></div><div style="font-size:.6rem;opacity:.8">ልዩ መደበኛ Special</div></div>
-            <div class="sc" style="background:linear-gradient(135deg,#8b5cf6,#a78bfa);padding:.85rem"><div style="font-size:1.2rem;font-weight:700">${tb.honorary||0}<span style="font-size:.6rem;opacity:.7"> (${eb.honorary||0} enrolled)</span></div><div style="font-size:.6rem;opacity:.8">ክብር Honorary</div></div>
-            <div class="sc" style="background:linear-gradient(135deg,#64748b,#94a3b8);padding:.85rem;cursor:pointer" onclick="runMemberTypeSync()"><div style="font-size:1rem;font-weight:700"><i class="fa-solid fa-sync"></i></div><div style="font-size:.6rem;opacity:.8">Sync Types</div></div>`;
+            <div class="sc" style="background:linear-gradient(135deg,#8b5cf6,#a78bfa);padding:.85rem"><div style="font-size:1.2rem;font-weight:700">${tb.honorary||0}<span style="font-size:.6rem;opacity:.7"> (${eb.honorary||0} enrolled)</span></div><div style="font-size:.6rem;opacity:.8">ክብር Honorary</div></div>`;
     }} catch(e){ toast(friendlyNetError(e),'err'); }
-}
-
-async function runMemberTypeSync() {
-    const dc=await dcAsk({tier:'high',title:'Sync the member type of every member?',summary:'The system re-checks every member and changes their Regular / Special Regular type to match their roles.',intent:'I want to sync all member types',consequences:['Every member in the system is checked.','Members whose type does not match their roles get their type CHANGED automatically, in every department.','Reports and lists that group by member type will change.'],keeps:['No member is deleted.','The result shows how many members were changed.'],phrase:'SYNC TYPES',confirmLabel:'Sync member types'}); if(!dc) return;
-    try { const fd=new FormData(); fd.append('action','sync_member_types'); fd.append('confirm_phrase',dc.phrase);
-    const d=await postAPI('/admin/api_education.php',fd);
-    toast(d.message, 'ok'); loadEnrollOverview();
-    } catch(e){ toast('Sync error','err'); }
 }
 
 // --- Live Search Enroll ---

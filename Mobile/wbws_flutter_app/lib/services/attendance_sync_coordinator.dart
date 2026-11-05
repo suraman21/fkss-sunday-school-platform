@@ -1,5 +1,7 @@
 import 'api_service.dart';
 import 'local_db.dart';
+import 'legacy_outbox_models.dart';
+import 'session_models.dart';
 
 /// Pulls attendance changes from the server feed into the local cache.
 ///
@@ -29,10 +31,19 @@ class AttendanceSyncCoordinator {
   static final AttendanceSyncCoordinator _instance =
       AttendanceSyncCoordinator._internal();
   factory AttendanceSyncCoordinator() => _instance;
-  AttendanceSyncCoordinator._internal();
+  AttendanceSyncCoordinator._internal()
+      : _api = ApiService(),
+        _db = LocalDb();
 
-  final ApiService _api = ApiService();
-  final LocalDb _db = LocalDb();
+  /// Synthetic collaborators exercise the same pull loop without network/data.
+  AttendanceSyncCoordinator.withCollaborators({
+    required ApiService api,
+    required LocalDb db,
+  })  : _api = api,
+        _db = db;
+
+  final ApiService _api;
+  final LocalDb _db;
 
   /// Bounded so one pull cannot walk an unbounded feed on a bad link.
   /// A device further behind than this simply finishes on the next
@@ -54,6 +65,11 @@ class AttendanceSyncCoordinator {
   Future<AttendanceSyncOutcome> pull() async {
     if (_running) return AttendanceSyncOutcome.skipped();
     if (!_api.isLoggedIn) return AttendanceSyncOutcome.skipped();
+    final session = LegacyWriteSession(
+      ownerUserId: _api.userId,
+      authorizationVersion: _api.authorizationVersion,
+      runtimeGeneration: _api.sessionGenerationProvider?.call() ?? 0,
+    );
     _running = true;
     try {
       var applied = 0;
@@ -62,20 +78,26 @@ class AttendanceSyncCoordinator {
 
       while (pages < maxPagesPerRun) {
         pages++;
+        await _requireCurrentSession(session);
         final cursor = await _db.getSyncCursor('attendance');
 
+        await _requireCurrentSession(session);
         final response = await _api.getAttendanceChanges(
           cursor: cursor,
           limit: pageLimit,
         );
 
+        await _requireCurrentSession(session);
+        if (response.sessionSuperseded) {
+          throw const StaleAttendanceSyncSession();
+        }
         if (!response.success) {
           // Offline or server trouble. The cursor stays exactly where it
           // was, the local data stays usable, and the next trigger
           // retries. No backoff of our own: the existing SyncService
           // triggers already pace this.
-          await _db.setSyncStatus(
-            'attendance',
+          await _setSyncStatus(
+            session,
             response.isNetworkError ? 'offline' : 'failed',
             error: response.message,
           );
@@ -90,7 +112,7 @@ class AttendanceSyncCoordinator {
 
         final data = response.data;
         if (data is! Map) {
-          await _db.setSyncStatus('attendance', 'failed',
+          await _setSyncStatus(session, 'failed',
               error: 'Unexpected sync response');
           return AttendanceSyncOutcome(
             applied: applied,
@@ -107,7 +129,7 @@ class AttendanceSyncCoordinator {
           // older than the feed's retention. Accepting a partial answer
           // here is exactly the silent staleness this phase exists to
           // remove.
-          final ok = await _bootstrap(data);
+          final ok = await _bootstrap(data, session);
           if (!ok) {
             return AttendanceSyncOutcome(
               applied: applied,
@@ -134,7 +156,7 @@ class AttendanceSyncCoordinator {
 
         if (items.isEmpty) {
           // Already current. Record the check without moving anything.
-          await _db.setSyncStatus('attendance', 'ok');
+          await _setSyncStatus(session, 'ok');
           return AttendanceSyncOutcome(
             applied: applied,
             pages: pages,
@@ -145,7 +167,7 @@ class AttendanceSyncCoordinator {
 
         // Never move the cursor backwards, whatever the server said.
         if (nextCursor <= cursor) {
-          await _db.setSyncStatus('attendance', 'failed',
+          await _setSyncStatus(session, 'failed',
               error: 'Cursor did not advance');
           return AttendanceSyncOutcome(
             applied: applied,
@@ -159,14 +181,17 @@ class AttendanceSyncCoordinator {
         try {
           // Data and cursor commit together, or neither does.
           await _db.applyAttendanceDelta(
+            expectedSession: session,
             items: items,
             records: records,
             nextCursor: nextCursor,
           );
+        } on StaleAttendanceSyncSession {
+          rethrow;
         } catch (e) {
           // Rolled back by sqflite. The cursor is untouched, so the same
           // page is re-pulled next time rather than being lost.
-          await _db.setSyncStatus('attendance', 'failed', error: '$e');
+          await _setSyncStatus(session, 'failed', error: '$e');
           return AttendanceSyncOutcome(
             applied: applied,
             pages: pages - 1,
@@ -196,9 +221,21 @@ class AttendanceSyncCoordinator {
         failed: false,
         message: 'More changes remain; will continue on the next sync.',
       );
+    } on StaleAttendanceSyncSession {
+      return const AttendanceSyncOutcome(
+        applied: 0,
+        pages: 0,
+        bootstrapped: false,
+        failed: true,
+        message: 'Attendance sync stopped because the session changed.',
+      );
     } catch (e) {
-      // Belt and braces: this must never propagate into app startup.
-      await _db.setSyncStatus('attendance', 'failed', error: '$e');
+      // Even error reporting must not write into a newly active account.
+      try {
+        await _setSyncStatus(session, 'failed', error: '$e');
+      } catch (_) {
+        // Storage unavailable or session superseded; never throw at startup.
+      }
       return AttendanceSyncOutcome(
         applied: 0,
         pages: 0,
@@ -225,22 +262,52 @@ class AttendanceSyncCoordinator {
   /// and the new cursor is only stored after that succeeded, so a crash
   /// mid-bootstrap leaves cursor 0 and the server asks for another
   /// bootstrap rather than resuming over a half-cleared cache.
-  Future<bool> _bootstrap(Map<dynamic, dynamic> data) async {
+  Future<bool> _bootstrap(
+      Map<dynamic, dynamic> data, LegacyWriteSession session) async {
     try {
-      await _db.resetAttendanceSyncForBootstrap();
+      await _db.resetAttendanceSyncForBootstrap(expectedSession: session);
       final cursor = _asInt(data['bootstrap_cursor'], fallback: 0);
       if (cursor > 0) {
-        await _db.completeAttendanceBootstrap(cursor);
+        await _db.completeAttendanceBootstrap(cursor, expectedSession: session);
       } else {
         // No revisions exist yet on the server; staying at 0 is correct
         // and the next pull will simply find nothing to do.
-        await _db.setSyncStatus('attendance', 'ok');
+        await _setSyncStatus(session, 'ok');
       }
       return true;
+    } on StaleAttendanceSyncSession {
+      rethrow;
     } catch (e) {
-      await _db.setSyncStatus('attendance', 'failed', error: '$e');
+      await _setSyncStatus(session, 'failed', error: '$e');
       return false;
     }
+  }
+
+  bool _runtimeMatches(LegacyWriteSession session) =>
+      _api.isLoggedIn &&
+      session.isValid &&
+      _api.userId == session.ownerUserId &&
+      _api.authorizationVersion == session.authorizationVersion &&
+      (_api.sessionGenerationProvider?.call() ?? 0) ==
+          session.runtimeGeneration;
+
+  Future<void> _requireCurrentSession(LegacyWriteSession session) async {
+    if (!_runtimeMatches(session) ||
+        !await _db.activeSessionMatches(
+          runtimeGeneration: session.runtimeGeneration,
+          ownerUserId: session.ownerUserId,
+          authorizationVersion: session.authorizationVersion,
+        ) ||
+        !_runtimeMatches(session)) {
+      throw const StaleAttendanceSyncSession();
+    }
+  }
+
+  Future<void> _setSyncStatus(LegacyWriteSession session, String status,
+      {String? error}) async {
+    await _requireCurrentSession(session);
+    await _db.setSyncStatus('attendance', status,
+        error: error, expectedSession: session);
   }
 
   List<Map<String, dynamic>> _asList(dynamic value) {

@@ -1,23 +1,26 @@
 # Operations: deployment, backups, mobile release, monitoring
 
-**Status:** canonical. **Verified against:** `main` at `46fbaa7` and the deployment of that commit on 2026-10-22.
+**Status:** maintained operational reference. Release policy updated 2026-10-28 against source baseline `7209278`. Hosting, backup and deployment observations below retain their original dates; they have not been reverified through production access.
 
-This repository is public. Host names, ports, accounts, server paths and network addresses are deliberately **omitted**; they are held privately by the maintainers. Never add them here.
+This repository is public. Keep private infrastructure host names, ports, accounts, server paths and network addresses out of this document; maintainers must use approved private records. This audit did not verify those records or their custody. Never add private infrastructure details here.
 
 ## 1. Environments
 
-| Environment | Branch | Notes |
+| Environment | Repository / branch | Evidence and limits |
 |---|---|---|
-| Production | `main` | Shared hosting: LiteSpeed, MariaDB, PHP 8.5 (confirmed on 2026-10-23; the host can change the version without notice). It sits behind a CDN/WAF proxy. File access is SFTP only; there is no shell, Composer or cron for the application, and no Python or Redis |
-| Beta | `dev` | A separate server and a separate beta Android app. Only beta settings live on `dev`; see [BRANCHING.md](../BRANCHING.md) |
-| Staging for production | — | **None.** Changes are verified locally (section 2) and then deployed |
+| Development | Development repository / `main` | Owner's current instruction: merge checked changes here; cron updates the development server; owner tests before any production promotion. Cron execution, installed files and schema must be observed separately |
+| Production | Separate production repository / `main` | Requires separate explicit owner authorization after development acceptance. Historical hosting record: shared LiteSpeed hosting behind a CDN/WAF, PHP 8.5 observed 2026-10-23 and SFTP file access. Current hosting tools, cron, configuration and deployed revision are not verified |
+| Beta | Development repository / `dev` | Separate beta settings and Android identity; never merge `dev` into `main`. See [BRANCHING.md](../BRANCHING.md) |
+| Isolated local tests | Candidate revision with synthetic fixtures | Authorized verification environment for routine work. No production data, credentials or network tests |
+
+The historical statement that there was no staging or application cron does not override the owner's current development-first workflow. This policy is not evidence that a server has already pulled a particular merge.
 
 ## 2. Code deployment (manual SFTP)
 
-This is the procedure actually used, most recently for `5b14afb` on 2026-10-24, when 10 files were uploaded and each live file was checked against the commit. **Deploy only with explicit approval from the maintainers.**
+**Conditional production procedure, not an instruction to deploy now.** The dated record for `5b14afb` on 2026-10-24 describes ten uploaded files with checksum verification. Use this procedure only if the owner separately authorizes production promotion and confirms SFTP is the selected deployment method. Development-main integration and owner acceptance come first; see [PRODUCTION_WORKFLOW.md](PRODUCTION_WORKFLOW.md).
 
 1. **Choose the commit.**
-   - The commit must be on `main` and pushed to both repositories.
+   - Record the exact accepted development SHA, owner acceptance and separate production authorization. Promote only that approved state through the production workflow; do not automatically push every development merge to both repositories.
    - Record the CI result honestly (see [DEVELOPMENT_AND_TESTING.md](DEVELOPMENT_AND_TESTING.md#3-current-ci-status)).
    - Run the relevant local tests against a test database.
 2. **List the changed files.** Run `git diff --name-only <deployed-commit>..<target-commit>`.
@@ -77,7 +80,7 @@ python3 scripts/check_live_urls.py --server production
 - **Baseline:** recorded on 2026-10-23 at `9dd317f`; dev and production both 43 of 43.
 - **Changes:** change an expected status only with a reason in the pull request.
 
-**Deployed version:** nothing on the server reliably records what is deployed. The [production deployment record](../CHANGELOG.md#production-deployment-record) is authoritative. Do not infer the deployed version from server-side files.
+**Deployed version:** the [production deployment record](../CHANGELOG.md#production-deployment-record) is a dated record, not proof of the current runtime. Verify an authorized target against the recorded SHA/file checksums, schema and configuration. Repository equality, server-side Git metadata or one reachable page does not establish full deployment parity. Routine documentation work must not run the live-site commands above without separate authorization.
 
 ## 3. Rollback
 
@@ -91,15 +94,17 @@ python3 scripts/check_live_urls.py --server production
 
 ## 4. Backups
 
-| Item | State (2026-10-22) | Evidence level |
-|---|---|---|
-| Application database backups | `BackupService` creates encrypted dumps (`BACKUP_ENCRYPTION_KEY`) at `BACKUP_STORAGE_PATH`. Recent encrypted backup files exist in the hosting account | Verified: file listing only |
-| Location | **The same hosting account as production.** There is **no off-site copy** | Verified |
-| Restore test | **Never performed.** No backup is known to be restorable | — |
-| Hosting-provider backups | Unknown frequency, retention and restore procedure | Unverified |
-| Key custody | Without `BACKUP_ENCRYPTION_KEY` the backups are unusable. Where it is held outside the server is not documented | Unverified |
+**Historical provenance:** the earlier 2026-10-22 documentation reported encrypted files in the hosting account, no off-site copy and no restore test. This audit has not inspected the underlying hosting evidence or reverified those observations. Do not interpret the earlier "Verified" labels as current audit results or infer that no later backup/restore work occurred.
 
-**Required (not yet done):**
+| Item | Current evidence and limit | Evidence level |
+|---|---|---|
+| Application database backups | `BackupService::create` invokes `EncryptedBackupWriter`; source implementation is not evidence that a hosted backup exists or completed successfully | Source path identified; hosted files UNKNOWN |
+| Location | `BackupService::privateStorageRoot` uses a nonempty `BACKUP_STORAGE_PATH` or a sibling `ssms_secure_backups` directory. Actual configured storage and off-site copies were not inspected | Source selection verified; hosted/off-site state UNKNOWN |
+| Restore test | No hosted backup restore was executed or its evidence inspected in this audit. Recoverability of a particular backup remains UNKNOWN | DEPENDENCY NOT VERIFIED |
+| Hosting-provider backups | Frequency, retention and restore procedure were not inspected | UNKNOWN |
+| Key custody | Source selects `BACKUP_ENCRYPTION_KEY` when defined, otherwise `BACKUP_KEY` (`BackupService::encryptionSecret`). Recovery needs the effective key used for the particular backup; actual custody and recoverability have not been verified in this audit | Source selection verified; hosted custody/recovery unverified |
+
+**Required before relying on backups; record completion separately:**
 1. Make a regular off-site copy of the encrypted backups.
 2. Record where the backup key is held, with two custodians.
 3. Run a restore test every quarter, into a disposable database, with the result recorded.
@@ -108,17 +113,24 @@ Until a restore succeeds, treat backups as **unproven**.
 
 ## 5. Mobile release
 
+**1.7.4+41 is a source checkpoint, not a published APK.** Follow the
+[development class-day acceptance checklist](../Mobile/wbws_flutter_app/docs/ATTENDANCE_CLASS_DAY_1_7_4.md).
+The owner's current release instruction is development-repository main first
+(cron to development), owner testing, then separately approved production
+promotion. Do not deploy to both repositories automatically. Phone installation,
+release signing and published APK metadata require their own acceptance evidence.
+
 1. **Build** with `Mobile/wbws_flutter_app/scripts/build-release.ps1`, which produces the universal APK. Follow `Mobile/wbws_flutter_app/docs/RELEASE.md`.
 2. **Publish:** the super admin uploads the APK and sets the update policy in the web app-release manager (`admin/api_app_release.php`). Devices read `/api/v1/app/config`.
 3. **Version state:**
-   - `main` contains **1.7.3+40**.
-   - On 2026-10-22, production served **1.6.10 (build 36)** as the latest app.
-   - 1.7.3 has not been uploaded; uploading it needs a release decision.
+   - Baseline `7209278` contains source checkpoint **1.7.4+41** in `pubspec.yaml` and `lib/utils/config.dart`.
+   - The 2026-10-22 record reported **1.6.10 (build 36)** in production release metadata. Current publication and installed-fleet versions are not reverified.
+   - A source version, successful CI build or downloaded APK does not prove publication or installation. Record each separately.
 4. **Signing (risk):**
-   - Without `android/key.properties`, Gradle falls back to the **debug** signing configuration. The APK distributed in production is debug-signed.
-   - Android only installs an update that has the same signature as the installed app. Losing the build machine's debug keystore therefore stops in-place updates for every device.
-   - Switching to a proper release keystore requires every device to uninstall and reinstall. That would also erase unsynced offline data.
-   - A key-custody decision and a planned migration are needed. See `RELEASE.md` §3 and [§7.1](#71-known-limitations) (L-2).
+   - Without `android/key.properties`, Gradle falls back to the **debug** signing configuration. Earlier release records describe debug-signed distribution; the currently distributed APK's signer has not been reverified.
+   - The Gradle `signingConfig` expression establishes the selected build configuration, not the signing identity of previously distributed APKs or installed devices. Historical Gradle comments about fleet trust are not runtime evidence.
+   - A different or unavailable signing identity creates an upgrade-compatibility verification requirement. This checkout does not establish that every device must uninstall/reinstall, and that is not an approved migration procedure. Preserve unsent work and obtain owner acceptance of a verified device-specific plan before any destructive step.
+   - The owner must verify actual offered/installed certificates, platform compatibility and key custody. See [the release guide](../Mobile/wbws_flutter_app/docs/RELEASE.md#3-signing-and-key-custody) and [§7.1](#71-known-limitations) (L-2).
 5. **Old-app compatibility:** before releasing server changes, check that installed older builds keep working, or are told to update. The legacy-token window for builds below 16 ended on 2026-09-24.
 
 ## 6. Monitoring and incident response
@@ -131,35 +143,32 @@ Until a restore succeeds, treat backups as **unproven**.
 | Uptime checks | `monitor/uptime_cron.php` needs cron. Whether a cron job is configured is unverified; there may be **no** external uptime monitoring |
 | On-call / escalation | None documented |
 
-**Incident response (current, informal):**
-1. One maintainer is the single point of contact; there is no on-call rota.
-2. Contain the problem by rolling back the code (section 3) or disabling the feature through its `FEATURE_*` flag in the secrets file.
-3. Record what happened in `docs/incidents/` (see `docs/incidents/INCIDENT_2026-10-03_TRACKING_SCHEMA.md` for an example).
+Use the [incident-response procedure](INCIDENT_RESPONSE.md) for authority, private evidence, unsent-work preservation, approved containment and recovery verification. It is a written checklist, **not proof of an operational on-call rota or drill**. The owner must still assign the lead/operator and private contact/escalation paths; these are not published here.
 
-Security incidents follow [SECURITY.md](SECURITY.md). A written incident-response plan with roles and contact paths does not exist yet.
+Security incidents follow [private security reporting](SECURITY.md#1-reporting-a-vulnerability). Rollback, feature changes, migrations and production access require the appropriate target-specific approval; do not treat an incident report as permission to perform them. Store only sanitized dated summaries in `docs/incidents/`.
 
 ## 7. Known limitations and open questions
 
-Security and privacy findings are tracked privately and take precedence over the items below (see [SECURITY.md §5](SECURITY.md#5-open-findings)). This list contains only items whose publication does not increase risk.
+Security and privacy findings must be handled privately and take precedence over the items below (see [SECURITY.md §5](SECURITY.md#5-open-findings)). That is policy, not verification of a private register or operational response. This list is not a complete security assessment; keep sensitive evidence out of public documentation.
 
 ### 7.1 Known limitations
 
-Rechecked against the code, CI and repository settings on 2026-10-25. Severity: High / Medium / Low.
+Historical observations are dated 2026-10-25 unless a row says otherwise. The CI/source correction below is verified on 2026-10-28; production hosting, backup custody and repository-protection settings are not freshly audited. Severity: High / Medium / Low.
 
 | ID | Limitation | Severity | Evidence | Impact | Recommended action |
 |---|---|---|---|---|---|
-| L-1 | The security and regression suite is red because 79 tests are skipped (the job fails on any skip; there are no failing tests) | High | [DEVELOPMENT_AND_TESTING.md §3.2](DEVELOPMENT_AND_TESTING.md#32-the-79-skips) | A green gate cannot yet serve as release evidence | Start a seeded test server in CI and install `openpyxl` so the skipped tests run |
-| L-2 | The distributed Android APK is debug-signed; keystore custody is not documented | High | `Mobile/wbws_flutter_app/android/app/build.gradle` (falls back to debug signing without `key.properties`); `RELEASE.md` §3 | Losing the keystore blocks updates on every device; changing keys forces reinstalls | Decide keystore custody and plan the move to a release key before the device fleet grows |
-| L-3 | Backups are kept in the same hosting account, with no off-site copy; a restore has never been tested | High | [§4](#4-backups) | Loss of the account means loss of the data; backups are unproven | Off-site copy, recorded key custody, quarterly restore test |
+| L-1 | **Resolved 2026-10-28:** the earlier 79-skip CI environment gap | Closed | [Baseline checks](reports/DOCUMENTATION_BASELINE_2026-10-28.md), [historical explanation](DEVELOPMENT_AND_TESTING.md#32-the-79-skips) | All eight baseline checks passed; this does not verify a later SHA or runtime deployment | Retain zero-skip enforcement and run fresh checks for each candidate |
+| L-2 | Source falls back to debug signing without private `key.properties`; actual offered/installed certificates and custody are not freshly verified | High | Gradle signing selection; [release guide](../Mobile/wbws_flutter_app/docs/RELEASE.md#3-signing-and-key-custody) | A different/lost signing identity can prevent in-place upgrades; uninstall can destroy unsent work | Owner verifies actual certificate continuity and secure key custody before any publication or planned signer migration |
+| L-3 | Earlier documentation reported same-account backups, no off-site copy and no restore test; current storage, copies and recovery evidence were not inspected | High | [Historical provenance and source boundary in §4](#4-backups) | Backup recoverability and resilience to hosting-account loss remain unverified | Owner verifies off-site copies, effective-key custody and a disposable restore; record dated results |
 | L-4 | No migration ledger; the applied production schema is unverified | High | [DATABASE.md §4](DATABASE.md#4-applied-state-in-production-unverified) | Migrations may be missing or applied twice; deploys can break | Answer Q-1 and Q-2, then introduce a ledger |
-| L-5 | Manual deployment with no staging copy, no automated version record and no rehearsed rollback | Medium | [§2](#2-code-deployment-manual-sftp), [§3](#3-rollback) | Partial or incorrect deploys; slow recovery | Keep the deployment checklist and record; rehearse a rollback; consider a staging copy |
-| L-6 | No branch protection on the production repository's `main` (not available on the current GitHub plan). The development repository requires only the *Branch guard* check, with no review | Medium | Repository settings | Unreviewed changes can reach production | Upgrade the plan, or adopt a written two-person review rule |
-| L-7 | Monitoring and incident response are informal; uptime checks may not run | Medium | [§6](#6-monitoring-and-incident-response); `monitor/uptime_cron.php` needs cron | Outages are noticed by users first | External uptime check; a one-page incident plan |
-| L-8 | The full test suite runs on PHP 8.4; production runs PHP 8.5. A separate CI job lints every PHP file on 8.5 and fails on deprecations | Medium | `.github/workflows/backend-checks.yml` | Behaviour differences between 8.4 and 8.5 are not covered by tests | Run the test suite on PHP 8.5 |
+| L-5 | Development-first acceptance is now the owner policy; actual cron/deployment parity and rollback rehearsal remain unverified | Medium | [§1](#1-environments), [§2](#2-code-deployment-manual-sftp), [§3](#3-rollback) | A merge can be mistaken for a tested server deployment | Record the development revision and owner acceptance; separately authorize production; rehearse rollback safely |
+| L-6 | Earlier documentation reported limited development protection and no production-main protection. Current protection, plan and review requirements were not verified by this audit | Medium | Historical settings claim; [release-policy boundary](PRODUCTION_WORKFLOW.md#historical-observations) | Source checkout and old settings records do not establish current enforcement | Verify authorized repository settings and required reviews before integration/promotion; do not bypass protection |
+| L-7 | Incident checklist exists, but named staffing, private escalation, uptime schedules and drills remain unverified | Medium | [Incident response](INCIDENT_RESPONSE.md); `monitor/uptime_cron.php` needs scheduling | Monitoring/response cannot be assumed operational from documentation alone | Owner assigns contacts and verifies schedules, escalation and a safe drill |
+| L-8 | Checked-in backend suite job selects PHP 8.4; the separate PHP 8.5 job performs first-party syntax/deprecation checks with explicit vendor exclusions. Earlier documentation reported PHP 8.5 hosting; current production PHP was not inspected | Medium | `.github/workflows/backend-checks.yml`, `security-tests` and `php-lint-85` | An 8.5 lint result is not execution of the backend suite on 8.5 or verification of hosted PHP | Consider a separately scoped PHP 8.5 suite run; verify target PHP before release |
 | L-9 | Three API layers with duplicated business rules | Medium | [ARCHITECTURE.md §3](ARCHITECTURE.md#3-the-three-api-layers-unfinished-consolidation) | Inconsistent behaviour between web and app; costly changes | Choose the canonical layer per domain and consolidate behind services |
 | L-10 | Runtime schema changes for Mezmur tables | Medium | `MezmurSchemaReconciler::apply` | Schema drift; changes happen during requests | Move these changes into migrations |
 | L-11 | Very large files: the HR, Information and Education dashboards (about 4,400–4,900 lines each) and `local_db.dart` (about 7,500 lines) | Low | Line counts | Slow, risky changes | Split by feature, behind tests, when the files are next changed |
-| L-12 | Mobile 1.7.3+40 is on `main` but not released; production serves 1.6.10 (build 36) | Low | `pubspec.yaml`; `/api/v1/app/config` (2026-10-25) | Server and app features diverge | Decide when to publish 1.7.3 |
+| L-12 | Source checkpoint is 1.7.4+41 at `7209278`; current APK publication and installed-fleet versions are unverified | Low | `pubspec.yaml`, `lib/utils/config.dart`; older release-metadata observation is dated 2026-10-25 | Source and installed clients may expose different features | Owner verifies signed builds, upgrade compatibility and publication separately |
 
 ### 7.2 Open questions
 

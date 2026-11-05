@@ -5,6 +5,16 @@ script runs the full test suite (including the version-sync pin) so
 the version below must always match `pubspec.yaml` +
 `AppConfig.appVersion`.
 
+## 1.7.4 (build 41) — Class-day-only attendance (pending device acceptance)
+
+- Education attendance uses the server's compact class-day calendar offline.
+- Day Offs, holidays, non-class days and unconfigured class schedules are read-only; makeup days remain available when the server allows them.
+- All marking, QR, notes, bulk marking, Save, Submit and autosave share the same gate. Unknown dates require an online verdict; no weekday rules are guessed.
+- Refreshes on opening/changing a sheet, reconnecting and resuming the app. Late responses cannot apply to a different selected class/date.
+- Development device checklist: [class-day attendance acceptance](docs/ATTENDANCE_CLASS_DAY_1_7_4.md).
+- Readiness audit: pending marks are flushed before switching/reloading/leaving a sheet; delayed responses cannot erase newer marks or reopen a local submission. Note-only edits autosave, QR storage failures are explicit, and Undo stays bound to its original sheet.
+- Source version only: building and uploading the correctly signed APK is a separate release step. Force-update and minimum-version policy are unchanged.
+
 ## 1.7.3 (build 40) — Marks: live limit, "Did not take", View only, result card
 
 Works with the server change in the same release

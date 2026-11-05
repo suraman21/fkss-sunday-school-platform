@@ -1,0 +1,35 @@
+{
+  "status": "LOCAL_PASS_REMOTE_RECHECK_PENDING",
+  "passed": 2987,
+  "skipped": 0,
+  "failures": 0,
+  "subtests_passed": 949,
+  "seconds": 159.8,
+  "idempotency_checks_passed": 67,
+  "php": "8.4.27",
+  "mariadb": "11.8.6",
+  "python": "3.13",
+  "ci_mariadb": "11.4 (not yet verified with this repair)",
+  "ci_python": "3.11 (not yet verified with this repair)",
+  "source_sha256": {
+    ".github/workflows/backend-checks.yml": "aaf2251802f976767b425a0cfc7a3516eb800773c46386e268b03578af5ab205",
+    "tests/e2e/live_guard_seed.php": "0f09ab30f8948cf17200e3d099bdc095d94031fede3ae6056578ffa0c59e0591",
+    "tests/e2e/live_guard_router.php": "b4c3dd4efaf16a6ed0424159ad5611bbe54b41241883ae409bc9e86628153ee7",
+    "tests/security/conftest.py": "b47dacc0e89eccbbb787fda69a0cfafb7f451a24f82a6215d259a0c3c7902af1",
+    "tests/security/test_live_guard_environment.py": "84b94bbebd5e0829e741035cdf919be245a713f85ae8b015297b7121246e1659",
+    "tests/security/test_attendance_phase2.py": "2684c5442f723394ff156fd7dd95c150666b0632ec7742a60c7106d5eaa04f46",
+    "tests/security/test_attendance_phase5.py": "bc475d9c94c6dab67bab84871a9aceea465acc59c59a7dc1a48da642bd7010b7"
+  },
+  "log_sha256": {
+    "idempotency.log": "0e9eb73c0c02cf1507ab65ebbd1fa0937608eb5805b791445b781f540aef6888",
+    "full-security.log": "8227fe50ec6a65485bf6cc910d668d1bdae8e26ee1e842e58ad00fc07df5d2c6",
+    "full-security-final.log": "0d958f8058cb1cad7f886426e277205e4f73aa7efb4752c52ce35fb863afe261"
+  },
+  "remote_initial_repair": {
+    "head": "96aec67197104a76671fe8ac7e9eeec13a7dfbbd",
+    "passed": 2984,
+    "failed": 1,
+    "skipped": 0,
+    "cause": "Report-card subprocess lacked SSMS_DB_NAME=ssms_test; reproduced and fixed locally"
+  }
+}

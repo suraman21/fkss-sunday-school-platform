@@ -1,0 +1,16 @@
+{
+  "status": "PASS",
+  "upload_kib_per_second": 8,
+  "latency_ms": 250,
+  "size_bytes": 410596,
+  "duration_seconds": 98.41,
+  "chunk_attempts": 2,
+  "retry_spacing_seconds": 45.7,
+  "expected_sha256": "0ea55fec6e33f1e866cd594dc36a3490b4edbe4eb461fea1e3c680a4521c34d2",
+  "actual_sha256": "0ea55fec6e33f1e866cd594dc36a3490b4edbe4eb461fea1e3c680a4521c34d2",
+  "browser": "156.0.8078.4",
+  "result": "45-second native abort recovered with the 90-second retry deadline",
+  "limitations": [
+    "Synthetic localhost bootstrap/APK, not hosted or signed-device acceptance"
+  ]
+}

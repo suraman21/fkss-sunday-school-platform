@@ -1485,10 +1485,10 @@ require __DIR__ . '/../components/bottom_nav.php';
     })();
     </script>
 
-    <script>window.SA_BOOT=<?= json_encode(['section' => $activeSection, 'csrf' => $csrfToken], JSON_UNESCAPED_SLASHES) ?>;</script>
+    <script>window.SA_BOOT=<?= json_encode(['section' => $activeSection, 'csrf' => $csrfToken, 'upload_owner' => (int)($_SESSION['admin_id'] ?? 0)], JSON_UNESCAPED_SLASHES) ?>;</script>
     <script src="/admin/js/danger_confirm.js?v=20261022dc4"></script>
     <script src="/admin/js/danger_user_forms.js?v=20261022dc"></script>
-    <script src="/admin/js/app_release.js?v=20261026rel"></script>
+    <script src="/admin/js/app_release.js?v=20261027upload3"></script>
     <script src="/admin/js/app_telemetry.js?v=20261022p"></script>
     <script src="/admin/js/list_pager.js?v=20261022p"></script>
     <script src="/admin/js/failure_intelligence.js?v=20261022p"></script>

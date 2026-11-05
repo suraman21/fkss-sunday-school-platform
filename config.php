@@ -18,6 +18,19 @@ if (basename($_SERVER['PHP_SELF']) === 'config.php') {
     die('Direct access not allowed');
 }
 
+// Canonicalize browser document navigation only when Apache's page routing
+// is active. Legacy POST/AJAX/API requests and rewrite-disabled hosts are
+// deliberately unchanged. No environment/database access is needed here.
+require_once __DIR__ . '/admin/backend/services/BrowserPageRoutes.php';
+if (PHP_SAPI !== 'cli') {
+    $browserPageLocation = \App\Services\BrowserPageRoutes::navigationRedirect($_SERVER);
+    if ($browserPageLocation !== null) {
+        header('Cache-Control: no-store');
+        header('Location: ' . $browserPageLocation, true, 302);
+        exit;
+    }
+}
+
 // ============================================================
 // LOAD SECRETS FROM ENV FILE (outside web root)
 // ============================================================

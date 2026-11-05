@@ -5,8 +5,8 @@
 | Document | Product Requirements Document (PRD) |
 | Status | **Baseline. Draft for review by the engineering team** |
 | Version | 1.0 (2026-10-22) |
-| Describes | The system as implemented on `main` at `46fbaa7` (deployed to production on 2026-10-22) |
-| Method | Derived from the source code, migration files, commit history and the decision records ([ADRs](../adr/README.md)). Each requirement cites its source. Development began on 2026-08-15 and proceeds incrementally |
+| Describes | Source-derived requirements baseline at `46fbaa7`; selected current-policy/mobile/evidence clarifications reviewed against `7e28157` on 2026-10-28. This is not a live production inventory |
+| Method | Derived from executable source, migrations, Git and [ADRs](../adr/README.md). The earliest imported Git history is dated 2026-08-15; that does not prove the project's inception or that all earlier decisions are recorded |
 | Maintained by | FKSS maintainers |
 | Companion documents | [Technical design](../architecture/TECHNICAL_DESIGN.md) · [Decision records](../adr/README.md) · [Glossary](GLOSSARY.md) · [Roles and permissions](../ROLES_AND_PERMISSIONS.md) · [Known limitations](../OPERATIONS.md#7-known-limitations-and-open-questions) |
 
@@ -14,7 +14,9 @@
 - Requirement IDs (`FR-MEM-01`, `NFR-SEC-02`, …) are stable references for future tickets and tests.
 - **Status:** **Implemented** = present on `main` at `46fbaa7`. **Partial** = implemented with a documented gap. **Planned** = decided or designed but not built. **On hold** = deliberately paused.
 - **Source** points to the code or decision record that defines the behaviour. Where the code and a planning document disagree, the code is what runs; the difference is noted.
-- Production configuration (feature flags, which migrations are applied) is **not verified** here. See [OPERATIONS.md §7.2](../OPERATIONS.md#72-open-questions).
+- Production configuration (feature flags, which migrations are applied) is **not verified** here. “Implemented” records source presence at the stated boundary, not a certification that every control is reachable, every action works or every permission is correct. See [OPERATIONS.md §7.2](../OPERATIONS.md#72-open-questions).
+- Current delivery policy is development-main integration, independent development-server verification and owner acceptance, then separate explicit production authorization ([ADR-0021](../adr/0021-development-acceptance-before-production.md)). Dated deployments do not prove the current target revision.
+- This product/reference update does not complete the [department-by-department user manual](../user_manual/COVERAGE.md), whose exhaustive control review remains a separate stage.
 
 ---
 
@@ -55,11 +57,12 @@ The organisation is modelled as departments. Each staff account has exactly one 
 | Information Department (`info_dept`) | Records and statistics office | View and correct member records, archive and restore, reports and analytics. Does **not** register or promote members | Yes | Yes |
 | Education Department (`edu_dept`) | Academic office | Classes, subjects, teachers, assessments, grade review, timetable, school calendar, report cards | Yes | Yes |
 | Mezmur Department (`mezmur_dept`) | Hymn ministry | Hymn library and media, Mezmur attendance and takers | Yes | Yes |
-| Finance Department (`finance_dept`) | Treasury | Transactions, categories, member fees, reports | Yes | Yes |
-| Material Department (`material_dept`) | Store keeping | Items, categories, requests, transactions | Yes | Yes |
+| Finance Department (`finance_dept`) | Treasury | Transactions, categories, member fees, reports | Yes | Website-only notice/navigation, not equivalent native ledger controls |
+| Material Department (`material_dept`) | Storekeeping | Items, categories, requests, transactions | Yes | Website-only notice/navigation, not equivalent native inventory controls |
 | Teacher (`teacher`) | Class teacher | Attendance and marks for **assigned** classes only; timetable | Yes | Yes |
 | Attendance Taker (`attendance_taker`) | Volunteer | Class attendance only | Yes | Yes |
-| Mezmur / HR Attendance Taker | Department volunteers | Department-owned taker accounts | Yes | Yes |
+| Mezmur Attendance Taker (`mezmur_attendance_taker`) | Department volunteer | Mezmur attendance under the department's scope | Yes | Yes |
+| Former HR Attendance Taker (`hr_attendance_taker`) | Retired role | Historical identity only; HR attendance writes return 410 `HR_ATTENDANCE_RETIRED` | Retired/read-only archive where allowed | No active HR attendance workflow |
 | Content Editor (`content_editor`) | Website editor | Public website content (CMS) | Yes | No |
 
 Other stakeholders: the parents and guardians of students (data subjects; no system access today), and the public (public website, gallery and online registration form).
@@ -157,12 +160,12 @@ Other stakeholders: the parents and guardians of students (data subjects; no sys
 | ID | Requirement | Status | Source |
 |---|---|---|---|
 | FR-COM-01 | Notification bell, announcements and targeted notifications by role | Implemented | `NotificationCenterService.php`; `api_notifications.php` |
-| FR-COM-02 | Staff messaging: threads, contact picker, read receipts, edit and delete; offline send queue on Android with exactly-once delivery | Implemented | `api_communication.php`; `api/v1/routes/notifications.php`; `sql/042_notification_center.sql`–`046` |
+| FR-COM-02 | Staff messaging: threads, contact picker, read receipts, edit/delete and Android offline send queue with idempotent delivery mechanisms | Source present; not an unconditional exactly-once-delivery guarantee | `api_communication.php`; `api/v1/routes/notifications.php`; `sql/042_notification_center.sql`–`046` |
 
 ### 5.8 Administration and platform
 | ID | Requirement and business rules | Status | Source |
 |---|---|---|---|
-| FR-ADM-01 | Staff accounts are created by Super Admin; department takers by their department. Accounts can be disabled. Role, status and authorization version are re-checked against the database on every web and API request, so changes take effect immediately | Implemented | `user-save.php`; `api_dept_takers.php`; `AdminSessionGuard.php`; `sql/048_user_authorization_scope.sql` |
+| FR-ADM-01 | Super Admin creates staff accounts; authorized departments manage their takers. Session/token scope revalidation handles account changes. REST scope enforcement is build/deadline-dependent; do not promise immediate revocation for every legacy client | Source present; deployed compatibility settings unverified | `user-save.php`; `api_dept_takers.php`; `AdminSessionGuard.php`; `api/v1/core/auth.php`; `sql/048_user_authorization_scope.sql` |
 | FR-ADM-02 | Academic year lifecycle (upcoming → active → closed) and a year rollover (carry, promote, graduate) that requires typing `ROLLOVER` | Implemented | `sql/004_year_lifecycle.sql`; `admin/tools/year_rollover.php` |
 | FR-ADM-03 | School Admin and Super Admin can open a department view (impersonation). Every other page then uses the assumed role | Implemented | `access_control.php`; `api_impersonate.php` |
 | FR-ADM-04 | Destructive actions use a tiered confirmation: a three-step dialog with a typed phrase for high-risk actions, checked again on the server | Implemented | `admin/backend/danger_confirm.php`; [ADR-0013](../adr/0013-tiered-danger-confirmation.md) |
@@ -176,12 +179,12 @@ Other stakeholders: the parents and guardians of students (data subjects; no sys
 ## 6. Android app requirements
 | ID | Requirement | Status | Source |
 |---|---|---|---|
-| FR-MOB-01 | Role-based home screens for 12 staff roles (not Content Editor) | Implemented | `Mobile/wbws_flutter_app/lib/screens/`; `lib/utils/config.dart` |
-| FR-MOB-02 | Offline-first: screens render from the on-device database first; attendance, marks, Mezmur and messages are queued in outboxes and sent when online, with idempotency keys so retries never duplicate | Implemented | `local_db.dart`; `api/v1/core/middleware.php`; [ADR-0003](../adr/0003-offline-first-mobile.md) |
-| FR-MOB-03 | Offline work survives logout, re-login and authorization changes, and stays bound to its owner | Implemented | commits `3ed96b7`, `2b00f78` |
-| FR-MOB-04 | App lock (PIN or biometric); secure token storage | Implemented | `local_auth`; `flutter_secure_storage` |
+| FR-MOB-01 | Role-based entry/navigation; no Content Editor client; Finance/Material present website-only guidance and HR attendance is retired | Source present; not proof of native parity with every web department | `Mobile/wbws_flutter_app/lib/screens/`; `lib/utils/config.dart` |
+| FR-MOB-02 | Local-first eligible reads and durable attendance, marks, Mezmur and message queues; stable idempotency keys support replay/deduplication | Implemented mechanisms; not every request is offline-capable and delivery is not guaranteed by connectivity alone | `local_db.dart`; `api/v1/core/middleware.php`; [ADR-0003](../adr/0003-offline-first-mobile.md) |
+| FR-MOB-03 | Preserving logout retains owner-bound private work for same-account recovery; explicit discard/uninstall has different consequences; authorization changes can require attention rather than send automatically | Implemented bounded recovery; [current instructions](../user_manual/SYNC_AND_RECOVERY.md) | `lib/services/local_db.dart`; `lib/services/sync_recovery_models.dart`; `lib/screens/auth/session_recovery_screen.dart` |
+| FR-MOB-04 | Separate 4–8 digit local PIN, optional device biometrics and secure token storage | Source present; not application-level SQLite encryption | `app_lock_service.dart`; `local_auth`; `flutter_secure_storage` |
 | FR-MOB-05 | In-app update from the school's server (optional or forced by minimum build) | Implemented | `api/v1/routes/app.php`; [ADR-0005](../adr/0005-direct-apk-distribution.md) |
-| FR-MOB-06 | Background sync on Android | Implemented | `AndroidBackgroundSyncScheduler`; `docs/MOBILE_OFFLINE_SYNC_S3_A8_*` |
+| FR-MOB-06 | Eligible Android background sync with platform scheduling constraints | Source present; not guaranteed continuous/background execution | `AndroidBackgroundSyncScheduler`; [current sync/recovery guidance](../user_manual/SYNC_AND_RECOVERY.md); [rollout gates](../audits/AUTH_OUTBOX_BUILD24_ROLLOUT_RUNBOOK.md) |
 
 ## 7. Planned and paused work (not implemented)
 | Item | Status | Record |
@@ -195,15 +198,15 @@ Other stakeholders: the parents and guardians of students (data subjects; no sys
 ## 8. Non-functional requirements
 | ID | Requirement | Status / evidence |
 |---|---|---|
-| NFR-PLT-01 | Runs on shared hosting: PHP 8.5, MariaDB, LiteSpeed; no shell, Composer, cron, Python, Redis or C extensions for the application | Constraint ([ADR-0001](../adr/0001-php-monolith-on-shared-hosting.md)) |
+| NFR-PLT-01 | PHP/MariaDB shared-hosting design; committed dependencies; separately scheduled CLI maintenance and mobile background sync | Historical hosting assumptions in [ADR-0001](../adr/0001-php-monolith-on-shared-hosting.md); current development-first policy in [ADR-0021](../adr/0021-development-acceptance-before-production.md). Actual schedules/capabilities not reverified |
 | NFR-PLT-02 | Database changes are additive, idempotent SQL, applied by hand | Constraint ([ADR-0004](../adr/0004-manual-idempotent-sql-migrations.md)) |
 | NFR-PRF-01 | Designed for a school of 5,000+ students: paginated lists (capped page sizes), indexed directory and roster queries, monthly roll-ups | Design target (`sql/003_production_hardening.sql` header; `sql/014_member_directory_scaling.sql`, `028`, `052`). **No load test on record** |
 | NFR-PRF-02 | Usable on 2G/3G: cache-first screens and conditional GETs (ETag/304) for messaging | Implemented (commits `4b438ae`, `40acaa7`) |
 | NFR-SEC-01 | Role-based access on every page and endpoint; CSRF on web writes; rate-limited login (20 per 5 minutes per IP, 5 per 5 minutes per account); 30-minute idle web session | Implemented ([SECURITY.md](../SECURITY.md)) |
-| NFR-SEC-02 | Mobile tokens: 15-minute access token, 90-day rotating refresh token with replay detection; account changes revoke access | Implemented ([API.md](../API.md)) |
+| NFR-SEC-02 | 15-minute access tokens, 90-day rotating refresh sessions and replay detection; changed authorization checked according to build/deadline compatibility rules | Source mechanism present; live compatibility configuration unverified ([API authentication](../API.md#2-authentication)) |
 | NFR-SEC-03 | Personal data (phones, addresses) visible only to roles that need it | Implemented in the API (`apiRolesPii()`) and in the reporting field permissions |
 | NFR-SEC-04 | No independent security certification exists | Gap ([SECURITY.md](../SECURITY.md)) |
-| NFR-LOC-01 | Every user-facing date uses the **Ethiopian calendar**; content and names in Amharic (Ethiopic script) | Implemented ([ADR-0008](../adr/0008-ethiopian-calendar-only.md)) |
+| NFR-LOC-01 | Ethiopian-calendar business-display policy; Amharic domain content | [Accepted policy](../adr/0008-ethiopian-calendar-only.md), not a completed all-screen/export audit. Gregorian/ISO storage and technical timestamps are distinct from domain display |
 | NFR-ACC-01 | Responsive web for phones and tablets; pinch zoom allowed; reduced-motion respected in key screens | Implemented (commits `8a27fb7`, `2a5a169`). No formal accessibility audit |
 | NFR-REL-01 | Encrypted backups; documented restore path | **Partial:** backups exist; restore never tested; no off-site copy |
 | NFR-OBS-01 | Error and uptime monitoring with optional Telegram alerts; mobile telemetry and crash signatures | Implemented in code; production configuration unknown |

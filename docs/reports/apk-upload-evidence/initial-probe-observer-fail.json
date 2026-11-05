@@ -1,0 +1,7 @@
+{
+  "status": "FAIL",
+  "upload_kib_per_second": 8,
+  "latency_ms": 250,
+  "error": "KeyError('chunk_index')",
+  "duration_seconds": 98.38
+}

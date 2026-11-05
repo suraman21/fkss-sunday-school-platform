@@ -8,9 +8,8 @@
 
 FKSS is the management system of the Felege Kidusan Sunday School. It replaces spreadsheets and paper records for member registration, education (classes, assessments, report cards, timetable, attendance), the Mezmur (hymn) ministry, communications and reporting. Staff use a PHP web application; teachers and department staff also use an Android app built with Flutter that works offline and synchronises with the server.
 
-> **Status (checked 2026-10-25).** The system is in production use.
-> - The automated *Backend checks* gate is **red** because 79 tests are skipped (the job fails whenever a test is skipped); no tests fail. See [Testing and CI](docs/DEVELOPMENT_AND_TESTING.md#3-current-ci-status).
-> - Production deployments are manual. See [Operations](docs/OPERATIONS.md).
+> **Source baseline (reviewed 2026-10-28):** development main `7209278`. All eight baseline checks passed; the earlier 79-skip failure is resolved. A later change needs its own checks. See [Testing and CI](docs/DEVELOPMENT_AND_TESTING.md#3-current-ci-status).
+> - Delivery is development main → development-server update → owner acceptance → separately authorized production promotion. A merge does not prove deployment. See [Operations](docs/OPERATIONS.md).
 > - New engineers: start with [docs/ONBOARDING.md](docs/ONBOARDING.md).
 > - No independent security certification exists.
 
@@ -36,7 +35,7 @@ FKSS is the management system of the Felege Kidusan Sunday School. It replaces s
 | PHP libraries | Committed in `vendor/` (PhpSpreadsheet 5.9, OpenSpout, ZipStream). TCPDF and phpqrcode are bundled in `admin/` | `composer.lock` |
 | Web front end | Server-rendered PHP pages with vanilla JavaScript (`admin/js`, `frontend/js`) | — |
 | REST API | `/api/v1`. Custom HMAC-signed bearer tokens (*not* standard JWT) with rotating refresh sessions | [docs/API.md](docs/API.md) |
-| Mobile | Flutter (CI: 3.44.9, stable), Dart ≥ 3.3, `sqflite`, `flutter_secure_storage`, `local_auth`. App version on `main`: **1.7.3+40** | `Mobile/wbws_flutter_app/pubspec.yaml` |
+| Mobile | Flutter (CI: 3.44.9, stable), Dart ≥ 3.3, `sqflite`, `flutter_secure_storage`, `local_auth`. Source checkpoint: **1.7.4+41**; publication and installed versions are separate facts | `Mobile/wbws_flutter_app/pubspec.yaml` |
 | Tests | Python `pytest` suites (security, regression, e2e with Python Playwright), PHP harnesses, Flutter unit tests | [docs/DEVELOPMENT_AND_TESTING.md](docs/DEVELOPMENT_AND_TESTING.md) |
 | CI | GitHub Actions: *Backend checks*, *Production integrity*, *Branch guard* | `.github/workflows/` |
 
@@ -104,9 +103,9 @@ python3 -m pytest tests/security -q          # security / regression suite (as i
 cd Mobile/wbws_flutter_app && flutter test     # Flutter unit tests
 ```
 
-Latest CI result (2026-10-25): every job passes except the security and regression suite, which reports 2,815 passed, 0 failed and 79 skipped. That job fails whenever any test is skipped.
+All eight checks on baseline `7209278` passed, rechecked on 2026-10-28. The backend workflow now provisions the isolated live-test world and retains its fail-on-any-skip gate. See [dated evidence](docs/reports/DOCUMENTATION_BASELINE_2026-10-28.md).
 
-Details and the work needed to make the gate trustworthy again: [docs/DEVELOPMENT_AND_TESTING.md](docs/DEVELOPMENT_AND_TESTING.md).
+Use the exact candidate's results, not an old green badge, for release decisions. Setup, suite boundaries and remaining device/runtime gates: [docs/DEVELOPMENT_AND_TESTING.md](docs/DEVELOPMENT_AND_TESTING.md).
 
 ## Known limitations (summary)
 
@@ -116,16 +115,18 @@ Each item is VERIFIED unless marked otherwise. Detail and evidence: [OPERATIONS.
 |---|---|---|
 | Security boundaries | Web: PHP session, CSRF token and the role guard in `admin/access_control.php`. Mobile: custom HMAC bearer token (not a JWT). No independent security certification exists | [SECURITY.md](docs/SECURITY.md), [API.md](docs/API.md) |
 | Database and migrations | There is no migration ledger and the applied production schema is unverified. `sql/legacy/database_schema.sql` is stale (11 tables). `sql/` cannot be applied linearly to an empty database. Mezmur tables can change at runtime | [DATABASE.md](docs/DATABASE.md) |
-| Runtime versions | CI runs the tests on PHP 8.4 (with an 8.5 lint job) while production uses PHP 8.5. Production MariaDB was 11.4 in a 2026-10-02 dump (not re-verified) | [DATABASE.md §1](docs/DATABASE.md#1-engine-and-access) |
-| Deployment | Manual SFTP to shared hosting: no shell, Composer or cron for the application, no staging, no rehearsed rollback. Server-side git metadata is not authoritative | [OPERATIONS.md](docs/OPERATIONS.md) |
-| Release evidence | The CI gate is red and 79 tests are skipped. The Android APK is debug-signed. Mobile 1.7.3+40 is not released | [DEVELOPMENT_AND_TESTING.md](docs/DEVELOPMENT_AND_TESTING.md), [OPERATIONS.md](docs/OPERATIONS.md) |
-| Backups | Backups are kept in the same hosting account; restore has never been tested | [OPERATIONS.md](docs/OPERATIONS.md) |
+| Runtime versions | CI behavioral tests use PHP 8.4, with an 8.5 lint job. Production PHP 8.5 and MariaDB 11.4 are dated hosting observations, not fresh runtime verification | [DATABASE.md §1](docs/DATABASE.md#1-engine-and-access) |
+| Deployment | Owner acceptance on development precedes separate production authorization. Historical SFTP instructions do not establish today's cron, file or schema state; rollback rehearsal remains unverified | [OPERATIONS.md](docs/OPERATIONS.md) |
+| Release evidence | Baseline CI is green, but signing, published APKs, device installation and hosted acceptance are separate gates. Source is 1.7.4+41 | [DEVELOPMENT_AND_TESTING.md](docs/DEVELOPMENT_AND_TESTING.md), [OPERATIONS.md](docs/OPERATIONS.md) |
+| Backups | The 2026-10-22 record places backups in the hosting account with no restore test. Current off-site/key-custody/restore readiness is unverified | [OPERATIONS.md](docs/OPERATIONS.md) |
 
 ## Documentation
 
 | Topic | Canonical document |
 |---|---|
 | Index of all documents | [docs/README.md](docs/README.md) |
+| User manual (partial; coverage explicit) | [docs/user_manual/README.md](docs/user_manual/README.md) |
+| Documentation standard and lifecycle | [Authoring standard](docs/DOCUMENTATION_STANDARD.md), [retirement register](docs/DOCUMENT_LIFECYCLE.md) |
 | New engineer onboarding | [docs/ONBOARDING.md](docs/ONBOARDING.md) |
 | Product requirements (PRD) | [docs/product/PRD.md](docs/product/PRD.md) |
 | Technical design (TRD/SAD) | [docs/architecture/TECHNICAL_DESIGN.md](docs/architecture/TECHNICAL_DESIGN.md) |
@@ -153,11 +154,11 @@ The full working agreement (workflow, coding standards, database rules, tests, d
 - **Repositories:**
   - Development happens in `suraman21/fkss-sunday-school-platform`.
   - `Felege-Kidusan/felegekidusan` is the private production repository.
-  - Their `main` branches are kept identical.
+  - Development integration and production promotion are separate. Do not assume their `main` branches or deployed files are identical.
 - **Beta branch:** `dev` builds the beta mobile app. It is **never** merged into `main`. See [BRANCHING.md](BRANCHING.md).
 - **Changes:** use a feature or documentation branch and a pull request against `main`. Changes to application logic, schema, migrations, deployment or production configuration need explicit approval from the maintainers.
 - **Migrations:** applied to production manually by a maintainer with production access.
-- **Deployment:** a manual SFTP upload of the changed files, with a backup and checksum verification. See [docs/OPERATIONS.md](docs/OPERATIONS.md).
+- **Delivery:** merge checked changes to development main; verify the development-server update and obtain owner acceptance. Production promotion and hosting changes need separate explicit authorization. Historical SFTP safeguards remain in [docs/OPERATIONS.md](docs/OPERATIONS.md).
 - **Security issues:** do **not** report them in public issues or pull requests. Report them privately to the maintainers. See [docs/SECURITY.md](docs/SECURITY.md).
 
 No licence file is present in this repository.

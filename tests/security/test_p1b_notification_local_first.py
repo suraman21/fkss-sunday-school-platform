@@ -246,9 +246,13 @@ class P1BTriggersAndContracts(unittest.TestCase):
 
     def test_f8_behavior_unchanged(self):
         ldb = read(LDB)
-        self.assertEqual(ldb.count('sync_error IS NULL'), 4)
-        for name in ('dropPendingAttendance', 'dropPendingGrades',
-                     'dropPendingMezmur', 'dropPendingHr'):
+        # Attendance now refuses deletion entirely; other three F8 filters stay.
+        self.assertEqual(ldb.count('sync_error IS NULL'), 3)
+        attendance = method_body(ldb, 'Future<void> dropPendingAttendance(')
+        self.assertIn('throw StateError(', attendance)
+        self.assertNotIn('.delete(', attendance)
+        self.assertNotIn('await database', attendance)
+        for name in ('dropPendingGrades', 'dropPendingMezmur', 'dropPendingHr'):
             body = method_body(ldb, f'Future<void> {name}(')
             self.assertIn('sync_error IS NULL', body, name)
 

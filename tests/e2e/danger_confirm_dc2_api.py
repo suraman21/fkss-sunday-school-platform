@@ -90,9 +90,11 @@ ck('delete_term without phrase -> 409', code == 409 and d.get('code') == 'confir
 code, d = post(edu, EDU, action='delete_term', term_id=1, confirm_phrase='DELETE SEMESTER')
 ck('F1: delete_term of a used semester refused (term_in_use)', d.get('status') == 'error' and d.get('code') == 'term_in_use', (code, d))
 
-# ── sync_member_types ──
-code, d = post(edu, EDU, action='sync_member_types')
-ck('sync_member_types without phrase -> 409', code == 409, (code, d))
+# ── retired sync_member_types: even the old phrase cannot re-enable it ──
+for phrase in ('', 'SYNC TYPES'):
+    code, d = post(edu, EDU, action='sync_member_types', confirm_phrase=phrase)
+    ck(f'sync_member_types retired ({phrase!r}) -> 410 manual-only',
+       code == 410 and d.get('code') == 'member_type_manual_only', (code, d))
 
 # ── subjects ──
 code, d = post(edu, SUB, action='delete_subject', subject_id=1)

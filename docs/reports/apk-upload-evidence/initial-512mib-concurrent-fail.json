@@ -1,0 +1,15 @@
+{
+  "status": "FAIL",
+  "size_bytes": 536870912,
+  "upload_kib_per_second": 16384,
+  "latency_ms": 10,
+  "source_sha256": "2248e4048b32e0c27c1cade1fc333716d87a458d631cc3e617a70dadc82cf6bb",
+  "verified_parts_before_reload": 40,
+  "error": "TimeoutError('Locator.is_visible: Timeout 30000ms exceeded.\\nCall log:\\n    - checking visibility of locator(\"#upload-error-state\")\\n')",
+  "duration_seconds": 236.24,
+  "events": [
+    "Injected retryable HTTP 503 on part 8",
+    "Server stored part 14; its acknowledgment was discarded",
+    "Injected terminal stop before reload"
+  ]
+}

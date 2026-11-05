@@ -6,6 +6,8 @@
 
 > Recorded on 2026-10-22; the decision date is shown above. Evidence is cited so the decision can be checked; where the rationale is not documented, this is stated.
 
+> **2026-10-28 applicability:** automatic production-equivalence wording is partially superseded by [ADR-0021](0021-development-acceptance-before-production.md). Checked changes integrate into development `main`; production may lag and needs separate authorization after owner acceptance. The one-way `main` → `dev` beta boundary remains binding. Original decision text follows unchanged.
+
 ## Context
 
 A beta app pointing at a test server was needed without any risk of beta settings reaching production.

@@ -984,7 +984,7 @@ def test_dart_sources_bind_runtime_contract_and_never_use_lexical_max() -> None:
     # harness exercises is unchanged history; only the current-version pin
     # moves. The v36 contract has its own runtime harness in
     # test_mobile_sync_attempt_ledger.py.
-    assert "const localDatabaseSchemaVersion = 37;" in schema
+    assert "const localDatabaseSchemaVersion = 38;" in schema
     assert "version: localDatabaseSchemaVersion" in db
     assert "await _migrateToV34(db);" in db
     assert "claimNextLegacyOperation" in db and "settleLegacyOperation" in db

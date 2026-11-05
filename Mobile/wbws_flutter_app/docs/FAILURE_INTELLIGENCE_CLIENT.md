@@ -10,9 +10,11 @@ Added in `lib/services/api_service.dart` (`post()`), **only on sync writes**:
 authenticated calls that carry an `Idempotency-Key` or an
 `X-Client-Attempt-Id`. The value is the **same anonymous installation id
 telemetry already uses** (`TelemetryService.instance.getInstallationId()`),
-so no new identity leaves the device — the server can now slice sync
-failures by device cohort (app version, build, installation) without
-learning anything new. If the id is empty the header is simply omitted.
+so the channel reuses an installation identifier rather than creating a
+new account identity. Correlation with builds and attempts is still
+operational information; “anonymous” does not mean all telemetry is
+unidentifiable or safe for public sharing. If the id is empty the header
+is simply omitted.
 Servers that do not know the header ignore it, so old servers + new
 clients remain compatible.
 
@@ -40,7 +42,14 @@ group into one issue row. Pinned on the client by
 `tests/security/test_failure_intelligence_phase2.py` / `..._phase5.py`
 (the doc may not drift from the constants in the code).
 
-## 3. What did NOT change: the exact-once guarantee
+## 3. Idempotency and retry behavior remains separate
+
+The historical term **exact-once guarantee** refers to the existing
+idempotency/replay contract for eligible operations; adding fleet context
+does not strengthen that contract or change its identity/transaction rules.
+This header/signature contract is not an unconditional exactly-once
+delivery or background-execution guarantee. See [current recovery and
+attention-state guidance](../../../docs/user_manual/SYNC_AND_RECOVERY.md).
 
 The sync protocol is untouched. `Idempotency-Key`, `X-Client-Attempt-Id` /
 `X-Client-Attempt-Number`, and the outbox semantics behave exactly as

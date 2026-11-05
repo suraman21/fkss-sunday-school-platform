@@ -2,7 +2,63 @@
 ///
 /// This file intentionally has no Flutter dependency. The runtime SQLite
 /// migration harness reads these declarations as its schema source of truth.
-const localDatabaseSchemaVersion = 37;
+const localDatabaseSchemaVersion = 42;
+
+const attendancePreparationSnapshotSql = '''
+  CREATE TABLE IF NOT EXISTS attendance_preparation_snapshot (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    preparation_id TEXT NOT NULL,
+    owner_user_id INTEGER NOT NULL,
+    authorization_version INTEGER NOT NULL,
+    server_identity TEXT NOT NULL,
+    issued_at INTEGER NOT NULL,
+    deadline INTEGER NOT NULL,
+    payload_sha256 TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    write_year_id INTEGER NOT NULL,
+    generation INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )
+''';
+
+const gradesPreparationSnapshotSql = '''
+  CREATE TABLE IF NOT EXISTS grades_preparation_snapshot (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    preparation_id TEXT NOT NULL,
+    owner_user_id INTEGER NOT NULL,
+    authorization_version INTEGER NOT NULL,
+    server_identity TEXT NOT NULL,
+    issued_at INTEGER NOT NULL,
+    deadline INTEGER NOT NULL,
+    payload_sha256 TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    write_year_id INTEGER NOT NULL,
+    generation INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )
+''';
+
+const gradesSyncReceiptSql = '''
+  CREATE TABLE IF NOT EXISTS grades_sync_receipt (
+    client_op_id TEXT PRIMARY KEY,
+    owner_user_id INTEGER NOT NULL,
+    authorization_version INTEGER NOT NULL,
+    generation INTEGER NOT NULL,
+    assessment_id INTEGER NOT NULL,
+    http_status INTEGER NOT NULL,
+    receipt_json TEXT NOT NULL,
+    server_request_id TEXT,
+    created_at TEXT NOT NULL
+  )
+''';
+
+const gradesSyncReceiptIndexSql = '''
+  CREATE INDEX IF NOT EXISTS idx_grades_receipt_owner
+    ON grades_sync_receipt(owner_user_id, assessment_id)
+''';
+
 
 final class LocalColumnSpec {
   final String table;

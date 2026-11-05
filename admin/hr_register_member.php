@@ -492,6 +492,11 @@ try {
         unset($data['waiting_since']);
         unset($data['member_code']);
         unset($data['registration_type']);
+        // The registration default is only for new records. An upgrade
+        // without an explicit manual selection must retain its stored type.
+        if (!array_key_exists('member_type', $_POST)) {
+            unset($data['member_type']);
+        }
         
         $setClauses = [];
         $vals = [];

@@ -1,0 +1,685 @@
+{
+  "baseline": "105007b",
+  "end": "6518916df481a458c74f99fa2abc5bebe62a496e",
+  "meaning": "discovery only; not semantic/source review",
+  "paths": [
+    {
+      "path": ".github/workflows/apk-upload-e2e.yml",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "bcdd6078f88cc7784e4bf78fb48be0c8e8345d7226305967a03d30e9fd42b2ef"
+    },
+    {
+      "path": ".github/workflows/backend-checks.yml",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "da22d4cbe94876ea31af180c63f587924306b2beede1fd53c13d2edfb4d247f8"
+    },
+    {
+      "path": ".gitignore",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "9097f4995985c853c7a6070320b8b3b692e205da326d2fce872c2f57b6d39924"
+    },
+    {
+      "path": "AGENTS.md",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "100041c3e6a2c7ed283b057ee1ed01f017be40b5dc9c493d8c1a56f3a42f2518"
+    },
+    {
+      "path": "BRANCHING.md",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "9f8f6833c05a705d6dc8082022e6304409f50db0cc893c0155336554d33d570b"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "fd217072350f40bfcc716203569d97d10b0f80ed733e755690b8b31aecd62eb0"
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "01d4bbf786379142feeaa36243d88599aed4d2eba15b27ae253bcbca83ee49b1"
+    },
+    {
+      "path": "Mobile/README.md",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "edd43c044b5cdbbffff4bef4e633bbf50f8fa19f0ac251a49860c1b3369fd15e"
+    },
+    {
+      "path": "Mobile/wbws_flutter_app/README.md",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "3c629e9b838cbe2d98c5ac350e528bc4682906c80ff63922ba5ce7261ef6c13e"
+    },
+    {
+      "path": "Mobile/wbws_flutter_app/docs/FAILURE_INTELLIGENCE_CLIENT.md",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "4f61ba5d1f1e6c9726c9f8c2c6d772403b1a0939433da65e46834b02e138958f"
+    },
+    {
+      "path": "Mobile/wbws_flutter_app/docs/PROFILE_APP_UPDATES.md",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "7e787de7ff2f986aeec54fd39191bf2ab324e15f9685e646312536b5d40137a2"
+    },
+    {
+      "path": "Mobile/wbws_flutter_app/docs/RELEASE.md",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "fbffb45445af470954c49daf8c8bc2c4055d6652be3a6877ebdc09f2b54cf48c"
+    },
+    {
+      "path": "Mobile/wbws_flutter_app/lib/main.dart",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "da9bf72f41bd1c9f84643b75ef7a01d013734572e7dcc4de618d143c3e8741a6"
+    },
+    {
+      "path": "Mobile/wbws_flutter_app/lib/screens/profile/profile_screen.dart",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "e898c6661c01abb025cb107e734e19ca32272165d7b5f974a2d42ef1560faacc"
+    },
+    {
+      "path": "Mobile/wbws_flutter_app/lib/screens/shell/app_shell.dart",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "83ab319127002fa0b0347dddf7ba45bed84434f2bbf84157205a0b807dabff47"
+    },
+    {
+      "path": "Mobile/wbws_flutter_app/lib/screens/update/app_updates_tile.dart",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "52850539db41f542c7d2222e93cc8e5cae152112731a7b5e744e6de3ac4109ff"
+    },
+    {
+      "path": "Mobile/wbws_flutter_app/lib/screens/update/update_banner.dart",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "f511151d99bb8f0ed6f4a66f70e9cbc3114cc17e85ceeb9289548f0f95f9e110"
+    },
+    {
+      "path": "Mobile/wbws_flutter_app/lib/screens/update/update_screen.dart",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "cd490a0a267a34c3fbe83c2d77ec2bc0d321a3a5e3a29e580dea72f26a791da2"
+    },
+    {
+      "path": "Mobile/wbws_flutter_app/lib/services/app_update_service.dart",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "712cb276f506974b427920a00cafa42e8a7b485c43131bea45ed65a4bb1ad459"
+    },
+    {
+      "path": "Mobile/wbws_flutter_app/lib/services/crash_log_service.dart",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "0f04d703947573b2e6eb2daac6131731de797139ffcbbe12dd6fe8b3066a3b70"
+    },
+    {
+      "path": "Mobile/wbws_flutter_app/test/app_update_workflow_test.dart",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "87ce7de721b2ccb35e60b3904f66f4ad65ac84d9537ba9b260bab364218b0022"
+    },
+    {
+      "path": "Mobile/wbws_flutter_app/test/app_updates_ui_test.dart",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "e129e6c10e16f88e054d063cbdf0d1ee694cfbcfd6568c04e3391e3c215530f7"
+    },
+    {
+      "path": "Mobile/wbws_flutter_app/test/crash_log_parse_test.dart",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "69b534c5c338e547485153a71fb9df77cae1d5f1bf5a67e513d7052e1617396f"
+    },
+    {
+      "path": "README.md",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "3e8f5445aeabefd479547d86698b461df13ae91da96b3e9f642d0fea6b88ab8f"
+    },
+    {
+      "path": "admin/api_app_release.php",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "b1c35b580ca6f51b58f38ebf12e81e95360b27ce13482ece42356dabdea78e65"
+    },
+    {
+      "path": "admin/backend/services/AppReleaseManager.php",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "e06c16394d5f3a03ea53d63c9359d14295b80655e2f9f01feed847a062064232"
+    },
+    {
+      "path": "admin/backend/services/AppReleaseUploadStore.php",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "8da12399f09f891178cb4215474ae9e081a131182cf10c22906d413be51f92a2"
+    },
+    {
+      "path": "admin/dashboards/sections/app_release_section.php",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "dddf77a6a84c817b61e9bb0acdf239f701943feec4975246ca1484e280419d35"
+    },
+    {
+      "path": "admin/dashboards/super-admin.php",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "ed110267def43803235e1fef8a444cca5738d3a827c8fc705a4b7f146594a4f7"
+    },
+    {
+      "path": "admin/js/app_release.js",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "002a2c09669587825a61eaeab2a96d676fd9b1020284ce6c984f46ef4a95a1e2"
+    },
+    {
+      "path": "docs/API.md",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "d04dd97081135a1d2f0ca36c5373440993b1b2946103b860dbc14f9893c7d1da"
+    },
+    {
+      "path": "docs/ARCHITECTURE.md",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "eb61dc53f93767fe27df9ae6a4e8946861f8ef45145cce010cfaadc8f02556fc"
+    },
+    {
+      "path": "docs/CHANGE_IMPACT.md",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "4fa8acf444c914847ae1b1e3988f74399668c46d0bbbe8084e7e7fdd192211f1"
+    },
+    {
+      "path": "docs/DATABASE.md",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "3bf69114da893ce609c9e96f98a3b52649512bf931dfce1b6876e57067b17f82"
+    },
+    {
+      "path": "docs/DATA_DICTIONARY.md",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "7279dfce0d7513701da8e3e965892243715b232e7af2d5a8859f3396a9f5d57c"
+    },
+    {
+      "path": "docs/DEVELOPER_GUIDE.md",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "e9b0385d6fdcbac42e0a2b605a2ff619dd07112a72661c0a78d4789ff446a92b"
+    },
+    {
+      "path": "docs/DEVELOPMENT_AND_TESTING.md",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "87dcecb3f94d9db47a214e78ad00246a4b734e474276dd414af5c1ae8cc0ec1e"
+    },
+    {
+      "path": "docs/DOCUMENTATION_CATALOG.md",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "865adda53f6d92f6a07a52149a71da6402ace279b614d561b7a04309a4638c1d"
+    },
+    {
+      "path": "docs/DOCUMENTATION_STANDARD.md",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "4b4715a5451f3a8482a565fb4060a82e0137e071caba62727e4ee8a1ce721f66"
+    },
+    {
+      "path": "docs/DOCUMENT_LIFECYCLE.md",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "d9c06ef4ab1ab9add64e9308e5eea5b8c80364bc6dc9a1fa4ab280c23cdc6cd4"
+    },
+    {
+      "path": "docs/FAILURE_INTELLIGENCE.md",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "66b8537e9219124057a2660a2f99b8ea70e4a51ac7adf79c3e22f1e3f118206f"
+    },
+    {
+      "path": "docs/INCIDENT_RESPONSE.md",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "09b26f341cbd9a22be43b415566bfd49e2d61418410454e22133204a54e12986"
+    },
+    {
+      "path": "docs/ONBOARDING.md",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "7370287817f73e6e621e32ca890ad0a343b086cb8c3cb8be3eb1d8e6f2aa6878"
+    },
+    {
+      "path": "docs/OPERATIONS.md",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "baa59a0de78e68e761f34d90cd48e58ddeebfaf7b1972412736c7056f1500d82"
+    },
+    {
+      "path": "docs/PRODUCTION_WORKFLOW.md",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "f7f0dd07180e3273b0ceacd8b1ce7b48545da6145f80788111e5b694a9d5c772"
+    },
+    {
+      "path": "docs/QUALITY_GATES.md",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "143ea8be64f64f70e4c3f633ba15eddfc3cb5b33d7265f608db995df3b244d44"
+    },
+    {
+      "path": "docs/README.md",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "5e55b9199458d9d7c17ea8427687e905ca3bec00f4fd5b4b716dbd67c35b06a5"
+    },
+    {
+      "path": "docs/ROLES_AND_PERMISSIONS.md",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "c6598a583fc0ff69549b5464b898630a13c9662edb552ff8d02ac3d564688436"
+    },
+    {
+      "path": "docs/SECURITY.md",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "1cf93989a3491c3f94c8381a5876fd4f0ece5132e85230fd6ae1a0cac86e3d5a"
+    },
+    {
+      "path": "docs/TEST_STRATEGY.md",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "c3ae1623c77712c0e89bbde19a38c37a46f37c543c9c1185a748e82911d8ee1f"
+    },
+    {
+      "path": "docs/WEB_ADMIN_SYNC_MONITORING.md",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "52700f95cfdb4fec026c03efc3958d64875b5306ffcfd2b5f301de0e02b58052"
+    },
+    {
+      "path": "docs/adr/0001-php-monolith-on-shared-hosting.md",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "cb23195c9ea15d710317cb25418d1073454b2b6cb6a956e2164a1ce3a595885a"
+    },
+    {
+      "path": "docs/adr/0014-branching-main-dev.md",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "1f5703ddc14481f0cc208f45b6e2591c5da4764d9c642b77c0bafbf04aacc5fe"
+    },
+    {
+      "path": "docs/adr/0021-development-acceptance-before-production.md",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "0bc99dcc91c3f314aff098fcc63b3d5e8a147a4c22254f4e35bdd304b08a9333"
+    },
+    {
+      "path": "docs/adr/README.md",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "ca668e2f68c60f2a3cf36d8e203e170f3a71937f158fd59a8fd901dfb81374d2"
+    },
+    {
+      "path": "docs/api/FINANCE_CONTRACT.md",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "87c764553a15346ace5e66305facca2083ac140750ac607af9ca518ac1f10cc2"
+    },
+    {
+      "path": "docs/api/LEDGER_ACTIONS.md",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "e7d13fefee46e967b4b6136adbf69b48c3613cc9e38162c936a7833fba4c1f3b"
+    },
+    {
+      "path": "docs/api/LEDGER_PERMISSIONS.md",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "14d4e8585558efaf925411058afcc2f4168f3d5015f85f360adc995b9f9797e1"
+    },
+    {
+      "path": "docs/api/MATERIALS_CONTRACT.md",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "7b3c6b1c4ce578252bd2a7ca2d8281d6ed3d8e0de29e5199e714fcd23860067b"
+    },
+    {
+      "path": "docs/architecture/SECURITY_MODEL.md",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "cd98d291e43a583a8af0362b8c505a0a1cc306ff6017d3f4ec3cc5bd8c496b3d"
+    },
+    {
+      "path": "docs/architecture/TECHNICAL_DESIGN.md",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "0e785892d1cfe0d9950e287a0eb982d35488291a3346f6fd57fb821ad8ae36f0"
+    },
+    {
+      "path": "docs/audits/DEPLOYMENT_RUNBOOK.md",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "e6838357ed18c80f3beacaefd55b074c53a325dcda2b95f6c212caf8341fc1a2"
+    },
+    {
+      "path": "docs/ci_cd/ARCHITECTURE.md",
+      "change": "D",
+      "review_status": "UNREVIEWED",
+      "current_sha256": null
+    },
+    {
+      "path": "docs/ci_cd/GIT_CHEATSHEET.md",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "e86dafa10cdda7e19d434a382fad85274143023c11c1c7e44954a27c4314eb33"
+    },
+    {
+      "path": "docs/ci_cd/SEARCH_LOAD_AND_ERRORS.md",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "e16e513977d9864a190ede8ef71afe09a2db98265ac4e6dc2bde941bdff47df0"
+    },
+    {
+      "path": "docs/ci_cd/ci.yml.txt",
+      "change": "D",
+      "review_status": "UNREVIEWED",
+      "current_sha256": null
+    },
+    {
+      "path": "docs/database/LEDGER_COLUMNS.md",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "36f305820fbec01963b707f8ab487e7e6fc6e2e2e2e03cfedea3ae6a4adbf44d"
+    },
+    {
+      "path": "docs/product/GLOSSARY.md",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "5ff890c95e7333e24c5c47836f4ee857c7658ede5d5e06ea44d33fdd8e7dc068"
+    },
+    {
+      "path": "docs/product/PRD.md",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "4e5c9323f03678981e74218d31fdaa99aee233f85e7e5e34b7023709b3545bd0"
+    },
+    {
+      "path": "docs/reports/APK_UPLOAD_512MIB_E2E_2026-10-27.md",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "8fc5495cc20d6e2f587f85d4a155a6a55869193717812fb1b0fb076583ef6271"
+    },
+    {
+      "path": "docs/reports/APK_UPLOAD_CI_FOLLOWUP_2026-10-28.md",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "3661d7dfbc077f15ef0f55370712ed0b892a641875f2eecfafd3b808cfdb8ae3"
+    },
+    {
+      "path": "docs/reports/APK_UPLOAD_HARDENING_2026-10-27.md",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "9d8d9f64deb7946b7b0f6d3824e518122accd81fb9985dc895ccba611a06a76a"
+    },
+    {
+      "path": "docs/reports/CI_ZERO_SKIP_REPAIR_2026-10-28.md",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "271b9ac9678af9bf959f66f4e32b1da0b7acd6704b57dc2481a1abb644ab1f00"
+    },
+    {
+      "path": "docs/reports/DOCUMENTATION_BASELINE_2026-10-28.md",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "8ffa144af0b471e03ac6c3a77a4aee948ade65b145aee75f63febc5695ac74f4"
+    },
+    {
+      "path": "docs/reports/apk-upload-evidence/320mib-slow-pass.json",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "b056f0d3ef8cdbf747790453905572a7d1b411fc86448b3f99fa7a830a0c7b0a"
+    },
+    {
+      "path": "docs/reports/apk-upload-evidence/320mib-tested-code-sha256.json",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "f516fa091e5a4fb742e97724fc3da9c2323575be3cd54866bcc31b90a33c5dc0"
+    },
+    {
+      "path": "docs/reports/apk-upload-evidence/512mib-ci-followup-pass.json",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "ae2bd6e1f265fb87bc8c45f396e22692e2f63fbb616aff16b3adaec16bfce423"
+    },
+    {
+      "path": "docs/reports/apk-upload-evidence/512mib-exact-pass.json",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "23fc37ff6caeee00f17b04487bc9b5b0dfb5a7603d155cb6a148c53e19e079ef"
+    },
+    {
+      "path": "docs/reports/apk-upload-evidence/8kib-link-pass.json",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "94502f44353ee9784761ff433f253987630039e544b2868308a89e9d553360ce"
+    },
+    {
+      "path": "docs/reports/apk-upload-evidence/ci-followup-tested-code-sha256.json",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "797e82331b7d22daf32c4b9faf89810c9d74f47a1aef9deea17035e79b1e55dc"
+    },
+    {
+      "path": "docs/reports/apk-upload-evidence/final-tested-code-sha256.json",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "86798b45c947e011c2e078cd91a398010679446c0b773acdde01e0d6a8e8b39f"
+    },
+    {
+      "path": "docs/reports/apk-upload-evidence/initial-320mib-concurrent-fail.json",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "cdd16777868beb24075b614d6faace02111eef9f3dcbc5c336032767682208eb"
+    },
+    {
+      "path": "docs/reports/apk-upload-evidence/initial-512mib-concurrent-fail.json",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "4f20ca3bb19f218df668146c6568e6bf9be594c7f9677bc74e50ea856a136c3b"
+    },
+    {
+      "path": "docs/reports/apk-upload-evidence/initial-probe-observer-fail.json",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "800511c32ed8eb75a3601de2b3a9875a044ebb8f33c406375017716c50bd1376"
+    },
+    {
+      "path": "docs/reports/apk-upload-evidence/zero-skip-ci-repair-local.json",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "befeb8274f2f8c1d4d9c4f63ce0356b365fe9ebfe4461693b271ad5fdd6260f0"
+    },
+    {
+      "path": "docs/user_manual/ACCOUNT_AND_DEVICE.md",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "157813ab320c95e96486534e3cc103b9deeb66451211aa1a0c5b6c116c95cb6f"
+    },
+    {
+      "path": "docs/user_manual/APP_UPDATES.md",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "a49bdedb0846a6730c3df1520f2224672560a37298e1aaac3a64012cd80fbe9f"
+    },
+    {
+      "path": "docs/user_manual/COVERAGE.md",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "ea85fcdce2eba32ac07567770051123257dec711cb8bcab3fbfd751a74695f62"
+    },
+    {
+      "path": "docs/user_manual/FINANCE.md",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "824188d8bf564956bada268e171d59bf29278627bae4c804fb5748356979f01f"
+    },
+    {
+      "path": "docs/user_manual/MATERIALS.md",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "ff587b627cc98ea3412bb496d48dea7cad129000f5e60b1451939c70ddebb1e4"
+    },
+    {
+      "path": "docs/user_manual/README.md",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "50092bcf78e2f03bc54c4bb6960f5cb8de0862606f2c982cbb804ae72fdfefa9"
+    },
+    {
+      "path": "docs/user_manual/SYNC_AND_RECOVERY.md",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "88c93cedb88b68a72a02cd62aefeab4fba7c801d497ff3e96ee6cd991b6fb10d"
+    },
+    {
+      "path": "tests/audit/README.md",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "1f81dbff82aa6cb851a98f2e8014a3febadbc689627ecab23db2dcf74c0e5cd6"
+    },
+    {
+      "path": "tests/e2e/README.md",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "190abd17203c7f9618eee3eb2ebb449e7d6cf12ac9df3c5937d68575d18dd3b4"
+    },
+    {
+      "path": "tests/e2e/apk_slow_link_probe.py",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "067bdb1cda23d5339432ee703a05276ab28f1bb8f58d804a947c913340a03424"
+    },
+    {
+      "path": "tests/e2e/apk_upload_browser.py",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "4c78ab3d6b2fdeebe169e2a13451b61eaedf03e7e9bc57970c13496ca70c1702"
+    },
+    {
+      "path": "tests/e2e/live_guard_router.php",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "b4c3dd4efaf16a6ed0424159ad5611bbe54b41241883ae409bc9e86628153ee7"
+    },
+    {
+      "path": "tests/e2e/live_guard_seed.php",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "0f09ab30f8948cf17200e3d099bdc095d94031fede3ae6056578ffa0c59e0591"
+    },
+    {
+      "path": "tests/e2e/requirements.txt",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "adeb8976dfd2edb0e44e74da84319fae6d821478330c93e39829516c01d5fe25"
+    },
+    {
+      "path": "tests/js/app_release_upload.test.js",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "71ef4fb4836e8ab367e1880933d8205c4cc39050bf3fe63e78810e8500e4a344"
+    },
+    {
+      "path": "tests/js/upload_harness.js",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "03c63b2db26f3b70a1e81b081854a9b85f1bf6885f93244b60134044a26586b7"
+    },
+    {
+      "path": "tests/security/conftest.py",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "b47dacc0e89eccbbb787fda69a0cfafb7f451a24f82a6215d259a0c3c7902af1"
+    },
+    {
+      "path": "tests/security/test_apk_upload_reliability.py",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "069ed6b4f172d372114374fcf725affc2c140c39889a5fbe26c98acae844a617"
+    },
+    {
+      "path": "tests/security/test_app_release_from_apk.py",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "3cdfd27a32a15b61b2246b301d0c3c27628eeca984993e37ea0c7452cc12b990"
+    },
+    {
+      "path": "tests/security/test_app_release_management.py",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "90bb92d1243aacc9ac5ec8e0a451e56688793e078cb89b5b475ec6f5681989ca"
+    },
+    {
+      "path": "tests/security/test_attendance_phase2.py",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "2684c5442f723394ff156fd7dd95c150666b0632ec7742a60c7106d5eaa04f46"
+    },
+    {
+      "path": "tests/security/test_attendance_phase5.py",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "bc475d9c94c6dab67bab84871a9aceea465acc59c59a7dc1a48da642bd7010b7"
+    },
+    {
+      "path": "tests/security/test_developer_documentation.py",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "72eae4b23a7a894e444cbfd21adf79d9798ef82e34840e0ee26c87b526e983be"
+    },
+    {
+      "path": "tests/security/test_documentation_contract.py",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "4f24f2293dcb2f2173c165b65a909552bcf5f97e0b107c3d6563a9a9aa925b2a"
+    },
+    {
+      "path": "tests/security/test_documentation_source_facts.py",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "ea54e5ccd0c7019b77bc5f1c60c883d642236b6d0b62445a8805663736b07613"
+    },
+    {
+      "path": "tests/security/test_ledger_reference_depth.py",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "a47d104229533d52ccec17967156313b600de1a48b6abc70113b249264e0a9d8"
+    },
+    {
+      "path": "tests/security/test_live_guard_environment.py",
+      "change": "A",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "84b94bbebd5e0829e741035cdf919be245a713f85ae8b015297b7121246e1659"
+    },
+    {
+      "path": "tests/security/test_structure_include_paths.py",
+      "change": "M",
+      "review_status": "UNREVIEWED",
+      "current_sha256": "ad9db0edd05788abcfda4f209af2713a0fd2028334ac6a3297200e485ee2312a"
+    }
+  ]
+}

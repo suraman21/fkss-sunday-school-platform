@@ -93,10 +93,37 @@ class ApiResponse {
       retryAfterSeconds: _retryAfterSeconds(headers['retry-after']),
       idempotencyReplayed:
           headers['idempotency-replayed']?.toLowerCase() == 'true',
-      failureKind: failureKind,
+      failureKind: _receiptAwareFailureKind(failureKind, json, data),
       etag: etag,
       serverRequestId: _trimmedOrNull(headers['x-request-id']),
     );
+  }
+
+  /// Inspect protocol containers only, never arbitrary records/member data.
+  /// Even a true/malformed marker is not validated manifest receipt proof.
+  static bool _hasReceiptMetadata(dynamic value) {
+    if (value is! Map) return false;
+    for (final item in [value, value['lookup'], value['capabilities']]) {
+      if (item is Map &&
+          (item.containsKey('authorizes_settlement') ||
+              item.containsKey('durable_receipt_versions') ||
+              item['authority'] == 'legacy_replay_cache')) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static ApiFailureKind _receiptAwareFailureKind(
+      ApiFailureKind kind, dynamic envelope,
+      [dynamic payload]) {
+    if (kind == ApiFailureKind.authentication ||
+        kind == ApiFailureKind.authorizationScope) {
+      return kind;
+    }
+    return _hasReceiptMetadata(envelope) || _hasReceiptMetadata(payload)
+        ? ApiFailureKind.nonSettlement
+        : kind;
   }
 
   static String? _trimmedOrNull(String? value) {
@@ -195,7 +222,7 @@ class ApiResponse {
         hasCanonicalConflictItem: hasCanonicalConflictItem,
         failureKind: sessionSuperseded
             ? ApiFailureKind.unknown
-            : failureKind,
+            : _receiptAwareFailureKind(failureKind, data),
         refreshOutcome: sessionSuperseded
             ? AuthRefreshOutcome.superseded
             : refreshOutcome,
@@ -1535,6 +1562,11 @@ class ApiService {
   // ============================================================
   // ATTENDANCE
   // ============================================================
+
+  /// Compact server-computed calendar for offline class-day gating.
+  Future<ApiResponse> getAttendanceCalendar({String? etag}) => get(
+      '/attendance/calendar',
+      headers: etag == null ? null : {'If-None-Match': etag});
 
   Future<ApiResponse> getAttendance(int classId, {String? date}) {
     final params = <String, String>{'class_id': '$classId'};

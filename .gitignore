@@ -74,3 +74,7 @@ uploads/mezmur_zemarians/*
 
 # --- Patch files / scratch ---
 *.patch
+
+# Disposable large-APK browser fixtures and generated evidence
+/.cache/
+/browser-evidence/

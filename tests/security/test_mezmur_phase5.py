@@ -326,7 +326,9 @@ class MezmurPhase5Tests(unittest.TestCase):
         # server packet status drives the lock, like teachers
         self.assertIn("submission_status", self.screen)
         self.assertIn("PacketLock.isLocked(", self.screen)
-        self.assertIn("dropPendingMezmur(_selectedDate, section)", self.screen)
+        # A lock still makes the sheet read-only, but is not proof that this
+        # phone's unsynchronized operation was accepted.
+        self.assertNotIn("dropPendingMezmur(", self.screen)
         # department wording (not "Education") on the return banner
         self.assertIn("Returned by the Mezmur department", self.screen)
         self.assertIn("_mezmurReturnNote(", self.screen)

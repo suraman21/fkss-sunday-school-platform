@@ -14,9 +14,9 @@ import 'package:flutter/services.dart';
 /// computed — the thresholds live in exactly one pure function,
 /// [tierFor], pinned by test.
 ///
-/// Deliberately fail-open: if the channel is missing (web, or a future
-/// platform) the service stays at the safe middle tier and nothing calls
-/// native code.
+/// Best-effort read-only capability probe: starts at MID with null info.
+/// Web skips the probe. Missing/failed channels preserve the last successful
+/// snapshot and cache settings; before first success, defaults are unchanged.
 enum DeviceTier { low, mid, high }
 
 class DeviceInfoSnapshot {
@@ -60,6 +60,8 @@ class DeviceTierService {
   DeviceInfoSnapshot? info;
 
   DeviceTier _tier = DeviceTier.mid;
+  int? _defaultCacheSize;
+  int? _defaultCacheBytes;
   DeviceTier get tier => _tier;
 
   bool get isLowEnd => _tier == DeviceTier.low;
@@ -69,20 +71,29 @@ class DeviceTierService {
   Future<void> boot() async {
     if (kIsWeb) return;
     try {
-      final raw = await _channel.invokeMethod<Map<dynamic, dynamic>>('info');
-      if (raw == null) return;
+      final raw = await _channel.invokeMethod<Object?>('info');
+      if (raw is! Map) {
+        return; // Keep a previous valid snapshot on probe failure.
+      }
       final map = Map<Object?, Object?>.from(raw);
-      final abis =
-          (map['abis'] as List?)?.map((e) => '$e').toList() ?? const <String>[];
+      final rawAbis = map['abis'];
+      final abis = rawAbis is List
+          ? rawAbis.whereType<String>().where((abi) => abi.isNotEmpty).toList()
+          : const <String>[];
+      int positiveInt(Object? value) =>
+          value is num && value.isFinite && value > 0 && value <= 0x7fffffff
+              ? value.toInt()
+              : 0;
+      String text(Object? value) => value is String ? value : '';
       final snap = DeviceInfoSnapshot(
-        primaryAbi: '${map['abi'] ?? ''}',
+        primaryAbi: text(map['abi']),
         abis: abis,
-        totalRamMb: (map['totalRamMb'] as num?)?.toInt() ?? 0,
+        totalRamMb: positiveInt(map['totalRamMb']),
         isLowRam: map['isLowRam'] == true,
-        sdkInt: (map['sdkInt'] as num?)?.toInt() ?? 0,
-        release: '${map['release'] ?? ''}',
-        model: '${map['model'] ?? ''}',
-        manufacturer: '${map['manufacturer'] ?? ''}',
+        sdkInt: positiveInt(map['sdkInt']),
+        release: text(map['release']),
+        model: text(map['model']),
+        manufacturer: text(map['manufacturer']),
       );
       info = snap;
       _tier = tierFor(totalRamMb: snap.totalRamMb, isLowRam: snap.isLowRam);
@@ -90,7 +101,7 @@ class DeviceTierService {
     } on PlatformException {
       // Read-only capability probe; failing open is correct.
     } on MissingPluginException {
-      // Platform without the channel (web) — stay at the middle tier.
+      // Channel unavailable — retain any previous successful snapshot.
     }
   }
 
@@ -115,10 +126,12 @@ class DeviceTierService {
   }
 
   void _applyImageCache() {
-    // Flutter's defaults (1000 images / 100 MB) assume flagship headroom;
-    // on 1–2 GB Go phones that budget is exactly what tips the process
-    // into low-memory kills. Scaled to the tier; HIGH keeps the default.
+    // Limit retained images on lower-memory devices. These are cache ceilings,
+    // not total process limits or a guarantee against OS low-memory kills.
+    // HIGH restores settings captured before this service first adjusted them.
     final cache = PaintingBinding.instance.imageCache;
+    _defaultCacheSize ??= cache.maximumSize;
+    _defaultCacheBytes ??= cache.maximumSizeBytes;
     switch (_tier) {
       case DeviceTier.low:
         cache.maximumSize = 250;
@@ -127,7 +140,8 @@ class DeviceTierService {
         cache.maximumSize = 500;
         cache.maximumSizeBytes = 64 << 20; // 64 MB
       case DeviceTier.high:
-        break;
+        cache.maximumSize = _defaultCacheSize!;
+        cache.maximumSizeBytes = _defaultCacheBytes!;
     }
   }
 }

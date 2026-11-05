@@ -26,6 +26,7 @@ rework tests).
 """
 
 from pathlib import Path
+import re
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -88,7 +89,11 @@ class DefaultAbsentSheetContracts(unittest.TestCase):
         for src, save in ((self.edu, "saveAttendanceLocal"),
                           (self.mez, "saveMezmurLocal")):
             self.assertNotIn("'${r['status'] ?? ''}'.isNotEmpty", src)
-            body = src[src.index("Future<void> _autoSaveNow()"):]
+            # Attendance now returns durable-save success to its transition
+            # guard; Mezmur still returns void. Both persist the full roster.
+            signature = re.search(r"Future<(?:void|bool)> _autoSaveNow\(\)", src)
+            self.assertIsNotNone(signature)
+            body = src[signature.start():]
             self.assertIn("final records = _records();", body)
             self.assertIn(save, body)
             self.assertIn("packetKind: 'draft'", body)

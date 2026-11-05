@@ -1,0 +1,6 @@
+{
+  "admin/backend/services/AppReleaseManager.php": "ad42c0e043e15a2cf9557c463fc391907a99691c0e2903e32a5de73f460d458c",
+  "admin/backend/services/AppReleaseUploadStore.php": "b65e1d1bbc9b05795d4ab9f63cb5a868a4d5b46e0e788a2013ef6906820bd412",
+  "admin/api_app_release.php": "a1356ed97dc2a6536923c87d49cd27ca80abce0c70d540dc92371c6bd1a10a4f",
+  "admin/js/app_release.js": "002a2c09669587825a61eaeab2a96d676fd9b1020284ce6c984f46ef4a95a1e2"
+}

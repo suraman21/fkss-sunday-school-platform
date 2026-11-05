@@ -10,6 +10,11 @@
  * @param int $code HTTP status code
  */
 function ok($data = null, $code = 200) {
+    apiSendJson(apiSuccessPayload($data), $code);
+}
+
+/** Build the unchanged success envelope before an atomic business commit. */
+function apiSuccessPayload($data = null): array {
     $response = ['status' => 'success'];
     if ($data !== null) {
         if (is_array($data) && isset($data['message'])) {
@@ -20,7 +25,7 @@ function ok($data = null, $code = 200) {
             $response['data'] = $data;
         }
     }
-    apiSendJson($response, $code);
+    return $response;
 }
 
 /**
@@ -72,12 +77,17 @@ function apiClientAttemptId(): string {
     return $value;
 }
 
-function apiSendJson(array $response, int $code = 200) {
+/** @return string|false Identical encoding for precommit and wire responses. */
+function apiEncodeJsonResponse(array $response) {
     // Module version handshake (see routes/mezmur.php): lets clients
     // detect a stale server and show an actionable update message.
     if (defined('MEZMUR_API_VERSION') && !isset($response['server_meta'])) {
         $response['server_meta'] = ['mezmur' => MEZMUR_API_VERSION];
     }
+    return json_encode($response, JSON_UNESCAPED_UNICODE);
+}
+
+function apiSendJson(array $response, int $code = 200) {
     while (ob_get_level() > 0) {
         @ob_end_clean();
     }
@@ -89,7 +99,7 @@ function apiSendJson(array $response, int $code = 200) {
         // S1 correlation. Additive and advisory: older clients ignore it.
         header('X-Request-Id: ' . apiRequestId());
     }
-    $json = json_encode($response, JSON_UNESCAPED_UNICODE);
+    $json = apiEncodeJsonResponse($response);
     if ($json === false) {
         $json = '{"status":"error","message":"Could not encode response."}';
         $code = 500;

@@ -68,7 +68,6 @@ SERVER_ENFORCED = [
     # DC-2
     ('admin/api_education.php', 'education.delete_class'),
     ('admin/api_education.php', 'education.delete_term'),
-    ('admin/api_education.php', 'education.sync_types'),
     ('admin/api_subjects.php', 'subjects.delete_subject'),
     ('admin/api_subjects.php', 'subjects.apply_template'),
     # DC-3

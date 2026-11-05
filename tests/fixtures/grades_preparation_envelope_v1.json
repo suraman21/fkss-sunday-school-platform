@@ -1,0 +1,98 @@
+{
+  "description": "Synthetic grades envelope for validator; HMAC not real.",
+  "envelope": {
+    "preparation_version": 1,
+    "payload": "eyJwcmVwYXJhdGlvbl92ZXJzaW9uIjoxLCJjb21wbGV0ZSI6dHJ1ZSwib3duZXJfdXNlcl9pZCI6NywiYXV0aG9yaXphdGlvbl92ZXJzaW9uIjozLCJyb2xlIjoidGVhY2hlciIsImZhbWlseV9pZCI6ImFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWEiLCJpc3N1ZWRfYXQiOjE3OTM4NzI4MDAsImRlYWRsaW5lIjoxNzk2NDY0ODAwLCJwcmVwYXJhdGlvbl9pZCI6IjgyNGM1NjQ1ZWQ0MWMyZjhiNGMzODdmNzQzOWM5MTA1YTY5Y2FmNzY3ODNhMjEwYzIzYzAwZmI2ZjUzMWQyODgiLCJzZXJ2ZXJfaWRlbnRpdHkiOiJodHRwczovL3NjaG9vbC5leGFtcGxlL2FwaS92MSIsInNlcnZlcl90b2RheSI6IjIwMjYtMTEtMDQiLCJ3cml0ZV95ZWFyIjp7ImlkIjo2LCJmcm9tIjoiMjAyNi0wOS0wMSIsInRvIjoiMjAyNy0wOC0zMSIsInN0YXR1cyI6ImFjdGl2ZSJ9LCJ0ZXJtcyI6W3siaWQiOjEsInRlcm1fbmFtZSI6IlRlcm0gMSIsInRlcm1fbnVtYmVyIjoxLCJpc19jdXJyZW50Ijp0cnVlLCJpc19yZW9wZW5lZCI6ZmFsc2V9XSwibWVtYmVycyI6W3sibWVtYmVyX2lkIjoxLCJzdHVkZW50X25hbWUiOiJBbHBoYSIsImZhdGhlcl9uYW1lIjoiQmV0YSIsIm1lbWJlcl9jb2RlIjoiTTEifSx7Im1lbWJlcl9pZCI6Miwic3R1ZGVudF9uYW1lIjoiWmVicmEiLCJmYXRoZXJfbmFtZSI6IkdhbW1hIiwibWVtYmVyX2NvZGUiOiJNMiJ9XSwiY2xhc3NlcyI6W3siY2xhc3NfaWQiOjEwMSwiY2xhc3NfbmFtZSI6IkNsYXNzIEEiLCJjbGFzc19uYW1lX2VuIjoiQ2xhc3MgQSIsInNlY3Rpb24iOiJBIiwid3JpdGVfeWVhcl9pZCI6Niwicm9zdGVyX3llYXJfaWQiOjYsInJvc3Rlcl9mYWxsYmFjayI6ZmFsc2UsIm1lbWJlcl9pZHMiOlsxLDJdLCJzdWJqZWN0cyI6W3siaWQiOjEwLCJzdWJqZWN0X25hbWUiOiJNYXRoIiwic3ViamVjdF9uYW1lX2VuIjoiTWF0aCIsInN1YmplY3RfY29kZSI6Ik1BVEgifV0sImFzc2Vzc21lbnRzIjpbeyJpZCI6MTAwMSwic3ViamVjdF9pZCI6MTAsImFzc2Vzc21lbnRfbmFtZSI6IlF1aXogMSIsImFzc2Vzc21lbnRfdHlwZSI6InF1aXoiLCJ3ZWlnaHRfcGVyY2VudGFnZSI6MTAsIm1heF9zY29yZSI6MjAsImFzc2Vzc21lbnRfb3JkZXIiOjEsImlzX3B1Ymxpc2hlZCI6ZmFsc2V9XX1dfQ",
+    "grant": "eyJwcmVwYXJhdGlvbl9pZCI6IjgyNGM1NjQ1ZWQ0MWMyZjhiNGMzODdmNzQzOWM5MTA1YTY5Y2FmNzY3ODNhMjEwYzIzYzAwZmI2ZjUzMWQyODgiLCJzZXJ2ZXJfaWRlbnRpdHkiOiJodHRwczovL3NjaG9vbC5leGFtcGxlL2FwaS92MSIsIm93bmVyX3VzZXJfaWQiOjcsImF1dGhvcml6YXRpb25fdmVyc2lvbiI6Mywicm9sZSI6InRlYWNoZXIiLCJmYW1pbHlfaWQiOiJhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhIiwiaXNzdWVkX2F0IjoxNzkzODcyODAwLCJkZWFkbGluZSI6MTc5NjQ2NDgwMCwia2luZCI6InJvb3QiLCJwYXlsb2FkX3NoYTI1NiI6IjFlZmQxOTZlNmU2NDMwNmU3NjJhMzllMGUxMjNiYzA5OTdhMjlmYzM5MmJmY2ZjMTcwMTgzZTU1MmJkMjRmMDQifQ.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "authorizes_settlement": false
+  },
+  "payload": {
+    "preparation_version": 1,
+    "complete": true,
+    "owner_user_id": 7,
+    "authorization_version": 3,
+    "role": "teacher",
+    "family_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "issued_at": 1793872800,
+    "deadline": 1796464800,
+    "preparation_id": "824c5645ed41c2f8b4c387f7439c9105a69caf76783a210c23c00fb6f531d288",
+    "server_identity": "https://school.example/api/v1",
+    "server_today": "2026-11-04",
+    "write_year": {
+      "id": 6,
+      "from": "2026-09-01",
+      "to": "2027-08-31",
+      "status": "active"
+    },
+    "terms": [
+      {
+        "id": 1,
+        "term_name": "Term 1",
+        "term_number": 1,
+        "is_current": true,
+        "is_reopened": false
+      }
+    ],
+    "members": [
+      {
+        "member_id": 1,
+        "student_name": "Alpha",
+        "father_name": "Beta",
+        "member_code": "M1"
+      },
+      {
+        "member_id": 2,
+        "student_name": "Zebra",
+        "father_name": "Gamma",
+        "member_code": "M2"
+      }
+    ],
+    "classes": [
+      {
+        "class_id": 101,
+        "class_name": "Class A",
+        "class_name_en": "Class A",
+        "section": "A",
+        "write_year_id": 6,
+        "roster_year_id": 6,
+        "roster_fallback": false,
+        "member_ids": [
+          1,
+          2
+        ],
+        "subjects": [
+          {
+            "id": 10,
+            "subject_name": "Math",
+            "subject_name_en": "Math",
+            "subject_code": "MATH"
+          }
+        ],
+        "assessments": [
+          {
+            "id": 1001,
+            "subject_id": 10,
+            "assessment_name": "Quiz 1",
+            "assessment_type": "quiz",
+            "weight_percentage": 10,
+            "max_score": 20,
+            "assessment_order": 1,
+            "is_published": false
+          }
+        ]
+      }
+    ]
+  },
+  "grant_claims": {
+    "preparation_id": "824c5645ed41c2f8b4c387f7439c9105a69caf76783a210c23c00fb6f531d288",
+    "server_identity": "https://school.example/api/v1",
+    "owner_user_id": 7,
+    "authorization_version": 3,
+    "role": "teacher",
+    "family_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "issued_at": 1793872800,
+    "deadline": 1796464800,
+    "kind": "root",
+    "payload_sha256": "1efd196e6e64306e762a39e0e123bc0997a29fc392bfcfc170183e552bd24f04"
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "description": "Synthetic full grades preparation payload for dataset validator; not a transport fixture, not issued by PHP HMAC.",
+  "payload": {
+    "preparation_version": 1,
+    "complete": true,
+    "owner_user_id": 7,
+    "authorization_version": 3,
+    "role": "teacher",
+    "family_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "issued_at": 1793872800,
+    "deadline": 1796464800,
+    "preparation_id": "824c5645ed41c2f8b4c387f7439c9105a69caf76783a210c23c00fb6f531d288",
+    "server_identity": "https://school.example/api/v1",
+    "server_today": "2026-11-04",
+    "write_year": {
+      "id": 6,
+      "from": "2026-09-01",
+      "to": "2027-08-31",
+      "status": "active"
+    },
+    "terms": [
+      {
+        "id": 1,
+        "term_name": "Term 1",
+        "term_number": 1,
+        "is_current": true,
+        "is_reopened": false
+      }
+    ],
+    "members": [
+      {
+        "member_id": 1,
+        "student_name": "Alpha",
+        "father_name": "Beta",
+        "member_code": "M1"
+      },
+      {
+        "member_id": 2,
+        "student_name": "Zebra",
+        "father_name": "Gamma",
+        "member_code": "M2"
+      }
+    ],
+    "classes": [
+      {
+        "class_id": 101,
+        "class_name": "Class A",
+        "class_name_en": "Class A",
+        "section": "A",
+        "write_year_id": 6,
+        "roster_year_id": 6,
+        "roster_fallback": false,
+        "member_ids": [
+          1,
+          2
+        ],
+        "subjects": [
+          {
+            "id": 10,
+            "subject_name": "Math",
+            "subject_name_en": "Math",
+            "subject_code": "MATH"
+          }
+        ],
+        "assessments": [
+          {
+            "id": 1001,
+            "subject_id": 10,
+            "assessment_name": "Quiz 1",
+            "assessment_type": "quiz",
+            "weight_percentage": 10,
+            "max_score": 20,
+            "assessment_order": 1,
+            "is_published": false
+          }
+        ]
+      }
+    ]
+  }
+}

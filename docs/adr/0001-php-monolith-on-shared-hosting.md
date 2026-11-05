@@ -6,6 +6,8 @@
 
 > Recorded on 2026-10-22; the decision date is shown above. Evidence is cited so the decision can be checked; where the rationale is not documented, this is stated.
 
+> **2026-10-28 applicability:** hosting/deployment assumptions are partially superseded by [ADR-0021](0021-development-acceptance-before-production.md). Keep this dated rationale; do not interpret “no cron” below as a current environment guarantee. CLI maintenance jobs exist and actual schedules remain operator-verified dependencies.
+
 ## Context
 
 The school needed a low-cost system that a very small team can run. The available hosting is a shared account: PHP and MariaDB, file access only, with no shell, Composer, cron, Python, Redis or custom extensions for the application.

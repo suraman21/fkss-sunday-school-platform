@@ -1,8 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fkss_app/services/sync_recovery_models.dart';
 
-SyncRecoveryItem item(String state) => SyncRecoveryItem(
-      domain: SyncRecoveryDomain.attendance,
+SyncRecoveryItem item(String state,
+        {SyncRecoveryDomain domain = SyncRecoveryDomain.attendance}) =>
+    SyncRecoveryItem(
+      domain: domain,
       operationId: 'operation-1',
       state: state,
       title: 'Attendance',
@@ -28,10 +30,19 @@ void main() {
     expect(item('resolved_conflict').canRetry, isFalse);
   });
 
-  test('conflicts acknowledge while terminal attention can discard', () {
-    expect(item('resolved_conflict').canAcknowledge, isTrue);
-    expect(item('resolved_conflict').canDiscard, isTrue);
-    expect(item('needs_attention').canDiscard, isTrue);
+  test(
+      'other-domain conflicts acknowledge while terminal attention can discard',
+      () {
+    expect(
+        item('resolved_conflict', domain: SyncRecoveryDomain.grades)
+            .canAcknowledge,
+        isTrue);
+    expect(
+        item('resolved_conflict', domain: SyncRecoveryDomain.grades).canDiscard,
+        isTrue);
+    expect(
+        item('needs_attention', domain: SyncRecoveryDomain.grades).canDiscard,
+        isTrue);
     expect(item('pending').canDiscard, isFalse);
   });
 }

@@ -421,17 +421,66 @@ final class DepartmentStatusService
      * SQL fragment (starting with " AND ") that excludes members inactive in
      * $dept on $onDate (default today). $memberIdExpr is the column holding
      * the member id in the outer query (e.g. "m.id", "ce.member_id").
-     * Returns '' when the feature is unavailable, so call sites stay unchanged.
+     * Legacy default returns '' when unavailable. Opt-in preparation requires
+     * an explicit valid date and complete eligibility schema when enabled.
      */
-    public static function exclusionSql(\mysqli $conn, string $dept, string $memberIdExpr, ?string $onDate = null): string
+    public static function exclusionSql(\mysqli $conn, string $dept, string $memberIdExpr, ?string $onDate = null, bool $strictPreparation = false): string
     {
-        if (!self::isDepartment($dept) || !self::available($conn)) {
+        return self::buildExclusionSql($conn, $dept, $memberIdExpr, $onDate, $strictPreparation, true);
+    }
+
+    /** Strict batch compiler; local schema proof only, no static cache/grant. */
+    public static function preparationExclusions(\mysqli $conn, string $dept, string $memberIdExpr, array $dates): array
+    {
+        if (!$dates || !array_is_list($dates)) {
+            throw new \InvalidArgumentException('Explicit preparation dates are required.');
+        }
+        $out = []; $probe = true;
+        foreach ($dates as $date) {
+            if (!is_string($date) || isset($out[$date])) {
+                throw new \InvalidArgumentException('Unique explicit preparation dates are required.');
+            }
+            $out[$date] = self::buildExclusionSql($conn, $dept, $memberIdExpr, $date, true, $probe);
+            $probe = false;
+        }
+        return $out;
+    }
+
+    /** One existing eligibility predicate for legacy/single-date/batch paths. */
+    private static function buildExclusionSql(\mysqli $conn, string $dept, string $memberIdExpr, ?string $onDate, bool $strictPreparation, bool $probeColumns): string
+    {
+        if ($strictPreparation) {
+            if (!self::isDepartment($dept) || $onDate === null
+                || !preg_match('/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/D', $onDate)
+                || !checkdate((int)substr($onDate, 5, 2), (int)substr($onDate, 8, 2), (int)substr($onDate, 0, 4))) {
+                throw new \InvalidArgumentException('Explicit valid department and date are required for preparation.');
+            }
+        }
+        if (!self::isDepartment($dept) || !($strictPreparation ? self::enabled() : self::available($conn))) {
             return '';
         }
         if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$/', $memberIdExpr)) {
             throw new \InvalidArgumentException('Unsafe member id expression.');
         }
+        if ($strictPreparation && $probeColumns) {
+            // Do not trust a permissive cached availability result. Probe every
+            // eligibility column and surface failure in either mysqli mode.
+            $stmt = null;
+            try {
+                $stmt = $conn->prepare('SELECT member_id, department, status, started_at, ended_at FROM ' . self::TABLE . ' LIMIT 0');
+                if (!$stmt || !$stmt->execute() || !$stmt->get_result()) {
+                    throw new \RuntimeException('Eligibility query failed.');
+                }
+            } catch (\Throwable $error) {
+                throw new \RuntimeException('Preparation eligibility is unavailable.', 0, $error);
+            } finally {
+                if ($stmt instanceof \mysqli_stmt) $stmt->close();
+            }
+        }
         $next = self::nextDay($onDate ?? date('Y-m-d')) ?? date('Y-m-d', strtotime('tomorrow'));
+        if ($strictPreparation && !preg_match('/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/D', $next)) {
+            throw new \RuntimeException('Preparation eligibility date cannot be represented.');
+        }
         $nextSql = $conn->real_escape_string($next);
         return " AND NOT EXISTS (SELECT 1 FROM " . self::TABLE . " dsp
                      WHERE dsp.member_id = {$memberIdExpr}

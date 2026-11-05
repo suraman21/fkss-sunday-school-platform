@@ -23,8 +23,8 @@ class AppConfig {
   // drifting is what hid updates from phones before P65).
   // Mirrored from pubspec.yaml and pinned by the release-gate test because
   // API headers and update decisions need these values before package lookup.
-  static const String appVersion = '1.7.3';
-  static const int appBuild = 40;
+  static const String appVersion = '1.7.4';
+  static const int appBuild = 41;
   static const String tokenKey = 'fkss_token';
   static const String refreshTokenKey = 'fkss_refresh_token';
   static const String userDataKey = 'fkss_user';

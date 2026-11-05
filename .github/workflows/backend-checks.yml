@@ -1,28 +1,12 @@
-# ============================================================================
-# Backend checks — PHP syntax, security test suite, migration hygiene
-# ----------------------------------------------------------------------------
-# Added 2026-10-02 (audit finding L).
+# Backend checks: PHP syntax, isolated security/regression fixtures, mobile
+# tests/build and migration hygiene. This workflow checks code; it does not
+# deploy or use production credentials. Database-backed tests use the disposable
+# MariaDB service below and the guarded synthetic HTTP world.
 #
-# WHY THIS EXISTS
-# Before this file the repository had no `.github/` directory at all. The only
-# CI definition, docs/ci_cd/ci.yml.txt, is a .txt document that GitHub never
-# reads, and it covers the Flutter app only. That left two gaps:
-#
-#   1. tests/security/ contains 87 Python test files — including every
-#      regression test that proves audit findings A through K — and none of
-#      them ran automatically on any push or pull request.
-#   2. No `php -l` ran anywhere. That is exactly how finding I shipped: a
-#      fatal parse error in AssessmentTypeService.php reached main and sat
-#      there for roughly five days, reachable from nine call sites. A single
-#      lint job would have caught it in seconds.
-#
-# This workflow is deliberately narrow: it runs checks, it does not deploy,
-# and it needs no secrets, no database and no credentials.
-#
-# It does NOT replace docs/ci_cd/ci.yml.txt. To activate the Flutter job too,
-# copy that file to .github/workflows/ci.yml — it is valid as written and is
-# intentionally left untouched here.
-# ============================================================================
+# Current setup, zero-skip policy and evidence boundaries:
+# docs/DEVELOPMENT_AND_TESTING.md and docs/TEST_STRATEGY.md.
+# The historical nonexecuting workflow template is retired; do not copy an old
+# text-file proposal into .github/workflows/ to activate duplicate/stale jobs.
 
 name: Backend checks
 
@@ -158,20 +142,32 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
-          extensions: mysqli, pdo_mysql, mbstring, gd, curl, xml
+          extensions: mysqli, pdo_mysql, pdo_sqlite, mbstring, gd, curl, xml, zip
           coverage: none
 
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       - name: Install test dependencies
-        run: python -m pip install --upgrade pip pytest pytest-subtests
+        run: |
+          python -m pip install --upgrade pip pytest pytest-subtests openpyxl
+          sudo apt-get update -qq
+          sudo apt-get install -y mariadb-client
+          # Legacy guards use sudo mariadb with no host. Bridge that client
+          # to this job's disposable container, not a nonexistent local socket.
+          printf '[client]\nhost=127.0.0.1\nprotocol=tcp\nuser=root\npassword=root\n' | sudo tee /root/.my.cnf >/dev/null
+          sudo chmod 600 /root/.my.cnf
 
       - name: Report the versions under test
         run: |
           php -v | head -1
           python --version
+          node --version
           mysql -h 127.0.0.1 -u ssms -pssms -e 'SELECT VERSION() AS mariadb;' || true
 
       - name: Wait for MariaDB
@@ -207,7 +203,7 @@ jobs:
           # ssms_calendar_e2e is the disposable target for
           # tests/security/test_attendance_offline_calendar.py, which also
           # DROPs and re-creates its own tables for every test.
-          for db in ssms_comm_e2e ssms_e2e ssms_smoke ssms_pre056_e2e ssms_idem_e2e ssms_calendar_e2e; do
+          for db in ssms_comm_e2e ssms_e2e ssms_smoke ssms_pre056_e2e ssms_idem_e2e ssms_calendar_e2e ssms_test; do
             mysql -h 127.0.0.1 -u root -proot \
               -e "CREATE DATABASE IF NOT EXISTS \`$db\` \
                     CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -233,12 +229,40 @@ jobs:
           define('BACKUP_KEY', 'ci-only-not-a-real-secret');
           define('HEALTH_KEY', 'ci-only-not-a-real-secret');
           define('MONITOR_SECRET_KEY', 'ci-only-not-a-real-secret');
+          // Enable only in this disposable integration world; deployment default stays off.
+          if (!defined('FEATURE_ATTENDANCE_V2')) define('FEATURE_ATTENDANCE_V2', DB_NAME === 'ssms_test');
           EOF
           php -l .fkss_env.php
+
+      - name: Provision and start the isolated live-guard world
+        env:
+          SSMS_AUDIT_TESTING: '1'
+          SSMS_DB_NAME: ssms_test
+          TZ: Africa/Addis_Ababa
+        run: |
+          set -euo pipefail
+          sudo mariadb -e "SET GLOBAL time_zone='+03:00';"
+          bash tests/e2e/provision_env.sh
+          php -d error_reporting=24575 tests/e2e/live_guard_seed.php
+          PHP_CLI_SERVER_WORKERS=8 php -d error_reporting=24575 \
+            -S 127.0.0.1:8080 -t . tests/e2e/live_guard_router.php \
+            > /tmp/ssms-live-server.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8080/admin/index.php >/dev/null; then
+              curl --fail --silent http://127.0.0.1:8080/api/v1/ping
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/ssms-live-server.log
+          exit 1
 
       - name: Run tests/security
         env:
           SSMS_DB_NAME: ssms_comm_e2e
+          SSMS_AUDIT_TESTING: '1'
+          SSMS_LIVE_GUARDS: '1'
+          TZ: Africa/Addis_Ababa
         run: |
           set -uo pipefail
           # -rs reports every skip with its reason so the gate below can count
@@ -434,6 +458,20 @@ jobs:
           grep -q 'gradle-8.14.3-all.zip' android/gradle/wrapper/gradle-wrapper.properties
           echo "Clean checkout confirmed: no wrapper, no local.properties, Gradle 8.14.3 pinned."
 
+      - name: Reclaim unrelated hosted-runner disk space
+        # Private runners exhausted disk while combining debug/release native
+        # transforms. Remove only unused preinstalled tool families, never the
+        # checkout, Android SDK/NDK, JDK, Flutter, Gradle or PowerShell.
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_ACTIONS:-}" != "true" || "${RUNNER_ENVIRONMENT:-}" != "github-hosted" || "${RUNNER_OS:-}" != "Linux" ]]; then
+            echo "::error::Disk cleanup is restricted to Linux GitHub-hosted runners."
+            exit 1
+          fi
+          df -h "$GITHUB_WORKSPACE"
+          sudo rm -rf -- /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h "$GITHUB_WORKSPACE"
+
       - name: Set up JDK 17
         # flutter_tools 3.44.9 sets errorJavaMinVersionAndroid = 17.0.0, and
         # AGP 8.11.1 requires JDK 17+. Pinned rather than inherited so a runner
@@ -506,9 +544,9 @@ jobs:
           cat android/local.properties
 
       - name: Build the debug APK
-        # Debug, not release: the objective is compilation. No signing config,
-        # no keystore, no credentials. The release path's R8 shrinking is a
-        # separate concern and is not exercised here.
+        # Retain debug compilation and receiver checks below. The additional
+        # release-mode artifact gate separately exercises R8/native packaging;
+        # CI has no owner keystore and does not publish either APK.
         run: flutter build apk --debug
 
       - name: Confirm the wrapper was injected rather than committed
@@ -571,8 +609,68 @@ jobs:
             | sed "s/.*name='//;s/'.*//" | sort | tee /tmp/perms.txt
           echo "total: $(wc -l < /tmp/perms.txt)   declared by the app: 9"
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, xml
+          coverage: none
+
+      - name: Record selected native SDK versions
+        run: |
+          set -euo pipefail
+          ./android/gradlew -p android :app:dependencyInsight \
+            --configuration releaseRuntimeClasspath --dependency com.google.mlkit:barcode-scanning \
+            > build/barcode-native-dependency.txt
+          ./android/gradlew -p android :app:dependencyInsight \
+            --configuration releaseRuntimeClasspath --dependency androidx.camera \
+            > build/camera-native-dependencies.txt
+
+      - name: Exercise owner release script with universal and ARM splits (CI test signing only)
+        shell: pwsh
+        run: ./scripts/build-release.ps1 -SplitPerAbi
+
+      - name: Verify actual release-set identity and PHP architecture publication guards
+        run: |
+          set -euo pipefail
+          VERSION="$(sed -n 's/^version: *//p' pubspec.yaml)"
+          python ../../tests/e2e/android_release_artifacts.py "dist/$VERSION" \
+            --report build/android-release-set.json --summary "$GITHUB_STEP_SUMMARY"
+          git diff --exit-code -- pubspec.yaml pubspec.lock android
+
+      # Owner-approved storage policy: actual verification is mandatory above.
+      # Public dev archives CI builds; private prod retains full logs/summary,
+      # not duplicate APK archives. Unknown visibility fails closed.
+      - name: Preserve release artifact compatibility evidence (not a publishable release)
+        if: always() && github.event.repository.visibility == 'public'
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-compatibility-evidence
+          path: |
+            Mobile/wbws_flutter_app/dist/**/*.compatibility.json
+            Mobile/wbws_flutter_app/dist/**/release-manifest.json
+            Mobile/wbws_flutter_app/build/android-release-set.json
+            Mobile/wbws_flutter_app/build/*native-dependenc*.txt
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Preserve CI-test-signed release APKs for native inspection, never publication
+        if: always() && github.event.repository.visibility == 'public'
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-ci-test-signed-apks-not-for-publication
+          path: |
+            Mobile/wbws_flutter_app/build/app/outputs/flutter-apk/app-release.apk
+            Mobile/wbws_flutter_app/build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+            Mobile/wbws_flutter_app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Upload the debug APK
-        if: success()
+        if: success() && github.event.repository.visibility == 'public'
         uses: actions/upload-artifact@v4
         with:
           name: app-debug-apk

@@ -113,13 +113,13 @@ class MobilePhase2(unittest.TestCase):
 
     def test_no_new_packages(self):
         pub = (FL / 'pubspec.yaml').read_text(encoding='utf-8')
-        self.assertRegex(pub, r'(?m)^version:\s*1\.7\.3\+40\s*$')
+        self.assertRegex(pub, r'(?m)^version:\s*1\.7\.4\+41\s*$')
         lock = (FL / 'pubspec.lock').read_text(encoding='utf-8')
         self.assertNotIn('flutter_typeahead', lock)
 
     def test_release_notes_describe_1_7_3(self):
         n = (FL / 'RELEASE_NOTES.md').read_text(encoding='utf-8')
-        self.assertTrue(n.split('## ')[1].startswith('1.7.3 (build 40)'))
+        self.assertTrue(n.split('## ')[1].startswith('1.7.4 (build 41)'))
         for s in ('Live limit', 'Did not take', 'View only', 'Result card'):
             self.assertIn(s, n)
 

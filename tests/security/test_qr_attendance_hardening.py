@@ -76,7 +76,9 @@ class MobileScanSurfaceTests(unittest.TestCase):
             (self.mez, "saveMezmurLocal"),
         ):
             self.assertIn("QrScanSheet.open", src)
-            self.assertIn("_handleQrScan", src)
+            # Attendance exposes the actual callback for runtime regression
+            # tests; Mezmur retains its private name. Verify wiring, not spelling.
+            self.assertRegex(src, r"onScan:\s+_?handleQrScan")
             self.assertIn("_autoSaveNow", src)
             self.assertIn("_scheduleAutoSave", src)
             self.assertIn("packetKind: 'draft'", src)

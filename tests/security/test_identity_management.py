@@ -164,7 +164,8 @@ class IdentityManagementV2Tests(unittest.TestCase):
     def test_flags_are_derived_from_positions(self):
         self.assertIn("function deriveFlags", self.sync)
         self.assertIn("legacy_flag", self.sync)
-        self.assertIn("syncMemberType", self.sync)
+        self.assertIn("self::deriveFlags($conn, $memberId)", self.sync)
+        self.assertNotIn("syncMemberType", self.sync)
 
     # ── V6: edu-dept convergence ────────────────────────────────────
     def test_teacher_flows_converge_positions(self):

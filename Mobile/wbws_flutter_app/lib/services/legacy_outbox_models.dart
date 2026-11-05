@@ -35,9 +35,37 @@ enum SubmitUndoResult {
   supersededSession,
 }
 
+/// Original sheet identity; this is a write fence, not an authorization grant.
+final class LegacyWriteSession {
+  final int ownerUserId;
+  final int authorizationVersion;
+  final int runtimeGeneration;
+
+  const LegacyWriteSession({
+    required this.ownerUserId,
+    required this.authorizationVersion,
+    required this.runtimeGeneration,
+  });
+
+  bool get isValid =>
+      ownerUserId > 0 && authorizationVersion >= 0 && runtimeGeneration >= 0;
+}
+
+final class StaleLegacyWriteSession implements Exception {
+  const StaleLegacyWriteSession();
+
+  @override
+  String toString() =>
+      'Sign-in changed. These edits are not saved. Existing saved work was kept.';
+}
+
 /// Immutable, PII-light handle for one complete saved packet generation.
 final class LegacyOperationRef {
   final LegacyOperationKind kind;
+  /// Original WRITE year, only when explicitly captured and coherent.
+  /// Null means unknown; never infer from current session or roster fallback.
+  /// Not authorization and not a durable acceptance receipt.
+  final int? originalAcademicYearId;
   final Map<String, Object?> naturalKey;
   final String clientOpId;
   final LegacyPacketKind packetKind;
@@ -47,6 +75,7 @@ final class LegacyOperationRef {
 
   LegacyOperationRef({
     required this.kind,
+    this.originalAcademicYearId,
     required Map<String, Object?> naturalKey,
     required this.clientOpId,
     required this.packetKind,
@@ -94,6 +123,11 @@ final class LegacySettlement {
   final int? failureHttpStatus;
   final String? failureMessage;
   final DateTime? nextAttemptAt;
+  // Exact atomic receipt (when kind == accepted and a server response exists).
+  // The receipt is stored atomically with the outbox completion — never separately.
+  final String? receiptJson;
+  final String? serverRequestId;
+  final int? httpStatus;
 
   const LegacySettlement({
     required this.kind,
@@ -101,5 +135,8 @@ final class LegacySettlement {
     this.failureHttpStatus,
     this.failureMessage,
     this.nextAttemptAt,
+    this.receiptJson,
+    this.serverRequestId,
+    this.httpStatus,
   });
 }

@@ -72,10 +72,19 @@ def axml_manifest(package: str, version_name: str, version_code: int, *,
     return struct.pack("<HHI", 0x0003, 8, 8 + len(body)) + body
 
 
+def native_headers(abis=("armeabi-v7a", "arm64-v8a", "x86_64")):
+    """Deliberately noninstallable ELF identity fixtures; no code or signatures."""
+    for abi in abis:
+        elf_class, machine = {"armeabi-v7a": (1, 40), "arm64-v8a": (2, 183), "x86_64": (2, 62)}[abi]
+        head = b"\x7fELF" + bytes([elf_class, 1, 1]) + bytes(9) + struct.pack("<HHI", 3, machine, 1) + bytes(40)
+        for library in ("libflutter.so", "libapp.so"):
+            yield f"lib/{abi}/{library}", head
+
+
 def write_apk(path: Path, package: str = "com.arkeonethiopia.fkss", version_name: str = "1.7.4",
               version_code: int = 41, *, deflate: bool = True, utf8: bool = False,
               names_by_resource_id_only: bool = False, manifest: bytes | None = None,
-              padding: int = 2048) -> Path:
+              padding: int = 2048, abis=("armeabi-v7a", "arm64-v8a", "x86_64")) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     xml = manifest if manifest is not None else axml_manifest(
         package, version_name, version_code, utf8=utf8, names_by_resource_id_only=names_by_resource_id_only)
@@ -85,4 +94,6 @@ def write_apk(path: Path, package: str = "com.arkeonethiopia.fkss", version_name
         if manifest is not False:
             z.writestr("AndroidManifest.xml", xml)
         z.writestr("classes.dex", b"dex\n035\x00" + b"\x00" * padding)
+        for name, head in native_headers(abis):
+            z.writestr(name, head)
     return path

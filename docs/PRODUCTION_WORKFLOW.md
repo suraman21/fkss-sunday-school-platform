@@ -1,157 +1,87 @@
-# Production Workflow — FKSS
+# Development acceptance and production promotion
 
-> Established 2026-10-07 (production migration **Step 1**). This document
-> defines how code travels from development to production, who approves it,
-> and what CI enforces. Application configuration, domains and deployment
-> are deliberately unchanged in Step 1.
+**Status:** maintained release policy, updated 2026-10-28. Source baseline: development main `7209278`. This document distinguishes owner instructions, checked-in automation and historical observations. It does not certify live servers or current repository-protection settings.
 
-## Current state (verified 2026-10-22)
+## Current delivery policy
 
-The policy below was adopted on 2026-10-07. Part of it is **not** in effect today. The table shows where practice differs.
+```text
+Scoped change on a development branch
+    → commit and push
+    → development pull request and all applicable checks
+    → authorized merge to development main
+    → development-server cron update, independently verified
+    → owner acceptance on development / owner-built phone APK
+    → separate explicit authorization for production promotion
+    → production review, checks and approved deployment
+    → post-deployment verification and dated release record
+```
 
-| Policy element | Actual state, 2026-10-25 |
-|---|---|
-| Changes reach production `main` through a sync pull request with one approving review | Pull requests #1–#10 in the production repository used the sync flow until 2026-10-08. From 2026-10-08 to 2026-10-22, approved commits were **pushed directly** to `main` in both repositories. Since 2026-10-23, changes reach the development repository's `main` through pull requests, and the same commits are then **pushed directly** to the production repository's `main`; the two stay identical |
-| Production `main` is protected | **No branch protection is active** on the production repository: protection for private repositories is unavailable on the current GitHub plan. The development repository's `main` requires only the *Branch guard* job (`main must build the production app`). No review is required, and administrators are exempt (rechecked 2026-10-25) |
-| Every job must be green before merge | *Backend checks* has been **failing** on `main` since `b9cbb0f` (2026-10-19). See [DEVELOPMENT_AND_TESTING.md](DEVELOPMENT_AND_TESTING.md#3-current-ci-status) |
-| Deployment is not configured | It is still not automated. Production is deployed by a **manual SFTP upload** of changed files, with a backup and checksum verification. See [OPERATIONS.md](OPERATIONS.md#2-code-deployment-manual-sftp) |
-
-Restoring the intended policy is tracked as L-6 in [OPERATIONS.md §7.1](OPERATIONS.md#71-known-limitations). Until then, treat the sections below as the **intended** workflow.
+**Stop before production unless the owner explicitly authorizes it.** Permission to merge development main is not permission to push to production, publish an APK, apply migrations, change hosting or access real school records. Do not automatically synchronize both repository mains after every development merge.
 
 ## Repository roles
 
-| | Development repository | Production repository |
-|---|---|---|
-| URL | https://github.com/suraman21/fkss-sunday-school-platform | https://github.com/Felege-Kidusan/felegekidusan |
-| Purpose | development, feature work, experimentation, testing, development CI | production-ready code, approved releases, production CI, release history |
+| Repository | Purpose |
+|---|---|
+| [Development](https://github.com/suraman21/fkss-sunday-school-platform) | Feature/documentation branches, pull requests, source review, isolated tests and development-main integration |
+| [Production](https://github.com/Felege-Kidusan/felegekidusan) | Separately approved production states and release history, not experimental work |
 
-**Rules**
+The owner's instruction is that cron pulls development main to the development server. Its execution, deployed files, schema and feature flags must be verified separately. Source equality does not prove runtime parity. `dev` remains a distinct beta-configuration branch; never merge it into `main` or push it to production. See [BRANCHING.md](../BRANCHING.md).
 
-- The production repository is **not** a second development repository. No
-  feature work, no experiments, no unreviewed fixes happen here.
-- Production `main` contains only code approved for production.
-- The development repository remains the working source of truth; this
-  repository receives approved states of it.
+## Development integration
 
-## Branch strategy (intended policy)
+1. Start a scoped branch from current development main. Record the baseline and affected workflows before editing.
+2. Use synthetic local data and the existing fixture harnesses. Preserve permissions, API compatibility and database boundaries unless the owner authorizes a change to them.
+3. Commit the reviewed diff and push the branch without embedding credentials in the remote URL or logs.
+4. Open a development pull request. Verify successful checks for its exact head; resolve failures, conflicts and required reviews. Do not bypass protections.
+5. Merge only within the owner's authorization. Verify the resulting main revision and its checks.
+6. Record the development-server revision and owner acceptance separately. The owner builds/signs the APK locally and tests the phone; CI's debug build is not that acceptance.
 
-- `main` — the production branch. Protected: changes arrive by pull request
-  with green CI and one approving review; force pushes and deletions are
-  rejected (repository admins can bypass in an emergency).
-- `sync/from-development`, `hotfix/*` — short-lived branches inside this
-  repository, used only as pull-request sources and deleted after merge.
-- `feature/*` and `fix/*` branches live in the **development** repository.
-- No other permanent branches.
+## CI requirements
 
-## How approved code reaches production
+Checked-in development automation at the baseline:
 
-```text
-Developer
-   |
-   v
-feature/* or fix/* branch        (development repository)
-   |
-   v
-development PR + backend-checks CI
-   |
-   v
-approved merge to development main
-   |
-   v
-sync PR into this repository
-   |
-   v
-production CI (backend checks + production integrity)
-   |
-   v
-manual approval + merge  =  production release on main
-```
+| Workflow | Function |
+|---|---|
+| [backend-checks.yml](../.github/workflows/backend-checks.yml) | PHP 8.4/8.5 lint, isolated backend zero-skip suite, idempotency lifecycle, Flutter tests, migration hygiene and debug APK build |
+| [production-integrity.yml](../.github/workflows/production-integrity.yml) | Repository secrets/artifacts/history guards |
+| [branch-guard.yml](../.github/workflows/branch-guard.yml) | Main mobile configuration and beta-branch constraints |
+| [apk-upload-e2e.yml](../.github/workflows/apk-upload-e2e.yml) | Manually dispatched synthetic browser/PHP APK-transfer acceptance |
 
-Step by step:
+All eight automatic baseline checks passed on `7209278`; see [dated evidence](reports/DOCUMENTATION_BASELINE_2026-10-28.md). That does not establish the next candidate's results. The backend job fails on **any** skip. CI does not deploy, approve production, certify security or prove phone installation. Verify the production repository's actual checks and protection settings before promotion instead of assuming they match this checkout.
 
-1. Develop on `feature/*` / `fix/*` branches in **suraman21/fkss-sunday-school-platform**.
-2. Open the pull request there; `backend-checks.yml` must pass.
-3. Merge to development `main` after review.
-4. A maintainer pushes the approved commit here as a PR source branch:
-   `git push https://github.com/Felege-Kidusan/felegekidusan.git <approved-commit>:refs/heads/sync/from-development`
-5. Open a pull request `sync/from-development` → `main` **in this repository**.
-6. Both workflows must pass (see CI requirements below).
-7. A maintainer approves (one approving review is required) and merges. The
-   resulting `main` state is the production release. Delete the sync branch.
+### CI evidence storage, not deployment storage
 
-Hotfixes follow the same path from a `hotfix/*` branch in the development
-repository — still via pull request and CI here.
+The owner-approved no-billing policy keeps the same build/verification workflow in public development and private production. Actual Android debug/universal/ARM, SDK/native/signature and PHP inspection gates remain mandatory. Full generated reports are recorded in Actions logs/job summaries; only public repositories additionally upload downloadable CI report/APK archives. Private CI APK bytes are not retained or copied to public storage. See [the precise retention and provenance boundaries](../Mobile/wbws_flutter_app/docs/ANDROID_COMPATIBILITY.md#ci-evidence-storage).
 
-## CI requirements (this repository)
+Repository contents do not equal account resources: public and private Actions usage have different allowance rules, and separate owners have separate usage histories. This policy does not change repository visibility, billing, owner release signing/publication or log-retention settings. Use the automatic PR checks rather than dispatching duplicate manual runs for an already running candidate.
 
-Two workflows run on every push to `main` and every pull request:
+## Production approval principle
 
-1. **Backend checks** (`backend-checks.yml`, unchanged from the development
-   repository): PHP syntax lint of every first-party PHP file, the security
-   and regression suite (`tests/security`) against a real MariaDB with a
-   zero-skip policy, the F-20 idempotency lifecycle harness, Flutter unit
-   tests with the committed lockfile, migration numbering hygiene, and an
-   Android debug APK build with manifest/dex verification.
-2. **Production integrity** (`production-integrity.yml`, this repository
-   only): no credential/environment/artifact files tracked, no secret-shaped
-   material in the tree **or anywhere in history**, no tracked file over
-   15 MiB, and no workflow may read repository secrets.
+A production release needs a named approver, the accepted development SHA, explicit promotion authorization and a release record. The intended review policy is a production pull request with green checks and a human approval. Repository settings may not enforce the whole policy; do not confuse a written rule with an installed protection.
 
-CI needs no secrets, no production database and no credentials. A pull
-request is not mergeable until every job is green.
+Before promotion, the operator must:
 
-## Production approval principle (intended policy)
+1. Confirm owner acceptance and the exact files/revision in scope.
+2. Check installed-client compatibility and any migration order, data effects and feature flags.
+3. Prepare verified backups, key custody and a release-specific rollback plan. Forward-only migrations and local SQLite transitions may prevent a simple code downgrade.
+4. Use only the separately authorized production access and deployment method. [OPERATIONS.md](OPERATIONS.md) retains conditional SFTP safeguards; [the deployment runbook](audits/DEPLOYMENT_RUNBOOK.md) retains migration and restore checks.
+5. Verify the resulting files, schema and critical workflows, then record the observations and remaining gaps. Do not label a successful repository push as a server deployment.
 
-- Every change to production `main` requires a pull request, green CI and at
-  least one human approval.
-- CI is a gate, never an approver: no auto-merge, no auto-deploy.
-- Deployment is a deliberate manual act by a named person.
+If checks fail, access is missing, the deployment method is unclear or rollback is unsafe, stop the release action and report the blocker. Continue only safe, in-scope work.
 
-## Deployment — not automated
+## Historical observations
 
-> **Current practice:** manual SFTP deployment by a maintainer; see [OPERATIONS.md](OPERATIONS.md). The text below is the original 2026-10-07 statement, kept for history.
+The original policy was established on 2026-10-07. These observations explain earlier documents; they are not a current settings audit:
 
-**Nothing in this repository deploys anywhere.** There are no deploy keys, no
-server credentials, no webhooks and no deployment jobs. This is intentional
-(Step 1 scope): deployment will be designed and approved in a later migration
-step, after the new production server has been audited and prepared.
+- Production pull requests #1–#10 used the sync flow through 2026-10-08. Later records describe approved direct pushes to both mains and manual SFTP deployment.
+- The 2026-10-25 settings record reported no production branch protection because of the private-repository plan, and only *Branch guard* required in development with administrator exemptions. Current settings remain **UNKNOWN** until rechecked through authorized access.
+- Earlier backend runs were red because of missing fixture prerequisites and 79 skipped tests. PR #41 repaired that environment; later baseline checks are green.
+- No checked-in deployment job is evidence of hosting cron configuration. Conversely, the owner's development cron instruction is not proof of production automation.
 
-Until then, the live system continues to be updated by the manual server-side
-procedure documented in `Mobile/HOW_TO_SHIP_AN_UPDATE.md` and
-`docs/audits/DEPLOYMENT_RUNBOOK.md`.
+Preserve dated deployment records in [CHANGELOG.md](../CHANGELOG.md#production-deployment-record). Do not rewrite historical outcomes to look successful.
 
-Future architecture (to be approved in a later step):
+## Secrets and release evidence
 
-```text
-production main (approved release)
-   |
-   v
-CI (checks only)
-   |
-   v
-manual trigger + approval
-   |
-   v
-deployment mechanism on the cPanel server   (exact form decided later)
-   |
-   v
-post-deploy health verification             (runbook STAGE 5)
-```
+Runtime secrets remain outside the web root in the approved environment file. Public documentation lists key names only. Never commit tokens, credentials, keys, school records or private infrastructure details. Use approved access-transfer channels for maintainer continuity.
 
-## Secrets policy
-
-- No secrets in this repository — not in the tree, not in history.
-  `production-integrity.yml` enforces this on every push and pull request.
-- Production runtime secrets (database credentials, JWT_SECRET, BACKUP_KEY,
-  Telegram tokens, …) live only in the server-side `.fkss_env.php` above the
-  web root of the production server; `env.example.php` documents the key
-  inventory.
-- When a future approved step needs CI secrets (for example to deploy), they
-  will be GitHub environment secrets configured through repository settings —
-  never committed files.
-
-## Related documents
-
-- `docs/ci_cd/ARCHITECTURE.md`, `docs/ci_cd/GIT_CHEATSHEET.md` — development workflow
-- `docs/audits/DEPLOYMENT_RUNBOOK.md` — server-side go-live procedure
-- `docs/OPERATIONS.md` — current deployment procedure (server code and mobile releases)
+For each release, record repository/branch, candidate and merged SHAs, checks, operator/approver, owner acceptance, migration observations, file verification, APK version/signer where applicable, rollback readiness and unresolved gates. [DEVELOPMENT_AND_TESTING.md](DEVELOPMENT_AND_TESTING.md), [OPERATIONS.md](OPERATIONS.md) and [DOCUMENTATION_STANDARD.md](DOCUMENTATION_STANDARD.md) define the related evidence boundaries.

@@ -1,6 +1,6 @@
 /**
  * Super Admin — Mobile App Release Management UI Module
- * Telegram-style parallel part-pool APK upload engine (512 KB parts,
+ * Verified parallel part-pool APK upload engine (up to 512 KB parts,
  * 4-way sliding window, per-part deadlines/retries, resumable) with
  * Real-time State Handling & cPanel Fault-Tolerance.
  */
@@ -8,43 +8,23 @@
   'use strict';
 
   var API_URL = '/admin/api_app_release.php';
-  // Telegram-style part-pool transfer (modelled on MTProto upload.saveFilePart,
-  // core.telegram.org/api/files): fixed 512 KB parts, a sliding window of
-  // parallel part requests, per-part deadlines and independent retries.
+  // Bounded binary part pool; concurrency decreases after transient failures.
   var PART_SIZE = 512 * 1024;       // 512 KB — Telegram's recommended part quantum
-  var POOL_SIZE = 4;                // parts always in flight (parallel call queue)
+  var POOL_SIZE = 4;                // initial maximum parallel requests
   var PART_DEADLINE_MS = 45000;     // a stalled part is aborted and retried alone
   var MAX_PART_RETRIES = 8;
   var WATCHDOG_MS = 60000;          // no ack at all in this window => visible diagnostics
 
   // Upload State Machine
   var currentUpload = {
-    state: 'idle', // 'idle' | 'selected' | 'uploading' | 'assembling' | 'success' | 'error'
+    state: 'idle', // 'idle' | 'selected' | 'preparing' | 'uploading' | 'assembling' | 'success' | 'error'
     file: null,
     abi: 'universal',
     uploadId: null,
     totalChunks: 0,
-    currentChunkIndex: 0,
-    chunkRetries: 0,
-    startTime: 0,
-    uploadedBytesBeforeCurrentChunk: 0,
-    lastSpeedUpdate: 0,
-    lastLoadedBytes: 0,
-    speedBps: 0,
-    xhr: null,
-    aborted: false,
-    partsAcked: {},
-    partRetries: {},
-    controllers: {},
     ackedBytes: 0,
     ackedCount: 0,
-    inFlight: 0,
-    nextPart: 0,
-    base64Only: false,
-    watchdog: null,
-    lastAckAt: 0,
-    lastErrorText: '',
-    fallbackActive: false
+    attempt: null
   };
 
   function escapeHtml(str) {
@@ -55,16 +35,6 @@
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#039;');
-  }
-
-  function blobToBase64(blob, cb) {
-    var fr = new FileReader();
-    fr.onload = function () {
-      var s = String(fr.result || '');
-      cb(s.slice(s.indexOf(',') + 1));
-    };
-    fr.onerror = function () { cb(''); };
-    fr.readAsDataURL(blob);
   }
 
   function formatBytes(bytes) {
@@ -120,7 +90,8 @@
       var dropZone = document.getElementById('upload-idle-state') || document.querySelector('.apk-drop-box');
       var fileInput = document.getElementById('upload-apk-input');
 
-      if (dropZone) {
+      if (dropZone && !dropZone._apkUploadBound) {
+        dropZone._apkUploadBound = true;
         ['dragenter', 'dragover'].forEach(function (eventName) {
           dropZone.addEventListener(eventName, function (e) {
             e.preventDefault();
@@ -150,7 +121,8 @@
         }, false);
       }
 
-      if (fileInput) {
+      if (fileInput && !fileInput._apkUploadBound) {
+        fileInput._apkUploadBound = true;
         fileInput.addEventListener('change', function () {
           if (fileInput.files && fileInput.files[0]) {
             AppReleaseUI.onFileSelected(fileInput.files[0]);
@@ -166,6 +138,11 @@
     },
 
     onAbiChange: function (val) {
+      if (currentUpload.attempt) {
+        var select = document.getElementById('upload-abi-select');
+        if (select) select.value = currentUpload.abi;
+        return;
+      }
       currentUpload.abi = val || 'universal';
       var abiEl = document.getElementById('stage-file-abi');
       if (abiEl) {
@@ -175,6 +152,7 @@
 
     onFileSelected: function (file) {
       if (!file) return;
+      if (currentUpload.attempt) { showAlert('warn', 'Stop this upload before selecting another APK.'); return; }
 
       if (!file.name.toLowerCase().endsWith('.apk')) {
         showAlert('danger', 'Invalid file type. Only Android APK binaries (.apk) are supported.');
@@ -183,8 +161,8 @@
         return;
       }
 
-      if (file.size > 262144000) { // 250 MB
-        showAlert('danger', 'APK file exceeds the maximum 250MB limit.');
+      if (file.size > 536870912) { // 512 MiB
+        showAlert('danger', 'APK file exceeds the maximum 512 MiB limit.');
         return;
       }
 
@@ -234,6 +212,7 @@
           }
           break;
 
+        case 'preparing':
         case 'uploading':
           if (progressBox) progressBox.style.display = 'block';
           break;
@@ -256,363 +235,333 @@
       }
     },
 
-    startUpload: function () {
-      if (!currentUpload.file) {
-        var fileInput = document.getElementById('upload-apk-input');
-        if (fileInput && fileInput.files && fileInput.files[0]) {
-          currentUpload.file = fileInput.files[0];
-          currentUpload.totalChunks = Math.max(1, Math.ceil(fileInput.files[0].size / PART_SIZE));
-          currentUpload.uploadId = generateUploadId();
-        }
-      }
+    // Each attempt owns its requests, counters and timers. Never let old callbacks
+    // read a newly selected file or decrement a later attempt's counters.
+    isCurrent: function (ctx) { return currentUpload.attempt === ctx && !ctx.stopped; },
 
-      if (!currentUpload.file || currentUpload.state === 'uploading') return;
-
-      var abiSelect = document.getElementById('upload-abi-select');
-      if (abiSelect) {
-        currentUpload.abi = abiSelect.value || 'universal';
-      }
-
-      currentUpload.state = 'uploading';
-      currentUpload.aborted = false;
-      currentUpload.currentChunkIndex = 0;
-      currentUpload.chunkRetries = 0;
-      currentUpload.startTime = Date.now();
-      currentUpload.lastSpeedUpdate = Date.now();
-      currentUpload.uploadedBytesBeforeCurrentChunk = 0;
-      currentUpload.lastLoadedBytes = 0;
-      currentUpload.speedBps = 0;
-
-      this.renderUploadUI();
-      this.beginTransfer();
+    stopAttempt: function () {
+      var ctx = currentUpload.attempt;
+      if (!ctx) return;
+      ctx.stopped = true;
+      Object.keys(ctx.controllers).forEach(function (k) { ctx.controllers[k].abort(); });
+      Object.keys(ctx.timers).forEach(function (k) { clearTimeout(Number(k)); });
+      ctx.waiters.splice(0).forEach(function (reject) { reject({ stale: true }); });
+      if (ctx.watchdog) clearInterval(ctx.watchdog);
+      currentUpload.attempt = null;
     },
 
+    storageKey: function () {
+      return 'fkss-apk-upload:v2:' + String((window.SA_BOOT && window.SA_BOOT.upload_owner) || 0);
+    },
 
-    // ── Transfer engine — Telegram-style part pool ──────────────────
-    // Clones MTProto's upload strategy (core.telegram.org/api/files):
-    //   * the file is split into fixed 512 KB parts, each its own request;
-    //   * a sliding window keeps POOL_SIZE parts in flight at all times —
-    //     every ack immediately launches the next part (parallel call queue);
-    //   * each part carries its own deadline: a stalled request is aborted
-    //     and THAT PART alone is retried, so one dead connection can never
-    //     freeze the transfer (the old sequential engine died this way);
-    //   * resume = ask the server which parts already exist and send only
-    //     the missing ones (survives page reloads and browser restarts).
-    beginTransfer: function () {
+    readResume: function () {
+      var value = currentUpload.resume || null;
+      try { value = JSON.parse(window.localStorage.getItem(this.storageKey()) || 'null') || value; }
+      catch (e) { /* Storage disabled: retain same-page recovery in memory. */ }
+      if (value && /^[a-zA-Z0-9_-]{8,64}$/.test(value.id) && Date.now() - value.savedAt < 14400000 && value.savedAt <= Date.now()) return value;
+      return null;
+    },
+
+    saveResume: function (ctx, force) {
+      if (!this.isCurrent(ctx) || !ctx.fingerprint || (!force && Date.now() - ctx.savedAt < 5000)) return;
+      ctx.savedAt = Date.now();
+      currentUpload.resume = { id: ctx.id, fingerprint: ctx.fingerprint,
+        size: ctx.file.size, partSize: ctx.partSize, abi: ctx.abi, savedAt: ctx.savedAt };
+      try { window.localStorage.setItem(this.storageKey(), JSON.stringify(currentUpload.resume)); }
+      catch (e) { /* No APK bytes, filenames, CSRF tokens or session cookies stored. */ }
+    },
+
+    clearResume: function () {
+      currentUpload.resume = null;
+      try { window.localStorage.removeItem(this.storageKey()); } catch (e) {}
+    },
+
+    wait: function (ctx, ms) {
       var self = this;
-      currentUpload.fallbackActive = false;
-      currentUpload.base64Only = false;
-      currentUpload.partsAcked = {};
-      currentUpload.ackedBytes = 0;
-      currentUpload.ackedCount = 0;
-      currentUpload.nextPart = 0;
-      currentUpload.inFlight = 0;
-      currentUpload.partRetries = {};
-      currentUpload.controllers = {};
-      currentUpload.lastAckAt = Date.now();
-      currentUpload.lastErrorText = '';
-
-      var label = document.getElementById('upload-status-subtext');
-      if (label) {
-        label.innerHTML = '<span style="color:#38bdf8"><i class="fa-solid fa-satellite-dish"></i> Checking server for already-received parts…</span>';
-      }
-
-      var formData = new FormData();
-      formData.append('action', 'upload_status');
-      formData.append('upload_id', currentUpload.uploadId);
-      formData.append('total_chunks', currentUpload.totalChunks);
-      formData.append('csrf_token', getCsrfToken());
-
-      fetch(API_URL + '?action=upload_status', {
-        method: 'POST',
-        headers: { 'X-CSRF-TOKEN': getCsrfToken() },
-        credentials: 'same-origin',
-        body: formData
-      })
-        .then(function (res) { return res.json(); })
-        .then(function (res) {
-          if (res && res.status === 'success' && res.data && Array.isArray(res.data.received)) {
-            res.data.received.forEach(function (idx) { self.markPartAcked(Number(idx), true); });
-          }
-          self.startWorkers();
-        })
-        .catch(function () { self.startWorkers(); });
+      return new Promise(function (resolve, reject) {
+        if (!self.isCurrent(ctx)) { reject({ stale: true }); return; }
+        ctx.waiters.push(reject);
+        var timer = setTimeout(function () {
+          delete ctx.timers[timer];
+          ctx.waiters = ctx.waiters.filter(function (r) { return r !== reject; });
+          if (!self.isCurrent(ctx)) reject({ stale: true }); else resolve();
+        }, ms);
+        ctx.timers[timer] = true;
+      });
     },
 
-    partBytes: function (idx) {
-      var start = idx * PART_SIZE;
-      return Math.max(0, Math.min(PART_SIZE, currentUpload.file.size - start));
-    },
-
-    markPartAcked: function (idx, silent) {
-      if (currentUpload.partsAcked[idx]) return;
-      currentUpload.partsAcked[idx] = 1;
-      currentUpload.ackedCount++;
-      currentUpload.ackedBytes += this.partBytes(idx);
-      if (!silent) {
-        currentUpload.lastAckAt = Date.now();
-        var now = Date.now();
-        var timeDiff = (now - currentUpload.lastSpeedUpdate) / 1000;
-        if (timeDiff >= 0.5) {
-          currentUpload.speedBps = (currentUpload.ackedBytes - currentUpload.lastLoadedBytes) / timeDiff;
-          currentUpload.lastSpeedUpdate = now;
-          currentUpload.lastLoadedBytes = currentUpload.ackedBytes;
+    requestJson: async function (ctx, action, values, timeout) {
+      if (!this.isCurrent(ctx)) throw { stale: true };
+      var controller = new AbortController(), id = ++ctx.requestSeq;
+      ctx.controllers[id] = controller;
+      var timer = setTimeout(function () { controller.abort(); }, timeout || PART_DEADLINE_MS);
+      ctx.timers[timer] = true;
+      var form = new FormData();
+      form.append('action', action);
+      form.append('csrf_token', getCsrfToken());
+      Object.keys(values).forEach(function (k) {
+        var v = values[k];
+        if (k === 'chunk_file') form.append(k, v, 'part.bin'); else form.append(k, String(v));
+      });
+      try {
+        var response = await fetch(API_URL + '?action=' + encodeURIComponent(action), {
+          method: 'POST', credentials: 'same-origin', redirect: 'error',
+          headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': getCsrfToken() },
+          body: form, signal: controller.signal
+        });
+        if (!this.isCurrent(ctx)) throw { stale: true };
+        var json;
+        try { json = JSON.parse(await response.text()); }
+        catch (parseError) {
+          throw { uploadError: true, status: response.status,
+            retryable: response.status >= 500 || response.status === 408 || response.status === 429,
+            message: 'HTTP ' + response.status + ' during ' + action + ': server returned a non-JSON response. Check hosting/proxy logs.' };
         }
-        this.paintProgress();
+        if (!this.isCurrent(ctx)) throw { stale: true };
+        if (!json || typeof json !== 'object' || Array.isArray(json)) json = {};
+        if (!response.ok || json.status !== 'success') {
+          var retryable = response.status >= 500 || [408, 423, 429].indexOf(response.status) !== -1;
+          // Authentication/CSRF/size errors are not repaired by re-encoding a request.
+          if ([400, 401, 403, 404, 413, 415, 422].indexOf(response.status) !== -1) retryable = false;
+          else if (typeof json.retryable === 'boolean') retryable = json.retryable;
+          throw { uploadError: true, status: response.status, code: json.code,
+            retryable: retryable, details: json.details || {},
+            message: 'HTTP ' + response.status + ': ' + (json.message || 'Server rejected ' + action) };
+        }
+        return json;
+      } catch (error) {
+        if (!this.isCurrent(ctx) || error.stale) throw { stale: true };
+        if (error.uploadError) throw error;
+        throw { uploadError: true, retryable: true, status: 0,
+          message: error.name === 'AbortError' ? action + ' timed out; saved parts are retained.'
+            : 'Network failure during ' + action + ' (' + (error.message || 'Failed to fetch') + '). No usable HTTP response; saved parts are retained.' };
+      } finally {
+        clearTimeout(timer); delete ctx.timers[timer]; delete ctx.controllers[id];
       }
     },
 
-    paintProgress: function () {
-      var total = currentUpload.file.size;
-      var loaded = currentUpload.ackedBytes;
-      var pct = Math.min(99, Math.round((loaded / total) * 100));
-      var remaining = Math.max(0, total - loaded);
-      var eta = currentUpload.speedBps > 0 ? remaining / currentUpload.speedBps : 0;
-      AppReleaseUI.updateProgressDisplay(pct, loaded, total, currentUpload.ackedCount, currentUpload.totalChunks, currentUpload.speedBps, eta);
-      var label = document.getElementById('upload-status-subtext');
-      if (label) {
-        label.innerHTML = '<span style="color:#38bdf8"><i class="fa-solid fa-upload"></i> Part ' +
-          currentUpload.ackedCount + '/' + currentUpload.totalChunks +
-          ' &bull; ' + currentUpload.inFlight + ' in flight' +
-          (currentUpload.base64Only ? ' &bull; text-mode' : '') + '</span>';
+    retryJson: async function (ctx, action, values, attempts, timeout) {
+      for (var attempt = 0; ; attempt++) {
+        try { return await this.requestJson(ctx, action, values, timeout); }
+        catch (error) {
+          if (error.stale || !error.retryable || attempt >= attempts) throw error;
+          this.noteRetry(action + ': ' + error.message);
+          await this.wait(ctx, Math.min(8000, 700 * Math.pow(1.6, attempt)));
+        }
       }
     },
 
-    startWorkers: function () {
-      this.startWatchdog();
-      var label = document.getElementById('upload-status-subtext');
-      if (label && currentUpload.ackedCount > 0) {
-        label.innerHTML = '<span style="color:#38bdf8"><i class="fa-solid fa-rotate-left"></i> Resuming — ' +
-          currentUpload.ackedCount + '/' + currentUpload.totalChunks + ' parts already on server</span>';
+    startUpload: async function () {
+      if (!currentUpload.file || ['preparing', 'uploading', 'assembling'].indexOf(currentUpload.state) !== -1) return;
+      this.stopAttempt();
+      var ctx = { file: currentUpload.file, abi: currentUpload.abi, id: currentUpload.uploadId,
+        controllers: {}, timers: {}, waiters: [], requestSeq: 0, pending: {}, queue: [],
+        active: {}, acked: {}, retries: {}, count: 0, bytes: 0, inFlight: 0, next: 0,
+        parallel: POOL_SIZE, stopped: false, savedAt: 0, recoveries: 0,
+        lastAck: Date.now(), speedAt: Date.now(), speedBytes: 0, speed: 0 };
+      currentUpload.attempt = ctx;
+      currentUpload.state = 'preparing'; this.renderUploadUI();
+      var percentage = document.getElementById('upload-pct-display');
+      if (percentage) percentage.textContent = 'Checking…';
+      this.setTransferLabel('Checking hosting limits and fingerprinting the APK for verified resume…');
+      try {
+        if (!window.crypto || !window.crypto.subtle || typeof AbortController === 'undefined') {
+          throw { message: 'Verified uploads require HTTPS and a modern browser with Web Crypto and AbortController.', retryable: false };
+        }
+        var preflight = await this.retryJson(ctx, 'upload_preflight', {}, 2);
+        var info = preflight.data;
+        if (!info || !info.releases_dir_writable || !info.chunk_dir_writable) throw { message: 'Upload storage is not writable. Ask hosting support to check directory permissions and account quota.' };
+        var limits = info.limits_bytes || {}, safe = PART_SIZE;
+        if (limits.post_max_size > 0) safe = Math.min(safe, Math.floor(limits.post_max_size * 0.55));
+        if (limits.upload_max_filesize > 0) safe = Math.min(safe, Math.floor(limits.upload_max_filesize * 0.8));
+        safe = Math.floor(safe / 65536) * 65536;
+        if (safe < 65536) throw { message: 'Hosting request limits are too small for reliable APK uploads. Ask hosting support to review PHP/proxy limits.' };
+        var saved = this.readResume();
+        ctx.partSize = saved && saved.size === ctx.file.size && saved.abi === ctx.abi && saved.partSize >= 65536 && saved.partSize <= safe ? saved.partSize : safe;
+        ctx.total = Math.ceil(ctx.file.size / ctx.partSize);
+        if (ctx.total < 1 || ctx.total > 8192) throw { message: 'Invalid APK size or number of parts.' };
+        ctx.hashes = [];
+        // Hash one bounded part at a time, not a whole-APK array buffer.
+        for (var i = 0; i < ctx.total; i++) {
+          var buffer = await ctx.file.slice(i * ctx.partSize, (i + 1) * ctx.partSize).arrayBuffer();
+          var hash = await window.crypto.subtle.digest('SHA-256', buffer);
+          if (!this.isCurrent(ctx)) return;
+          ctx.hashes.push(this.digestHex(hash));
+          this.setTransferLabel('Verifying file identity: part ' + (i + 1) + ' / ' + ctx.total + ' (no file bytes stored in the browser).');
+        }
+        ctx.fingerprint = this.digestHex(await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(
+          ctx.file.size + ':' + ctx.partSize + ':' + ctx.abi + ':' + ctx.hashes.join(''))));
+        if (!this.isCurrent(ctx)) return;
+        ctx.id = saved && saved.fingerprint === ctx.fingerprint ? saved.id : generateUploadId();
+        currentUpload.uploadId = ctx.id; currentUpload.totalChunks = ctx.total;
+        this.saveResume(ctx, true);
+        await this.beginTransfer(ctx);
+      } catch (error) {
+        if (!error.stale && this.isCurrent(ctx)) this.showUploadError(error.message || 'Could not prepare upload.');
       }
-      var n = Math.min(POOL_SIZE, currentUpload.totalChunks);
-      for (var i = 0; i < n; i++) this.workerLoop();
     },
 
-    workerLoop: function () {
-      if (currentUpload.aborted || currentUpload.state !== 'uploading') return;
-      var idx = -1;
-      while (currentUpload.nextPart < currentUpload.totalChunks) {
-        var cand = currentUpload.nextPart++;
-        if (!currentUpload.partsAcked[cand]) { idx = cand; break; }
+    digestHex: function (buffer) {
+      return Array.from(new Uint8Array(buffer)).map(function (b) { return b.toString(16).padStart(2, '0'); }).join('');
+    },
+
+    statusValues: function (ctx) {
+      return { upload_id: ctx.id, total_chunks: ctx.total, total_size: ctx.file.size,
+        fingerprint: ctx.fingerprint, part_size: ctx.partSize,
+        part_hashes: JSON.stringify(ctx.hashes), abi: ctx.abi };
+    },
+
+    beginTransfer: async function (ctx) {
+      // Never turn an unreadable/failed status response into a full-file restart.
+      var result = await this.retryJson(ctx, 'upload_status', this.statusValues(ctx), 3);
+      if (!this.isCurrent(ctx)) return;
+      var data = result.data;
+      if (!data || data.verified !== true) throw { message: 'Server upload protocol is not current. Refresh after the development deployment completes.' };
+      if (data.state === 'published') { this.completeUpload(ctx, { data: data.release, message: 'Publication confirmed from its saved receipt.' }); return; }
+      if (!Array.isArray(data.received) || data.state !== 'receiving') throw { message: 'Server returned invalid upload progress; no parts were resent.' };
+      ctx.acked = {}; ctx.count = 0; ctx.bytes = 0; ctx.next = 0; ctx.queue = [];
+      for (var i = 0; i < data.received.length; i++) {
+        var idx = data.received[i];
+        if (!Number.isInteger(idx) || idx < 0 || idx >= ctx.total || ctx.acked[idx]) throw { message: 'Server returned invalid chunk indices.' };
+        ctx.acked[idx] = true; ctx.count++; ctx.bytes += this.partBytes(idx, ctx);
       }
-      if (idx === -1) {
-        // Nothing left to claim. If no part is still in flight, every part
-        // is stored — commit exactly once (Telegram's atomic commit step).
-        if (currentUpload.inFlight === 0) this.assembleChunksOnServer();
+      ctx.speedBytes = ctx.bytes; ctx.speedAt = Date.now(); ctx.lastAck = Date.now();
+      currentUpload.state = 'uploading'; this.renderUploadUI(); this.paintProgress(ctx);
+      this.setTransferLabel('Verified ' + ctx.count + ' / ' + ctx.total + ' saved parts. Sending only missing parts.');
+      this.startWorkers(ctx);
+    },
+
+    partBytes: function (idx, ctx) {
+      ctx = ctx || currentUpload.attempt;
+      return Math.max(0, Math.min(ctx.partSize, ctx.file.size - idx * ctx.partSize));
+    },
+
+    startWorkers: function (ctx) { this.startWatchdog(ctx); this.workerLoop(ctx); },
+
+    workerLoop: function (ctx) {
+      ctx = ctx || currentUpload.attempt;
+      if (!ctx || !this.isCurrent(ctx) || currentUpload.state !== 'uploading') return;
+      while (ctx.inFlight < ctx.parallel) {
+        var idx = -1;
+        while (ctx.queue.length) { var queued = ctx.queue.shift(); if (!ctx.acked[queued] && !ctx.active[queued]) { idx = queued; break; } }
+        while (idx < 0 && ctx.next < ctx.total) { var next = ctx.next++; if (!ctx.acked[next] && !ctx.active[next] && !ctx.pending[next]) idx = next; }
+        if (idx < 0) break;
+        this.sendPart(idx, ctx);
+      }
+      // Allocation exhaustion and zero active requests do NOT imply success.
+      if (ctx.count === ctx.total && ctx.inFlight === 0 && Object.keys(ctx.pending).length === 0) this.assembleChunksOnServer(ctx);
+    },
+
+    sendPart: async function (idx, ctx) {
+      if (!this.isCurrent(ctx) || ctx.active[idx]) return;
+      ctx.inFlight++; ctx.active[idx] = true;
+      var values = { upload_id: ctx.id, chunk_index: idx, total_chunks: ctx.total,
+        total_size: ctx.file.size, chunk_size: this.partBytes(idx, ctx),
+        chunk_file: ctx.file.slice(idx * ctx.partSize, (idx + 1) * ctx.partSize) };
+      try {
+        // Keep slow-link retries bounded without repeating the same short deadline.
+        var deadline = Math.min(300000, PART_DEADLINE_MS * Math.pow(2, ctx.retries[idx] || 0));
+        var result = await this.requestJson(ctx, 'upload_chunk', values, deadline);
+        if (!this.isCurrent(ctx)) return;
+        if (!result.data || result.data.chunk_index !== idx || result.data.size !== this.partBytes(idx, ctx) || result.data.sha256 !== ctx.hashes[idx]) {
+          throw { message: 'Server acknowledgment did not match part ' + (idx + 1) + '. No success was assumed.', retryable: false };
+        }
+        this.markPartAcked(idx, ctx);
+      } catch (error) {
+        if (!error.stale && this.isCurrent(ctx)) this.handlePartFailure(idx, error, ctx);
+      } finally {
+        ctx.inFlight--; delete ctx.active[idx];
+        if (this.isCurrent(ctx)) this.workerLoop(ctx);
+      }
+    },
+
+    markPartAcked: function (idx, ctx) {
+      if (!this.isCurrent(ctx) || ctx.acked[idx]) return;
+      ctx.acked[idx] = true; ctx.count++; ctx.bytes += this.partBytes(idx, ctx); ctx.lastAck = Date.now();
+      var seconds = (Date.now() - ctx.speedAt) / 1000;
+      if (seconds >= 0.5) { ctx.speed = (ctx.bytes - ctx.speedBytes) / seconds; ctx.speedBytes = ctx.bytes; ctx.speedAt = Date.now(); }
+      this.saveResume(ctx, false); this.paintProgress(ctx);
+    },
+
+    handlePartFailure: function (idx, error, ctx) {
+      var retries = (ctx.retries[idx] || 0) + 1; ctx.retries[idx] = retries;
+      if (!error.retryable || retries > MAX_PART_RETRIES) {
+        this.showUploadError('Upload stopped on part ' + (idx + 1) + ' of ' + ctx.total + '. ' + error.message +
+          ' Retry Upload will verify server progress before sending anything.');
         return;
       }
-      this.sendPart(idx);
+      // Reduce pressure after any transient rejection, including Failed to fetch.
+      ctx.parallel = Math.max(1, Math.floor(ctx.parallel / 2));
+      this.noteRetry('part ' + (idx + 1) + ': ' + error.message + ' (retry ' + retries + '/' + MAX_PART_RETRIES + ', ' + ctx.parallel + ' connection(s))');
+      var self = this, delay = Math.min(8000, 700 * Math.pow(1.6, retries - 1));
+      var timer = setTimeout(function () {
+        delete ctx.timers[timer]; delete ctx.pending[idx];
+        if (!self.isCurrent(ctx)) return;
+        ctx.queue.push(idx); self.workerLoop(ctx);
+      }, delay);
+      ctx.timers[timer] = true; ctx.pending[idx] = timer;
     },
 
-    sendPart: function (idx) {
-      if (currentUpload.aborted || currentUpload.state !== 'uploading') return;
-      var self = this;
-      currentUpload.inFlight++;
-      var start = idx * PART_SIZE;
-      var slice = currentUpload.file.slice(start, start + PART_SIZE);
-
-      var controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-      currentUpload.controllers[idx] = controller;
-      var deadline = setTimeout(function () {
-        if (controller) controller.abort(); // stall breaker: retry this part only
-      }, PART_DEADLINE_MS);
-
-      var settled = false;
-      var finishAttempt = function (ok, detail) {
-        if (settled) return;
-        settled = true;
-        clearTimeout(deadline);
-        delete currentUpload.controllers[idx];
-        currentUpload.inFlight--;
-        if (currentUpload.aborted || currentUpload.state !== 'uploading') return;
-        if (ok) {
-          currentUpload.partRetries[idx] = 0;
-          self.markPartAcked(idx, false);
-          self.workerLoop(); // success launches the next part (sliding window)
-          return;
-        }
-        self.handlePartFailure(idx, detail);
-      };
-
-      var postForm = function (formData) {
-        return fetch(API_URL + '?action=upload_chunk', {
-          method: 'POST',
-          headers: { 'X-CSRF-TOKEN': getCsrfToken() },
-          credentials: 'same-origin',
-          body: formData,
-          signal: controller ? controller.signal : undefined
-        });
-      };
-
-      var sendBase64 = function () {
-        return new Promise(function (resolve) { blobToBase64(slice, resolve); }).then(function (b64) {
-          if (!b64) { finishAttempt(false, 'could not read file part'); return null; }
-          var formData = new FormData();
-          formData.append('action', 'upload_chunk');
-          formData.append('upload_id', currentUpload.uploadId);
-          formData.append('chunk_index', String(idx));
-          formData.append('total_chunks', String(currentUpload.totalChunks));
-          formData.append('total_size', String(currentUpload.file.size));
-          formData.append('chunk_size', String(self.partBytes(idx)));
-          formData.append('chunk_b64', b64);
-          formData.append('csrf_token', getCsrfToken());
-          return postForm(formData).then(function (res) {
-            if (!res.ok) { finishAttempt(false, 'HTTP ' + res.status + ' (text-mode)'); return null; }
-            return res.json().then(function (json) {
-              if (json && json.status === 'success') finishAttempt(true);
-              else finishAttempt(false, (json && json.message) || 'server rejected part (text-mode)');
-            }, function () { finishAttempt(false, 'unreadable server response (text-mode)'); });
-          });
-        });
-      };
-
-      var sendBinary = function () {
-        var formData = new FormData();
-        formData.append('action', 'upload_chunk');
-        formData.append('upload_id', currentUpload.uploadId);
-        formData.append('chunk_index', String(idx));
-        formData.append('total_chunks', String(currentUpload.totalChunks));
-        formData.append('total_size', String(currentUpload.file.size));
-        formData.append('chunk_size', String(self.partBytes(idx)));
-        formData.append('chunk_file', slice, 'part' + idx);
-        formData.append('csrf_token', getCsrfToken());
-        return postForm(formData).then(function (res) {
-          if (res.status === 403 || res.status === 413 || res.status === 415 || res.status === 422) {
-            // A WAF or body-size rule rejected the binary body. Telegram's
-            // equivalent move: shrink/re-encode the part — here the remaining
-            // parts switch to text-mode, which survives WAF inspection.
-            currentUpload.base64Only = true;
-            return sendBase64();
-          }
-          if (!res.ok) { finishAttempt(false, 'HTTP ' + res.status); return null; }
-          return res.json().then(function (json) {
-            if (json && json.status === 'success') finishAttempt(true);
-            else finishAttempt(false, (json && json.message) || 'server rejected part');
-          }, function () { finishAttempt(false, 'unreadable server response'); });
-        });
-      };
-
-      (currentUpload.base64Only ? sendBase64() : sendBinary())
-        .catch(function (err) {
-          if (currentUpload.aborted || currentUpload.state !== 'uploading') {
-            if (!settled) { settled = true; clearTimeout(deadline); delete currentUpload.controllers[idx]; currentUpload.inFlight--; }
-            return;
-          }
-          var name = (err && err.name) || '';
-          finishAttempt(false, name === 'AbortError'
-            ? 'part stalled — deadline exceeded'
-            : ((err && err.message) || 'network error'));
-        });
+    paintProgress: function (ctx) {
+      if (!this.isCurrent(ctx)) return;
+      currentUpload.ackedBytes = ctx.bytes; currentUpload.ackedCount = ctx.count;
+      var pct = Math.min(99, Math.round(ctx.bytes / ctx.file.size * 100));
+      this.updateProgressDisplay(pct, ctx.bytes, ctx.file.size, ctx.count, ctx.total, ctx.speed,
+        ctx.speed > 0 ? (ctx.file.size - ctx.bytes) / ctx.speed : 0);
+      this.setTransferLabel('Verified parts ' + ctx.count + '/' + ctx.total + ' · ' + ctx.inFlight + ' in flight · ' + Object.keys(ctx.pending).length + ' waiting to retry');
     },
 
-    handlePartFailure: function (idx, detail) {
-      if (currentUpload.aborted || currentUpload.state !== 'uploading') return;
-      currentUpload.lastErrorText = 'part ' + (idx + 1) + ': ' + detail;
-      var retries = (currentUpload.partRetries[idx] || 0) + 1;
-      currentUpload.partRetries[idx] = retries;
-      if (retries > MAX_PART_RETRIES) {
-        this.showUploadError('Upload stopped on part ' + (idx + 1) + ' of ' + currentUpload.totalChunks +
-          ' after ' + MAX_PART_RETRIES + ' retries. Last error: ' + detail +
-          ' — press Upload again to resume from the parts already stored.');
-        return;
-      }
-      var self = this;
-      var backoff = Math.min(8000, 700 * Math.pow(1.6, retries - 1));
-      this.noteRetry('part ' + (idx + 1) + ' — ' + detail + ' (retry ' + retries + '/' + MAX_PART_RETRIES + ')');
-      setTimeout(function () {
-        if (currentUpload.aborted || currentUpload.state !== 'uploading') return;
-        if (!currentUpload.partsAcked[idx]) self.sendPart(idx);
-        else self.workerLoop();
-      }, backoff);
-    },
-
-    noteRetry: function (message) {
+    setTransferLabel: function (text) {
       var label = document.getElementById('upload-status-subtext');
-      if (!label) return;
-      label.innerHTML = '<span style="color:#fbbf24"><i class="fa-solid fa-rotate fa-spin"></i> Unstable connection — retrying ' +
-        escapeHtml(message) + '</span>';
+      if (label) label.textContent = text;
     },
 
-    // Visible-diagnostics watchdog: the old engine could sit at 0% forever
-    // with no feedback. If no part is acked for WATCHDOG_MS the UI says so,
-    // in red, with the last concrete error — while retries continue.
-    startWatchdog: function () {
+    noteRetry: function (message) { this.setTransferLabel('Retrying: ' + message); },
+
+    startWatchdog: function (ctx) {
       var self = this;
-      if (currentUpload.watchdog) clearInterval(currentUpload.watchdog);
-      currentUpload.watchdog = setInterval(function () {
-        if (currentUpload.state !== 'uploading' || currentUpload.aborted) {
-          clearInterval(currentUpload.watchdog);
-          currentUpload.watchdog = null;
-          return;
-        }
-        var idleFor = Date.now() - currentUpload.lastAckAt;
-        if (idleFor > WATCHDOG_MS && currentUpload.inFlight > 0) {
-          var label = document.getElementById('upload-status-subtext');
-          if (label) {
-            label.innerHTML = '<span style="color:#f87171"><i class="fa-solid fa-triangle-exclamation"></i> No server response for ' +
-              Math.round(idleFor / 1000) + 's' +
-              (currentUpload.lastErrorText ? ' — last error: ' + escapeHtml(currentUpload.lastErrorText) : '') +
-              '. Still retrying…</span>';
-          }
-        }
+      if (ctx.watchdog) clearInterval(ctx.watchdog);
+      ctx.watchdog = setInterval(function () {
+        if (!self.isCurrent(ctx) || currentUpload.state !== 'uploading') { clearInterval(ctx.watchdog); return; }
+        if (Date.now() - ctx.lastAck > WATCHDOG_MS) self.setTransferLabel('No verified part for ' + Math.round((Date.now() - ctx.lastAck) / 1000) + 's. Requests have bounded deadlines; saved parts are retained.');
       }, 5000);
     },
 
     updateProgressDisplay: function (pct, loadedBytes, totalBytes, chunkNum, totalChunks, speedBps, etaSeconds) {
-      var bar = document.getElementById('upload-progress-fill');
-      var pctText = document.getElementById('upload-pct-display');
-      var bytesText = document.getElementById('upload-bytes-display');
-      var chunkText = document.getElementById('upload-chunk-display');
-      var speedText = document.getElementById('upload-speed-display');
-      var etaText = document.getElementById('upload-eta-display');
-
-      if (bar) bar.style.width = pct + '%';
-      if (pctText) pctText.textContent = pct + '%';
-      if (bytesText) bytesText.textContent = formatBytes(loadedBytes) + ' / ' + formatBytes(totalBytes);
-      if (chunkText) chunkText.textContent = 'Chunk ' + chunkNum + ' / ' + totalChunks;
-      if (speedText) speedText.textContent = speedBps > 0 ? (formatBytes(speedBps) + '/s') : '--';
-      if (etaText) etaText.textContent = formatDuration(etaSeconds);
+      var fill = document.getElementById('upload-progress-fill'); if (fill) fill.style.width = pct + '%';
+      var values = { 'upload-pct-display': pct + '%', 'upload-bytes-display': formatBytes(loadedBytes) + ' / ' + formatBytes(totalBytes),
+        'upload-chunk-display': 'Part ' + chunkNum + ' / ' + totalChunks,
+        'upload-speed-display': formatBytes(speedBps) + '/s', 'upload-eta-display': formatDuration(etaSeconds) };
+      Object.keys(values).forEach(function (id) { var el = document.getElementById(id); if (el) el.textContent = values[id]; });
     },
 
-    assembleChunksOnServer: function () {
-      if (currentUpload.state !== 'uploading') return; // single commit, ever
-      currentUpload.state = 'assembling';
-      this.renderUploadUI();
+    assembleChunksOnServer: async function (ctx) {
+      if (!this.isCurrent(ctx) || currentUpload.state !== 'uploading' || ctx.count !== ctx.total || ctx.inFlight || Object.keys(ctx.pending).length) return;
+      currentUpload.state = 'assembling'; this.renderUploadUI();
+      try {
+        var result = await this.requestJson(ctx, 'assemble_chunks', { upload_id: ctx.id,
+          total_chunks: ctx.total, total_size: ctx.file.size, file_name: ctx.file.name, abi: ctx.abi }, 180000);
+        if (this.isCurrent(ctx)) this.completeUpload(ctx, result);
+      } catch (error) {
+        if (!this.isCurrent(ctx) || error.stale) return;
+        if (!error.retryable) { this.showUploadError(error.message); return; }
+        // Lost final response is ambiguous, not proof of failed publication.
+        // A receipt confirms commit; otherwise reconcile exact server parts.
+        if (++ctx.recoveries > 2) { this.showUploadError('Publication outcome could not be confirmed. ' + error.message + ' Retry checks the saved receipt first.'); return; }
+        try { await this.wait(ctx, 1200); await this.beginTransfer(ctx); }
+        catch (statusError) { if (this.isCurrent(ctx)) this.showUploadError('Could not confirm publication: ' + statusError.message + ' Retry checks server status; do not delete the published APK.'); }
+      }
+    },
 
-      var formData = new FormData();
-      formData.append('action', 'assemble_chunks');
-      formData.append('upload_id', currentUpload.uploadId);
-      formData.append('total_chunks', currentUpload.totalChunks);
-      formData.append('total_size', currentUpload.file.size);
-      formData.append('file_name', currentUpload.file.name);
-      formData.append('abi', currentUpload.abi);
-      formData.append('csrf_token', getCsrfToken());
-
-      fetch(API_URL, {
-        method: 'POST',
-        headers: { 'X-CSRF-TOKEN': getCsrfToken() },
-        credentials: 'same-origin',
-        body: formData
-      })
-      .then(function (res) { return res.json(); })
-      .then(function (res) {
-        if (res.status === 'success') {
-          currentUpload.state = 'success';
-          AppReleaseUI.renderUploadUI();
-          AppReleaseUI.renderSuccessState(res.data, currentUpload.file.name, currentUpload.file.size);
-          showAlert('success', res.message || 'APK published and cryptographic sidecar generated successfully!');
-          if (res.data) {
-            AppReleaseUI.renderStatus(res.data);
-            AppReleaseUI.populateForm(res.data);
-          }
-        } else {
-          AppReleaseUI.showUploadError(res.message || 'Server failed to assemble APK chunks.');
-        }
-      })
-      .catch(function (err) {
-        AppReleaseUI.showUploadError('Network error while assembling APK on server: ' + (err.message || 'Request failed'));
-      });
+    completeUpload: function (ctx, result) {
+      if (!this.isCurrent(ctx)) return;
+      var artifact = result.data && result.data.artifacts_detail && result.data.artifacts_detail[ctx.abi];
+      if (!artifact || !/^[a-f0-9]{64}$/.test(artifact.sha256)) throw { message: 'Server did not return a valid publication receipt. Retry checks server status.', retryable: false };
+      this.clearResume(); this.stopAttempt();
+      currentUpload.state = 'success'; this.renderUploadUI();
+      this.renderSuccessState(result.data, ctx.file.name, ctx.file.size);
+      this.renderStatus(result.data); this.populateForm(result.data);
+      showAlert(result.audit_logged === false ? 'warn' : 'success', result.message || 'APK publication confirmed.');
     },
 
     renderSuccessState: function (data, filename, sizeBytes) {
@@ -633,6 +582,8 @@
     },
 
     showUploadError: function (msg) {
+      if (currentUpload.attempt) this.saveResume(currentUpload.attempt, true);
+      this.stopAttempt();
       currentUpload.state = 'error';
       this.renderUploadUI();
       var errEl = document.getElementById('upload-error-message');
@@ -646,51 +597,35 @@
           .then(function (r) { if (r) AppReleaseUI.cancelUpload(true); });
         return;
       }
-      currentUpload.aborted = true;
-      if (currentUpload.xhr) {
-        try { currentUpload.xhr.abort(); } catch (e) {}
-      }
-      if (currentUpload.controllers) {
-        Object.keys(currentUpload.controllers).forEach(function (k) {
-          try { currentUpload.controllers[k] && currentUpload.controllers[k].abort(); } catch (e) {}
-        });
-        currentUpload.controllers = {};
-      }
-      if (currentUpload.watchdog) { clearInterval(currentUpload.watchdog); currentUpload.watchdog = null; }
-
-      if (currentUpload.uploadId) {
+      var id = currentUpload.uploadId;
+      this.stopAttempt();
+      this.clearResume();
+      if (id) {
         var formData = new FormData();
-        formData.append('action', 'cancel_upload');
-        formData.append('upload_id', currentUpload.uploadId);
+        formData.append('action', 'cancel_upload'); formData.append('upload_id', id);
         formData.append('csrf_token', getCsrfToken());
-
-        fetch(API_URL, {
-          method: 'POST',
-          headers: { 'X-CSRF-TOKEN': getCsrfToken() },
-          credentials: 'same-origin',
-          body: formData
-        }).catch(function () {});
+        var controller = new AbortController();
+        var timer = setTimeout(function () { controller.abort(); }, 15000);
+        fetch(API_URL + '?action=cancel_upload', { method: 'POST', credentials: 'same-origin',
+          headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': getCsrfToken() },
+          body: formData, signal: controller.signal })
+          .then(function (response) {
+            if (!response.ok) throw new Error('Cancel not acknowledged');
+          }).catch(function () {
+            showAlert('warn', 'Transfer stopped locally. Server cleanup could not be confirmed; temporary parts expire automatically.');
+          }).finally(function () { clearTimeout(timer); });
       }
 
       this.resetUploadState();
     },
 
     resetUploadState: function () {
+      this.stopAttempt(); // Reset stops local work but deliberately retains resumable parts.
       currentUpload.state = 'idle';
       currentUpload.file = null;
       currentUpload.uploadId = null;
-      currentUpload.currentChunkIndex = 0;
-      currentUpload.totalChunks = 0;
-      currentUpload.xhr = null;
-      currentUpload.aborted = false;
-      currentUpload.partsAcked = {};
-      currentUpload.partRetries = {};
-      currentUpload.controllers = {};
       currentUpload.ackedBytes = 0;
       currentUpload.ackedCount = 0;
-      currentUpload.inFlight = 0;
-      currentUpload.base64Only = false;
-      if (currentUpload.watchdog) { clearInterval(currentUpload.watchdog); currentUpload.watchdog = null; }
 
       var fileInput = document.getElementById('upload-apk-input');
       if (fileInput) fileInput.value = '';

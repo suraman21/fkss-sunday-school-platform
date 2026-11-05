@@ -5,9 +5,21 @@
  * POST /attendance                   — save (transaction + class assignment)
  * GET  /attendance/daily-stats
  * GET  /attendance/summary
+ * GET  /attendance/write-context — read-only write dimensions, not permission
  */
 
+// Context discovery must never be cached, including authentication denials.
+$action = $ROUTE['id'] ?? '';
+if ($action === 'write-context') header('Cache-Control: no-store');
+if ($action === 'preparation') header('Cache-Control: no-store');
 $auth = apiRequireAuth();
+$receiptVersionRequested = $method === 'POST'
+    && in_array($action, ['', 'submit'], true)
+    && array_key_exists('HTTP_X_ATTENDANCE_RECEIPT_VERSION', $_SERVER);
+// New diagnostics/receipt preconditions have no old-client authority exception.
+if (in_array($action, ['operation-status', 'capabilities', 'write-context'], true) || $action === 'preparation' || $receiptVersionRequested) {
+    $auth = apiRevalidateAuthorizationScope($auth, true);
+}
 
 // /attendance/warnings[/{id}[/close]] — department attendance warnings
 // (Phase 2). Its own role set (HR / Info / Edu / Mezmur / admins read;
@@ -21,9 +33,103 @@ if (!apiRoleIs($auth, apiRolesAttendance())) {
     err('You cannot take or view attendance.', 403);
 }
 
-$action = $ROUTE['id'] ?? '';
+// Negative capability negotiation only: no durable receipt version is ready.
+// Keep both discovery and explicit precondition failure outside the legacy
+// claim/replay/body paths. A 412 is NOT a terminal disposition of prior work.
+$receiptCapabilities = ['version' => 1, 'durable_receipt_versions' => [],
+    'durable' => false, 'authorizes_settlement' => false];
+if ($action === 'capabilities') {
+    if ($method !== 'GET') {
+        header('Allow: GET');
+        err('Use GET for attendance capabilities.', 405);
+    }
+    if (!empty($ROUTE['sub'])) err('Unknown capabilities endpoint.', 404);
+    header('Cache-Control: no-store');
+    ok($receiptCapabilities);
+}
+if ($receiptVersionRequested) {
+    header('Cache-Control: no-store');
+    err('Durable attendance receipts are not supported. Preserve unresolved work.', 412,
+        ['code' => 'ATTENDANCE_RECEIPT_CONTRACT_UNSUPPORTED',
+         'capabilities' => $receiptCapabilities]);
+}
+// Complete preparation has no client-nominated scope or legacy year memo.
+if ($action === 'preparation') {
+    if ($method !== 'GET') {
+        header('Allow: GET');
+        err('Use GET for attendance preparation.', 405);
+    }
+    if (!empty($ROUTE['sub'])) err('Unknown preparation endpoint.', 404);
+    $query = $_GET;
+    unset($query['_route'], $query['path']);
+    if ($query !== []) err('Preparation scope is selected by the server.', 422);
+    require_once dirname(__DIR__, 3) . '/admin/backend/services/AttendancePreparationService.php';
+    require_once dirname(__DIR__, 3) . '/admin/backend/services/AttendancePreparationGrant.php';
+    try {
+        $identity = \App\Services\AttendancePreparationGrant::serverIdentity((string)SITE_URL);
+        $facts = \App\Services\AttendancePreparationService::read(
+            $conn, $auth, apiRolesAttendance(), apiIsClassRestricted($auth)
+        );
+        $preparation = \App\Services\AttendancePreparationGrant::issue($facts, $identity, API_TOKEN_SECRET);
+    } catch (\App\Services\AttendancePreparationDenied $denial) {
+        err('Preparation authority changed. Preserve older work and sign in again.', 401,
+            ['code'=>$denial->reason]);
+    } catch (Throwable $error) {
+        error_log('Attendance preparation unavailable.');
+        err('Complete attendance preparation is unavailable. Preserve the previous dataset.', 503,
+            ['code'=>'ATTENDANCE_PREPARATION_UNAVAILABLE']);
+    }
+    // No304/ping/login timestamp may renew an older prepared publication.
+    ok($preparation);
+}
 $year = getCurrentAcademicYear();
 $yearId = $year ? (int)$year['id'] : 0;
+
+// Point-in-time server dimensions only. NOT a prepared dataset, lease,
+// calendar/workflow permission, durable receipt or offline-work activation.
+if ($action === 'write-context') {
+    if ($method !== 'GET') {
+        header('Allow: GET');
+        err('Use GET for attendance write context.', 405);
+    }
+    if (!empty($ROUTE['sub'])) err('Unknown write-context endpoint.', 404);
+    // Do not accept an owner/year nominated by the client or default a date.
+    $query = $_GET;
+    unset($query['_route'], $query['path']); // Reserved API routing keys.
+    if (count($query) !== 2 || array_diff(array_keys($query), ['class_id', 'date']) !== []) {
+        err('Explicit class_id and date only are required.', 422);
+    }
+    $rawClassId = $query['class_id'] ?? null;
+    $date = $query['date'] ?? null;
+    if (!is_string($rawClassId) || !preg_match('/^[1-9][0-9]{0,15}$/D', $rawClassId)
+        || (int)$rawClassId > 9007199254740991
+        || !is_string($date) || !preg_match('/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/D', $date)
+        || !checkdate((int)substr($date, 5, 2), (int)substr($date, 8, 2), (int)substr($date, 0, 4))) {
+        err('Invalid class_id or exact Gregorian date.', 422);
+    }
+    $classId = (int)$rawClassId;
+    if ($yearId <= 0 || $yearId > 9007199254740991) {
+        err('Attendance write year is unavailable.', 503, ['code' => 'ATTENDANCE_WRITE_YEAR_UNAVAILABLE']);
+    }
+    // Same resolver and class scope as draft/submit, NOT resolveRosterYear.
+    apiRequireClassAccess($conn, $auth, $classId, $yearId);
+    $stmt = $conn->prepare('SELECT id FROM classes WHERE id = ?');
+    $stmt->bind_param('i', $classId);
+    $stmt->execute();
+    $class = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    if (!$class) err('Class not found', 404);
+    ok([
+        'context_version' => 1,
+        'owner_user_id' => (int)$auth['uid'],
+        'authorization_version' => (int)$auth['av'],
+        'class_id' => $classId,
+        'academic_year_id' => $yearId,
+        'date' => $date,
+        'authorizes_offline_work' => false,
+        'authorizes_settlement' => false,
+    ]);
+}
 
 /**
  * Resolve and validate an explicit sheet against the current server roster.
@@ -193,6 +299,52 @@ function apiReplaceAttendanceRows(
             $userId,
             $records
         );
+}
+
+// POST /attendance/operation-status?kind=draft|submit
+// Read-only cache observation, not a resubmission or durable receipt. Send the
+// unchanged original JSON/key so the existing canonical hash can bind it.
+if ($action === 'operation-status') {
+    if ($method !== 'POST') {
+        header('Allow: POST');
+        err('Use POST for operation status.', 405);
+    }
+    if (!empty($ROUTE['sub'])) err('Unknown operation-status endpoint.', 404);
+    $kind = $_GET['kind'] ?? '';
+    if (!in_array($kind, ['draft', 'submit'], true)) err('kind must be draft or submit.', 400);
+    $contentType = strtolower(trim(explode(';', (string)($_SERVER['CONTENT_TYPE'] ?? ''))[0]));
+    if ($contentType !== 'application/json') err('Use the original JSON request.', 415);
+    $input = getBody(1048576); // bounded diagnostic request, no upload policy change
+    $classId = filter_var($input['class_id'] ?? null, FILTER_VALIDATE_INT);
+    $date = $input['date'] ?? null;
+    if ($classId === false || $classId <= 0 || !is_string($date)
+        || !preg_match('/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/D', $date)
+        || !checkdate((int)substr($date, 5, 2), (int)substr($date, 8, 2), (int)substr($date, 0, 4))) {
+        err('Original class_id and date are required.', 400);
+    }
+    // CURRENT authority, never cached assignments or historical write rights.
+    apiRequireClassAccess($conn, $auth, $classId, $yearId);
+    $bodyKey = $input['client_op_id'] ?? '';
+    if (!is_string($bodyKey)) err('Invalid original operation key.', 400);
+    $bodyKey = trim($bodyKey);
+    if (empty($_SERVER['HTTP_IDEMPOTENCY_KEY']) && $bodyKey !== '') {
+        $_SERVER['HTTP_IDEMPOTENCY_KEY'] = $bodyKey;
+    }
+    $key = apiIdempotencyKey();
+    if ($key === '' || ($bodyKey !== '' && !hash_equals($bodyKey, $key))) {
+        err('A matching original operation key is required.', 400);
+    }
+    $scope = 'POST attendance' . ($kind === 'submit' ? '/submit' : '');
+    $result = apiIdempotencyService()->lookup(
+        (int)$auth['uid'], $key, $scope, apiIdempotencyRequestHash('POST', $scope)
+    );
+    $inspection = ['version' => 1, 'authority' => 'legacy_replay_cache',
+        'durable' => false, 'authorizes_settlement' => false] + $result;
+    if ($result['state'] === 'unavailable') {
+        err('Operation status is temporarily unavailable.', 503,
+            ['code' => 'OPERATION_STATUS_UNAVAILABLE', 'lookup' => $inspection]);
+    }
+    ok($inspection);
 }
 
 // ============================================================
@@ -443,7 +595,20 @@ if ($method === 'POST' && ($action === '' || $action === null)) {
                 $packet['message'] ?? 'Could not update the attendance workflow.'
             );
         }
+        $responseData = [
+            'message' => $packet['message'] ?? "{$saved} records saved as a draft for Education",
+            'saved' => $saved,
+            'class_id' => $classId,
+            'date' => $date,
+            'submission_id' => $packet['id'] ?? 0,
+            'submission_status' => $packet['status'] ?? 'draft',
+        ];
+        apiIdempotencyCompleteDatabaseSuccess($responseData, 201);
         $conn->commit();
+    } catch (ApiIdempotencyResponseNotRecorded $error) {
+        apiIdempotencyRollbackResponse($conn);
+        err('Could not record the attendance response. Please retry.', 503,
+            ['code' => 'IDEMPOTENCY_RESPONSE_NOT_RECORDED']);
     } catch (\DomainException $error) {
         $conn->rollback();
         $safeMessage = $error->getMessage();
@@ -456,14 +621,7 @@ if ($method === 'POST' && ($action === '' || $action === null)) {
 
     logApiAction($auth['uid'], $auth['usr'], 'Attendance Saved', "Class: {$classId}, Date: {$date}, Records: {$saved}");
 
-    ok([
-        'message' => $packet['message'] ?? "{$saved} records saved as a draft for Education",
-        'saved' => $saved,
-        'class_id' => $classId,
-        'date' => $date,
-        'submission_id' => $packet['id'] ?? 0,
-        'submission_status' => $packet['status'] ?? 'draft',
-    ], 201);
+    ok($responseData, 201);
 }
 
 // ============================================================
@@ -533,7 +691,20 @@ if ($method === 'POST' && $action === 'submit') {
                 $packet['message'] ?? 'Could not mark attendance complete.'
             );
         }
+        $responseData = [
+            'message' => $packet['message'] ?? "{$saved} attendance records marked complete for Education",
+            'saved' => $saved,
+            'class_id' => $classId,
+            'date' => $date,
+            'submission_id' => $packet['id'] ?? 0,
+            'submission_status' => $packet['status'] ?? 'submitted',
+        ];
+        apiIdempotencyCompleteDatabaseSuccess($responseData, 201);
         $conn->commit();
+    } catch (ApiIdempotencyResponseNotRecorded $error) {
+        apiIdempotencyRollbackResponse($conn);
+        err('Could not record the attendance response. Please retry.', 503,
+            ['code' => 'IDEMPOTENCY_RESPONSE_NOT_RECORDED']);
     } catch (\DomainException $error) {
         $conn->rollback();
         $safeMessage = $error->getMessage();
@@ -558,14 +729,7 @@ if ($method === 'POST' && $action === 'submit') {
         );
     }
 
-    ok([
-        'message' => $packet['message'] ?? "{$saved} attendance records marked complete for Education",
-        'saved' => $saved,
-        'class_id' => $classId,
-        'date' => $date,
-        'submission_id' => $packet['id'] ?? 0,
-        'submission_status' => $packet['status'] ?? 'submitted',
-    ], 201);
+    ok($responseData, 201);
 }
 
 // ============================================================

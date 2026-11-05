@@ -104,6 +104,10 @@ class QrFeedback {
   factory QrFeedback.locked() => QrFeedback._(QrFeedbackKind.locked,
       'ቅጹ ተቆልጓአል!', 'የተላከ/የጸደቀ ቅጽ ነው፤ በስካን መለወጥ አይቻልም።');
 
+  factory QrFeedback.storageError() => const QrFeedback._(QrFeedbackKind.invalid,
+      'አልተመዘገበም — Not saved',
+      'Phone storage refused the save. Free up space and try again.');
+
   bool get isSuccess => kind == QrFeedbackKind.ok;
   bool get isWarning =>
       kind == QrFeedbackKind.duplicate || kind == QrFeedbackKind.locked;

@@ -27,6 +27,8 @@ Records 0001–0020 were written on 2026-10-22 from the code, the commit history
 | [ADR-0019](0019-attendance-alert-thresholds.md) | Attendance warnings with per-department thresholds; no automatic deactivation by default | Accepted | 2026-10-19 |
 | [ADR-0020](0020-score-limit-and-did-not-take.md) | Refuse marks above the maximum; a blank mark is "Did not take" and is excluded from the total | Accepted | 2026-10-22 |
 
+| [ADR-0021](0021-development-acceptance-before-production.md) | Development acceptance precedes separately authorized production promotion; preserves beta isolation | Accepted owner workflow clarification | Recorded 2026-10-28 |
+
 ## Writing a new ADR
 
 1. Copy the [template](template.md) to `NNNN-short-title.md`, using the next number.

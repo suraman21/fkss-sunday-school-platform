@@ -70,6 +70,53 @@ final class ApiIdempotencyService
     }
 
     /**
+     * Inspect ONLY the shared replay cache. Never claim/recover/renew, sweep,
+     * read legacy/files, or infer a durable business outcome. Unknown is not
+     * evidence of non-commit and never authorizes re-execution or settlement.
+     * No response body, request hash, owner token or lease is disclosed.
+     */
+    public function lookup(int $userId, string $key, string $scope, string $requestHash): array
+    {
+        if ($userId <= 0 || strlen($key) > 80 || !preg_match('/^[A-Za-z0-9._-]+$/D', $key)
+            || $scope === '' || strlen($scope) > 255
+            || !preg_match('/^[a-f0-9]{64}$/D', $requestHash)
+            || !($this->database instanceof \mysqli)) {
+            return ['state' => 'unavailable'];
+        }
+        $recordHash = hash('sha256', $userId . "\0" . $key . "\0" . $scope);
+        try {
+            $stmt = $this->database->prepare(
+                "SELECT user_id, idem_key, request_scope, request_hash, record_state,
+                        status_code, (response_body IS NOT NULL) AS has_response
+                 FROM api_idempotency_records
+                 WHERE record_hash=? AND expires_at > CURRENT_TIMESTAMP LIMIT 1"
+            );
+            $stmt->bind_param('s', $recordHash);
+            $stmt->execute();
+            $row = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            if (!$row) return ['state' => 'unknown'];
+            if ((int)$row['user_id'] !== $userId
+                || !hash_equals((string)$row['idem_key'], $key)
+                || !hash_equals((string)$row['request_scope'], $scope)) {
+                return ['state' => 'unavailable'];
+            }
+            if (!hash_equals((string)$row['request_hash'], $requestHash)) {
+                return ['state' => 'payload_mismatch'];
+            }
+            if ($row['record_state'] === 'processing') return ['state' => 'processing'];
+            $code = (int)($row['status_code'] ?? 0);
+            if ($row['record_state'] === 'completed' && (int)$row['has_response'] === 1
+                && $code >= 100 && $code <= 599) {
+                return ['state' => 'completed', 'cached_http_status' => $code];
+            }
+        } catch (\Throwable $ignored) {
+            // Missing schema/backend is unavailable, NEVER a file fallback.
+        }
+        return ['state' => 'unavailable'];
+    }
+
+    /**
      * Finalise a reservation INSIDE the caller's open transaction (S2, F-20).
      *
      * `complete()` is an autocommitted statement that runs *after* the business

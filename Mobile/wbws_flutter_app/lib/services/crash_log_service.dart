@@ -19,8 +19,10 @@ import 'device_tier_service.dart';
 ///
 /// This service reads/parses/clears it and builds the copyable
 /// diagnostic report for the administrator (Profile → App →
-/// Diagnostics). Parsing is a pure function, pinned by test. Content is
-/// stack traces only — never tokens or member data.
+/// Diagnostics). Parsing is a pure function, pinned by test. The copied report
+/// includes the caller-supplied raw log tail without universal redaction;
+/// users must review it before private sharing. Bounded telemetry signatures
+/// below have a separate, narrower data contract.
 const String kCrashLogFileName = 'fkss_bootstrap_error.log';
 
 /// One `=== ... ===` section of the shared log.

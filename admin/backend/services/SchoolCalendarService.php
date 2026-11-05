@@ -31,6 +31,7 @@ class SchoolCalendarService
     /** Roles that see date statuses in attendance UIs. */
     public const READ_ROLES = ['super_admin', 'school_admin', 'edu_dept', 'teacher', 'attendance_taker', 'hr_dept', 'info_dept'];
 
+    private static bool $strictPreparationRead = false;
     private static ?bool $tablesReady = null;
     private static ?bool $timetableTablesReady = null;
     /** @var array{from:string,to:string,off:array<string,array>,hol:array<int,array>,mk:array<string,int>,mkClass:array<string,bool>}|null */
@@ -102,8 +103,11 @@ class SchoolCalendarService
                         $mkClass[(int)$row['class_id'] . ':' . $d] = true;
                     }
                     $stmt->close();
+                } elseif (self::$strictPreparationRead) {
+                    throw new \RuntimeException('Makeup preparation query is unavailable.');
                 }
             } catch (\Throwable $e) {
+                if (self::$strictPreparationRead) throw $e;
                 // makeups are an enhancement — never break the calendar
             }
         }
@@ -257,6 +261,84 @@ class SchoolCalendarService
     ];
     /** Days after "today" covered by the mobile offline calendar. */
     public const MOBILE_FUTURE_DAYS = 60;
+
+    /**
+     * Strict opt-in preparation primitive. Caller owns current authorization,
+     * class access and one consistent read transaction. This is not a lease.
+     * Legacy calendar callers retain their deployment-compatibility behavior.
+     */
+    public static function preparationCalendar(\mysqli $conn, array $classIds, int $expectedWriteYearId, string $from, string $to): array
+    {
+        if (self::$strictPreparationRead) throw new \LogicException('Nested calendar preparation is unsupported.');
+        $validDate = static fn(string $date): bool =>
+            preg_match('/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/D', $date) === 1
+            && checkdate((int)substr($date, 5, 2), (int)substr($date, 8, 2), (int)substr($date, 0, 4));
+        if (!array_is_list($classIds) || !$validDate($from) || !$validDate($to) || $from > $to
+            || $expectedWriteYearId <= 0 || $expectedWriteYearId > 9007199254740991) {
+            throw new \InvalidArgumentException('Explicit valid calendar scope is required.');
+        }
+        $days = (int)(new \DateTimeImmutable($from))->diff(new \DateTimeImmutable($to))->days + 1;
+        if ($days > self::BACKDATE_DAYS + self::MOBILE_FUTURE_DAYS + 1) {
+            throw new \InvalidArgumentException('Preparation calendar exceeds the supported mobile window.');
+        }
+        $seen = [];
+        foreach ($classIds as $id) {
+            if (!is_int($id) || $id <= 0 || $id > 9007199254740991 || isset($seen[$id])) {
+                throw new \InvalidArgumentException('Explicit unique server-authorized class identities are required.');
+            }
+            $seen[$id] = true;
+        }
+        $previousMode = (new \mysqli_driver())->report_mode;
+        self::resetCache(); // Never reuse connection/snapshot-unbound facts.
+        self::$strictPreparationRead = true;
+        mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
+        try {
+            $columns = [
+                'academic_years' => 'id,status,is_current,start_date,end_date',
+                'timetable_class_days' => 'class_id,academic_year_id,working_days',
+                'timetable_makeup_classes' => 'class_id,lesson_date',
+                self::DAY_OFFS => 'id,day_date,is_off,cancel_makeup,reason,created_at,created_by',
+                self::HOLIDAYS => 'id,title,title_am,date_from,date_to,type,created_at',
+            ];
+            foreach ($columns as $table => $fields) {
+                $result = $conn->query('SELECT ' . $fields . ' FROM ' . $table . ' LIMIT 0');
+                if (!$result) throw new \RuntimeException('Calendar schema is unavailable.');
+                $result->free();
+            }
+            // These are verified schema facts for this scoped read, not a
+            // permissive metadata guess; clear them again in finally.
+            self::$tablesReady = true;
+            self::$timetableTablesReady = true;
+            $year = self::activeYearRow($conn);
+            if ($year === null || $year['id'] !== $expectedWriteYearId) {
+                throw new \RuntimeException('Calendar and captured write year do not match.');
+            }
+            if ($classIds !== []) {
+                // Integer-only validated identities; no client SQL expressions.
+                $ids = implode(',', $classIds);
+                $result = $conn->query('SELECT class_id FROM timetable_class_days WHERE academic_year_id = '
+                    . $expectedWriteYearId . ' AND class_id IN (' . $ids . ') GROUP BY class_id HAVING COUNT(*) > 1 LIMIT 1');
+                if (!$result || $result->num_rows > 0) throw new \RuntimeException('Calendar class configuration is ambiguous.');
+                $result->free();
+            }
+            $calendar = self::mobileCalendar($conn, $classIds, $from, $to);
+            if (count($calendar['classes']) !== count($classIds)) throw new \RuntimeException('Calendar class coverage is incomplete.');
+            foreach ($calendar['classes'] as $i => $row) {
+                if ($row['class_id'] !== $classIds[$i] || strlen($row['days']) !== $days
+                    || !preg_match('/^[omncdh]+$/D', $row['days'])) {
+                    throw new \RuntimeException('Calendar day coverage is incomplete or unsupported.');
+                }
+            }
+            return ['from' => $from, 'to' => $to, 'academic_year_id' => $expectedWriteYearId,
+                'backdate_days' => self::BACKDATE_DAYS, 'enforced' => true] + $calendar;
+        } catch (\Throwable $error) {
+            throw new \RuntimeException('Calendar preparation is unavailable.', 0, $error);
+        } finally {
+            self::$strictPreparationRead = false;
+            self::resetCache();
+            mysqli_report($previousMode);
+        }
+    }
 
     /**
      * Offline class-day calendar for the mobile app. For each class, one
@@ -459,6 +541,9 @@ class SchoolCalendarService
         }
         $days = [];
         foreach (explode(',', (string)$row['working_days']) as $part) {
+            if (self::$strictPreparationRead && trim($part) !== '' && !preg_match('/^[1-7]$/D', trim($part))) {
+                throw new \RuntimeException('Calendar working days are invalid.');
+            }
             $n = (int)trim($part);
             if ($n >= 1 && $n <= 7) {
                 $days[] = $n;

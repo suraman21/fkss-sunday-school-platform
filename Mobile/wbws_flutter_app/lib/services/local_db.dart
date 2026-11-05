@@ -1,9 +1,11 @@
 import 'dart:convert';
-import 'dart:io';
 import 'dart:math';
 import 'package:sqflite/sqflite.dart';
 
 import 'attendance_delta.dart';
+import 'attendance_original_year.dart';
+import 'attendance_sync_receipt.dart';
+import 'interrupted_database_migration.dart';
 import 'amharic_text.dart' as amharic;
 import 'search_index_policy.dart';
 import 'search_matching.dart';
@@ -95,11 +97,11 @@ class LocalDb {
   Future<Database> _initDb() async {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, 'wbws_offline_v4.db');
-    await _recoverFromInterruptedEncryptionUpgrade(path);
+    await ensureNoInterruptedDatabaseMigration(path);
 
-    // The offline DB is a sandboxed cache of server data. At-rest protection
-    // comes from the OS (app sandbox + device file-based encryption); the
-    // server remains the source of truth for everything synced.
+    // The offline DB contains caches AND durable unsynchronized work. It is
+    // ordinary SQLite, not app-level encrypted. OS sandbox/encryption varies
+    // by device; server authority does not make pending local data disposable.
     return await openDatabase(
       path,
       // A warm UI engine and a cold background engine may open the production
@@ -122,6 +124,13 @@ class LocalDb {
         await _migrateToV34(db);
         await db.execute(localSyncStateV35Sql);
         await _createSyncAttemptLedger(db);
+        await migrateAttendanceOriginalYear(db);
+        await db.execute(attendancePreparationSnapshotSql);
+        await db.execute(gradesPreparationSnapshotSql);
+        await db.execute(attendanceSyncReceiptSql);
+        await db.execute(attendanceSyncReceiptIndexSql);
+        await db.execute(gradesSyncReceiptSql);
+        await db.execute(gradesSyncReceiptIndexSql);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -592,6 +601,23 @@ class LocalDb {
                 );
               }
             }
+          }
+          if (oldVersion < 38) {
+            await migrateAttendanceOriginalYear(db);
+          }
+          if (oldVersion < 39) {
+            await db.execute(attendancePreparationSnapshotSql);
+          }
+          if (oldVersion < 40) {
+            await db.execute(attendanceSyncReceiptSql);
+            await db.execute(attendanceSyncReceiptIndexSql);
+          }
+          if (oldVersion < 41) {
+            await db.execute(gradesPreparationSnapshotSql);
+          }
+          if (oldVersion < 42) {
+            await db.execute(gradesSyncReceiptSql);
+            await db.execute(gradesSyncReceiptIndexSql);
           }
         },
       onOpen: (db) async {
@@ -1758,38 +1784,6 @@ class LocalDb {
       batch.insert('hymn_search_grams', {'gram': g, 'hymn_id': id});
     }
     await batch.commit(noResult: true);
-  }
-
-  /// Version 1.1.15 briefly attempted an in-place SQLCipher upgrade. If that
-  /// step was interrupted it may have left sibling files behind, and in the
-  /// worst state the original file was set aside. This build no longer uses
-  /// app-level encryption, so: restore the original file whenever the current
-  /// one is missing or the original is still parked beside it, then remove
-  /// the stale siblings. No data is deleted here.
-  Future<void> _recoverFromInterruptedEncryptionUpgrade(String path) async {
-    final backup = File('$path.plaintext-migration-backup');
-    final main = File(path);
-    try {
-      if (!await main.exists() && await backup.exists()) {
-        // Swap interrupted before promotion: the original is the only copy.
-        await backup.rename(path);
-      } else if (await main.exists() && await backup.exists()) {
-        // Swap interrupted after promotion: the current file is the encrypted
-        // export and the parked original holds the same data.
-        await main.delete();
-        await backup.rename(path);
-      }
-    } catch (_) {}
-    for (final stale in [
-      '$path.encrypted-migration',
-      '$path.encrypted-migration-wal',
-      '$path.encrypted-migration-shm',
-      '$path.plaintext-migration-backup',
-    ]) {
-      try {
-        await File(stale).delete();
-      } catch (_) {}
-    }
   }
 
   /// P1-B (DB v27): local-first Notification Center store. Two
@@ -3284,22 +3278,29 @@ class LocalDb {
   // ============================================================
 
   Future<void> cacheStudents(int classId, List<dynamic> students) async {
+    // Capture before the first await: later caller mutations are not a refresh.
+    // This is a read cache only, not authorized preparation or offline readiness.
+    final updatedAt = DateTime.now().toIso8601String();
+    final rows = students.map((s) => <String, Object?>{
+      'member_id': s['member_id'] ?? s['id'],
+      'class_id': classId,
+      'student_name': s['student_name'] ?? '',
+      'father_name': s['father_name'] ?? '',
+      'member_code': s['member_code'] ?? '',
+      'gender': s['gender'] ?? '',
+      'updated_at': updatedAt,
+    }).toList(growable: false);
     final db = await database;
-    await db
-        .delete('cached_students', where: 'class_id = ?', whereArgs: [classId]);
-    final batch = db.batch();
-    for (final s in students) {
-      batch.insert('cached_students', {
-        'member_id': s['member_id'] ?? s['id'],
-        'class_id': classId,
-        'student_name': s['student_name'] ?? '',
-        'father_name': s['father_name'] ?? '',
-        'member_code': s['member_code'] ?? '',
-        'gender': s['gender'] ?? '',
-        'updated_at': DateTime.now().toIso8601String(),
-      });
-    }
-    await batch.commit(noResult: true);
+    await db.transaction((txn) async {
+      await txn.delete('cached_students', where: 'class_id = ?',
+          whereArgs: [classId]);
+      final batch = txn.batch();
+      for (final row in rows) {
+        batch.insert('cached_students', row);
+      }
+      // Failure propagates and rolls back the delete as well as every insert.
+      await batch.commit(noResult: true);
+    });
   }
 
   Future<List<Map<String, dynamic>>> getCachedStudents(int classId) async {
@@ -3526,6 +3527,17 @@ class LocalDb {
     });
   }
 
+  // Shared with scheduling/status: a blocked newer generation is not due.
+  static const _attendanceClaimEligibilityWhere =
+      "AND client_op_id IS NOT NULL AND TRIM(client_op_id) <> '' "
+      "AND NOT EXISTS (SELECT 1 FROM pending_attendance older "
+      "WHERE older.class_id = pending_attendance.class_id "
+      "AND older.date = pending_attendance.date "
+      "AND older.owner_user_id = pending_attendance.owner_user_id "
+      "AND older.id < pending_attendance.id AND older.synced = 0 "
+      "AND COALESCE(older.client_op_id, '') <> pending_attendance.client_op_id "
+      "AND COALESCE(older.sync_state, '') <> 'resolved_conflict') ";
+
   /// Atomically claims and snapshots one due operation. The returned immutable
   /// snapshot is the only object that may cross the HTTP boundary.
   Future<LegacyClaimSnapshot?> claimNextLegacyOperation({
@@ -3552,6 +3564,10 @@ class LocalDb {
         executor: txn,
       );
       if (!sessionMatches) return null;
+      // A newer attendance intent may be saved while an older one is in
+      // flight. Never send it ahead of that unresolved same-owner sheet.
+      final attendanceOrder = kind == LegacyOperationKind.attendance
+          ? _attendanceClaimEligibilityWhere : '';
       final candidates = await txn.rawQuery(
         'SELECT client_op_id, MIN(id) AS first_id '
         'FROM ${spec.table} '
@@ -3560,7 +3576,7 @@ class LocalDb {
         'AND (next_attempt_at IS NULL OR next_attempt_at <= ?) '
         'AND owner_user_id = ? '
         'AND created_authorization_version = ? '
-        "AND client_op_id IS NOT NULL AND TRIM(client_op_id) <> '' "
+        "AND client_op_id IS NOT NULL AND TRIM(client_op_id) <> '' $attendanceOrder"
         'GROUP BY client_op_id '
         'ORDER BY MIN(created_at), MIN(id) LIMIT 1',
         [claimedAtText, ownerUserId, authorizationVersion],
@@ -3670,6 +3686,8 @@ class LocalDb {
       return LegacyClaimSnapshot(
         operation: LegacyOperationRef(
           kind: kind,
+          originalAcademicYearId: kind == LegacyOperationKind.attendance
+              ? coherentAttendanceOriginalYear(claimedRows) : null,
           naturalKey: naturalKey,
           clientOpId: clientOpId,
           packetKind: packetKind,
@@ -3809,6 +3827,74 @@ class LocalDb {
           finishedAt: DateTime.parse(settledAt),
         );
       }
+
+      // Exact atomic receipt: when an attendance operation is accepted with a
+      // server response, store the receipt in the same transaction that marks
+      // the outbox row completed. Never outside the transaction.
+      if (settlement.kind == LegacySettlementKind.accepted &&
+          operation.kind == LegacyOperationKind.attendance &&
+          settlement.receiptJson != null &&
+          settlement.receiptJson!.isNotEmpty) {
+        try {
+          final nat = operation.naturalKey;
+          final classId = nat['class_id'] is int
+              ? nat['class_id'] as int
+              : int.tryParse('${nat['class_id']}') ?? 0;
+          final date = '${nat['date'] ?? ''}';
+          // Idempotent replay must not overwrite the first receipt.
+          await txn.rawInsert(
+            'INSERT OR IGNORE INTO attendance_sync_receipt '
+            '(client_op_id, owner_user_id, authorization_version, generation, class_id, date, http_status, receipt_json, server_request_id, created_at) '
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [
+              operation.clientOpId,
+              operation.ownerUserId,
+              operation.createdAuthorizationVersion,
+              operation.runtimeGeneration,
+              classId,
+              date,
+              settlement.httpStatus ?? 201,
+              settlement.receiptJson,
+              settlement.serverRequestId,
+              settledAt,
+            ],
+          );
+        } catch (_) {
+          // Receipt write failure must not hide a successful business settlement.
+          // The outbox row is already marked completed; the receipt can be
+          // reconciled on the next pull. Never throw here.
+        }
+      }
+      // Exact atomic receipt for grades (v42): same pattern, assessment-scoped.
+      if (settlement.kind == LegacySettlementKind.accepted &&
+          operation.kind == LegacyOperationKind.grades &&
+          settlement.receiptJson != null &&
+          settlement.receiptJson!.isNotEmpty) {
+        try {
+          final nat = operation.naturalKey;
+          final assessmentId = nat['assessment_id'] is int
+              ? nat['assessment_id'] as int
+              : int.tryParse('${nat['assessment_id']}') ?? 0;
+          await txn.rawInsert(
+            'INSERT OR IGNORE INTO grades_sync_receipt '
+            '(client_op_id, owner_user_id, authorization_version, generation, assessment_id, http_status, receipt_json, server_request_id, created_at) '
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [
+              operation.clientOpId,
+              operation.ownerUserId,
+              operation.createdAuthorizationVersion,
+              operation.runtimeGeneration,
+              assessmentId,
+              settlement.httpStatus ?? 201,
+              settlement.receiptJson,
+              settlement.serverRequestId,
+              settledAt,
+            ],
+          );
+        } catch (_) {
+          // Never hide business success.
+        }
+      }
       return LegacySettlementResult.applied;
     });
   }
@@ -3853,10 +3939,13 @@ class LocalDb {
           operation.ownerUserId,
           operation.createdAuthorizationVersion,
         ];
+        final attendance = operation.kind == LegacyOperationKind.attendance;
+        final latestOnly = attendance ? ' AND $_latestAttendanceGenerationWhere' : '';
         final rows = await txn.query(
           spec.table,
-          columns: ['client_op_id', 'packet_kind', 'sync_state'],
-          where: baseWhere,
+          columns: ['client_op_id', 'packet_kind', 'sync_state',
+            'attempt_count', 'last_attempt_at'],
+          where: '$baseWhere$latestOnly',
           whereArgs: baseArgs,
         );
         if (rows.isEmpty) return SubmitUndoResult.alreadyClaimed;
@@ -3865,6 +3954,15 @@ class LocalDb {
             '${row['packet_kind']}' == 'submitted');
         if (exact.isEmpty || exact.length != rows.length) {
           return SubmitUndoResult.supersededLocal;
+        }
+        if (attendance) {
+          if (exact.any((row) => row['attempt_count'] != 0 ||
+              row['last_attempt_at'] != null)) {
+            return SubmitUndoResult.alreadyClaimed;
+          }
+          final attempts = await txn.query('sync_attempts', columns: ['id'],
+              where: 'client_op_id = ?', whereArgs: [operation.clientOpId], limit: 1);
+          if (attempts.isNotEmpty) return SubmitUndoResult.alreadyClaimed;
         }
         if (exact.any((row) => '${row['sync_state']}' == 'in_flight')) {
           return SubmitUndoResult.alreadyClaimed;
@@ -3896,6 +3994,7 @@ class LocalDb {
           whereArgs: [...baseArgs, operation.clientOpId],
         );
         if (affected != rows.length) {
+          if (attendance) throw StateError('Attendance undo was not atomic.');
           return SubmitUndoResult.supersededLocal;
         }
         return SubmitUndoResult.applied;
@@ -3912,6 +4011,8 @@ class LocalDb {
     required String packetKind,
     DateTime? notBefore,
     required List<Map<String, Object?>> rows,
+    LegacyWriteSession? expectedSession,
+    int? originalAcademicYearId,
   }) {
     final memberIds = rows
         .map((row) => _asIntLocal(row['member_id']))
@@ -3930,23 +4031,58 @@ class LocalDb {
       late Map<String, int> binding;
       late int runtimeGeneration;
       await db.transaction((txn) async {
+        // Attendance captures belong to the issuing sheet, not a later login.
+        // Check in this same transaction before any replacement can delete rows.
+        if (expectedSession != null &&
+            (!expectedSession.isValid ||
+                !await activeSessionMatches(
+                  runtimeGeneration: expectedSession.runtimeGeneration,
+                  ownerUserId: expectedSession.ownerUserId,
+                  authorizationVersion: expectedSession.authorizationVersion,
+                  executor: txn,
+                ))) {
+          throw const StaleLegacyWriteSession();
+        }
         binding = await requireActiveOwnerBinding(txn);
         runtimeGeneration = await _activeRuntimeGeneration(txn);
+        // sqflite's delete builder disallows null whereArgs. Keep unknown
+        // provenance explicit, not coerced to a sentinel year.
+        final attendanceYearWhere = originalAcademicYearId == null
+            ? "AND original_academic_year_id IS NULL "
+            : "AND original_academic_year_id IS ? ";
+        final replaceable = kind == LegacyOperationKind.attendance
+            ? " AND sync_state = 'pending' AND attempt_count = 0 "
+                "AND last_attempt_at IS NULL "
+                "$attendanceYearWhere"
+                "AND client_op_id IS NOT NULL AND TRIM(client_op_id) <> '' "
+                "AND NOT EXISTS (SELECT 1 FROM pending_attendance sibling "
+                "WHERE sibling.client_op_id = pending_attendance.client_op_id "
+                "AND (sibling.synced IS NOT 0 OR sibling.sync_state IS NOT 'pending' "
+                "OR sibling.attempt_count IS NOT 0 OR sibling.last_attempt_at IS NOT NULL "
+                "OR sibling.original_academic_year_id IS NOT "
+                "pending_attendance.original_academic_year_id)) "
+                "AND NOT EXISTS (SELECT 1 FROM sync_attempts attempts "
+                "WHERE attempts.client_op_id = pending_attendance.client_op_id)"
+            : '';
         await txn.delete(
           table,
           where: '$naturalKeyWhere AND synced = 0 '
               'AND owner_user_id = ? '
-              'AND created_authorization_version = ?',
+              'AND created_authorization_version = ?$replaceable',
           whereArgs: [
             ...naturalKeyArgs,
             binding['owner_user_id'],
             binding['created_authorization_version'],
+            if (kind == LegacyOperationKind.attendance && originalAcademicYearId != null)
+              originalAcademicYearId,
           ],
         );
         final batch = txn.batch();
         for (final row in rows) {
           batch.insert(table, {
             ...row,
+            if (kind == LegacyOperationKind.attendance)
+              attendanceOriginalYearColumn: originalAcademicYearId,
             'packet_kind': normalizedKind,
             'client_op_id': opId,
             'synced': 0,
@@ -3966,6 +4102,7 @@ class LocalDb {
       });
       return LegacyOperationRef(
         kind: kind,
+        originalAcademicYearId: originalAcademicYearId,
         naturalKey: naturalKey,
         clientOpId: opId,
         packetKind: normalizedKind == 'submitted'
@@ -3985,7 +4122,13 @@ class LocalDb {
 
   Future<LegacyOperationRef> saveAttendanceLocal(int classId, String className, String date,
       List<Map<String, dynamic>> records,
-      {String packetKind = 'draft', DateTime? notBefore}) async {
+      {required LegacyWriteSession expectedSession,
+      int? originalAcademicYearId,
+      String packetKind = 'draft', DateTime? notBefore}) async {
+    if (originalAcademicYearId != null &&
+        !isValidOriginalAttendanceYear(originalAcademicYearId)) {
+      throw ArgumentError('Invalid original attendance academic year.');
+    }
     const validStatuses = {'present', 'absent', 'late', 'excused'};
     if (records.isEmpty) {
       throw ArgumentError('Attendance records are required.');
@@ -4002,11 +4145,13 @@ class LocalDb {
 
     return _replaceLegacyOperation(
       kind: LegacyOperationKind.attendance,
+      originalAcademicYearId: originalAcademicYearId,
       table: 'pending_attendance',
       naturalKeyWhere: 'class_id = ? AND date = ?',
       naturalKeyArgs: [classId, date],
       naturalKey: {'class_id': classId, 'date': date},
       packetKind: packetKind,
+      expectedSession: expectedSession,
       notBefore: notBefore,
       rows: records
           .map((r) => <String, Object?>{
@@ -4024,6 +4169,16 @@ class LocalDb {
     );
   }
 
+  // Select across synced and unsynced history: an acknowledged newer intent
+  // must not expose an older terminal/needs-review generation as new marks.
+  static const _latestAttendanceGenerationWhere =
+      'client_op_id IS (SELECT newest.client_op_id FROM pending_attendance newest '
+      'WHERE newest.class_id = pending_attendance.class_id '
+      'AND newest.date = pending_attendance.date '
+      'AND newest.owner_user_id = pending_attendance.owner_user_id '
+      'AND newest.created_authorization_version = pending_attendance.created_authorization_version '
+      'ORDER BY newest.id DESC LIMIT 1)';
+
   Future<List<Map<String, dynamic>>> getPendingAttendance() async {
     final db = await database;
     return db.transaction((txn) async {
@@ -4039,6 +4194,7 @@ class LocalDb {
         FROM pending_attendance
         WHERE synced = 0 AND sync_state IN ('pending', 'retry_wait')
           AND owner_user_id = ? AND created_authorization_version = ?
+          AND $_latestAttendanceGenerationWhere
         GROUP BY class_id, date ORDER BY date DESC
       ''', [
         binding['owner_user_id'],
@@ -4055,7 +4211,8 @@ class LocalDb {
       return txn.query(
         'pending_attendance',
         where: 'class_id = ? AND date = ? AND synced = 0 '
-            'AND owner_user_id = ? AND created_authorization_version = ?',
+            'AND owner_user_id = ? AND created_authorization_version = ? '
+            'AND $_latestAttendanceGenerationWhere',
         whereArgs: [
           classId,
           date,
@@ -4231,8 +4388,24 @@ class LocalDb {
   /// Record the outcome of a sync attempt without moving the cursor.
   /// Used for failures, so the UI can say "sync failed" while the cursor
   /// still points at the last revision that was genuinely applied.
-  Future<void> setSyncStatus(String domain, String status, {String? error}) async {
+  Future<void> setSyncStatus(String domain, String status,
+      {String? error, LegacyWriteSession? expectedSession}) async {
     final db = await database;
+    if (expectedSession != null) {
+      await db.transaction((txn) async {
+        await _requireAttendanceSyncSession(txn, expectedSession);
+        final rows = await txn.query('sync_state', columns: ['cursor'],
+            where: 'domain = ?', whereArgs: [domain], limit: 1);
+        await txn.insert('sync_state', {
+          'domain': domain,
+          'cursor': rows.isEmpty ? 0 : _asIntLocal(rows.first['cursor']),
+          'last_sync_at': DateTime.now().toIso8601String(),
+          'status': status,
+          'error': error,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+      });
+      return;
+    }
     try {
       await db.insert(
         'sync_state',
@@ -4248,6 +4421,19 @@ class LocalDb {
     } catch (_) {}
   }
 
+  Future<void> _requireAttendanceSyncSession(
+      DatabaseExecutor executor, LegacyWriteSession expectedSession) async {
+    if (!expectedSession.isValid ||
+        !await activeSessionMatches(
+          runtimeGeneration: expectedSession.runtimeGeneration,
+          ownerUserId: expectedSession.ownerUserId,
+          authorizationVersion: expectedSession.authorizationVersion,
+          executor: executor,
+        )) {
+      throw const StaleAttendanceSyncSession();
+    }
+  }
+
   /// Apply one page of attendance changes and advance the cursor, both
   /// inside a single SQLite transaction.
   ///
@@ -4261,6 +4447,7 @@ class LocalDb {
   /// [records] maps attendance id to the canonical server row. An id
   /// missing from [records] is a tombstone.
   Future<void> applyAttendanceDelta({
+    required LegacyWriteSession expectedSession,
     required List<Map<String, dynamic>> items,
     required Map<String, dynamic> records,
     required int nextCursor,
@@ -4268,6 +4455,7 @@ class LocalDb {
   }) async {
     final db = await database;
     await db.transaction((txn) async {
+      await _requireAttendanceSyncSession(txn, expectedSession);
       // Sheets are rewritten once each, not once per change, so a class
       // day with thirty corrections costs one read and one write.
       final touched = <String, Map<String, dynamic>>{};
@@ -4340,9 +4528,11 @@ class LocalDb {
   /// Drop the cached attendance sheets and reset the cursor together, so
   /// a bootstrap cannot leave an empty cache paired with a cursor that
   /// claims to be up to date.
-  Future<void> resetAttendanceSyncForBootstrap() async {
+  Future<void> resetAttendanceSyncForBootstrap(
+      {required LegacyWriteSession expectedSession}) async {
     final db = await database;
     await db.transaction((txn) async {
+      await _requireAttendanceSyncSession(txn, expectedSession);
       await txn.delete('cached_attendance');
       await txn.insert(
         'sync_state',
@@ -4359,19 +4549,64 @@ class LocalDb {
   }
 
   /// Store the cursor a completed bootstrap corresponds to.
-  Future<void> completeAttendanceBootstrap(int cursor) async {
+  Future<void> completeAttendanceBootstrap(int cursor,
+      {required LegacyWriteSession expectedSession}) async {
     final db = await database;
-    await db.insert(
-      'sync_state',
-      {
-        'domain': 'attendance',
-        'cursor': cursor,
-        'last_sync_at': DateTime.now().toIso8601String(),
-        'status': 'ok',
-        'error': null,
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await db.transaction((txn) async {
+      await _requireAttendanceSyncSession(txn, expectedSession);
+      await txn.insert(
+        'sync_state',
+        {
+          'domain': 'attendance',
+          'cursor': cursor,
+          'last_sync_at': DateTime.now().toIso8601String(),
+          'status': 'ok',
+          'error': null,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    });
+  }
+
+  /// Publish the two legacy attendance read caches together under the captured
+  /// durable session. This is NOT complete server preparation or a lease.
+  Future<void> cacheAttendanceSnapshot(
+      int classId, String date, List<Map<String, dynamic>> students,
+      {required LegacyWriteSession expectedSession,
+      String? submissionStatus, bool locked = false}) async {
+    // Capture both representations before awaiting any database work.
+    final updatedAt = DateTime.now().toIso8601String();
+    final responseJson = jsonEncode({
+      'students': students,
+      'submission_status': submissionStatus ?? '',
+      'locked': locked,
+    });
+    final rows = students.map((s) => <String, Object?>{
+      'member_id': s['member_id'] ?? s['id'],
+      'class_id': classId,
+      'student_name': s['student_name'] ?? '',
+      'father_name': s['father_name'] ?? '',
+      'member_code': s['member_code'] ?? '',
+      'gender': s['gender'] ?? '',
+      'updated_at': updatedAt,
+    }).toList(growable: false);
+    final db = await database;
+    await db.transaction((txn) async {
+      await _requireAttendanceSyncSession(txn, expectedSession);
+      await txn.delete('cached_students', where: 'class_id = ?',
+          whereArgs: [classId]);
+      final batch = txn.batch();
+      for (final row in rows) {
+        batch.insert('cached_students', row);
+      }
+      batch.insert('cached_attendance', {
+        'class_id': classId,
+        'date': date,
+        'response_json': responseJson,
+        'updated_at': updatedAt,
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      await batch.commit(noResult: true);
+    });
   }
 
   Future<void> cacheAttendanceResponse(int classId, String date, List<Map<String, dynamic>> students,
@@ -4477,29 +4712,12 @@ class LocalDb {
     return List<Map<String, dynamic>>.from(meta['students'] as List);
   }
 
+  @Deprecated('A lock is not an acceptance receipt; do not use for lock cleanup.')
   Future<void> dropPendingAttendance(int classId, String date) async {
-    final db = await database;
-    await db.transaction((txn) async {
-      final binding = await requireActiveOwnerBinding(txn);
-      await txn.delete(
-        'pending_attendance',
-        // F8: never delete workflow-rejected rows here (they stay for
-        // the Needs Attention review / explicit Discard) — only stale
-        // never-rejected drafts for a day the server has since locked.
-        where: 'class_id = ? AND date = ? AND synced = 0 '
-            "AND sync_state IN ('pending', 'retry_wait') "
-            'AND sync_error IS NULL AND owner_user_id = ? '
-            'AND created_authorization_version = ?',
-        whereArgs: [
-          classId,
-          date,
-          binding['owner_user_id'],
-          binding['created_authorization_version'],
-        ],
-      );
-    });
+    throw StateError('Attendance requires exact server confirmation before removal.');
   }
 
+  @Deprecated('A lock is not an acceptance receipt; do not use for lock cleanup.')
   Future<void> dropPendingGrades(int assessmentId) async {
     final db = await database;
     await db.transaction((txn) async {
@@ -4613,6 +4831,7 @@ class LocalDb {
 
 
 
+  @Deprecated('A lock is not an acceptance receipt; do not use for lock cleanup.')
   Future<void> dropPendingMezmur(String date, String section) async {
     final db = await database;
     await db.transaction((txn) async {
@@ -4758,7 +4977,8 @@ class LocalDb {
         "SELECT next_attempt_at AS due FROM ${spec.table} "
             "WHERE synced = 0 AND sync_state IN ('pending', 'retry_wait') "
             'AND next_attempt_at IS NOT NULL AND owner_user_id = ? '
-            'AND created_authorization_version = ?',
+            'AND created_authorization_version = ? '
+            "${spec.table == 'pending_attendance' ? _attendanceClaimEligibilityWhere : ''}",
       "SELECT next_attempt_at AS due FROM pending_hymn_ops "
           "WHERE synced = 0 AND sync_state IN ('pending', 'retry_wait') "
           'AND next_attempt_at IS NOT NULL',
@@ -4953,9 +5173,10 @@ class LocalDb {
         spec.table,
         {
           'sync_state': 'pending',
-          'attempt_count': 0,
+          // Attendance ledger numbers must stay monotonic across retries.
+          if (kind != 'attendance') 'attempt_count': 0,
           'next_attempt_at': null,
-          'last_attempt_at': null,
+          if (kind != 'attendance') 'last_attempt_at': null,
           'failure_code': null,
           'failure_http_status': null,
           'failed_at': null,
@@ -4976,6 +5197,11 @@ class LocalDb {
     String clientOpId, {
     String? expectedState,
   }) async {
+    // Neither explicit consent nor a local rejection/conflict label is proof
+    // that this attendance operation has a terminal server disposition.
+    if (kind == 'attendance') {
+      return SyncRecoveryActionResult.serverConfirmationRequired;
+    }
     const terminal = {
       'needs_attention',
       'blocked_dependency',
@@ -5273,6 +5499,7 @@ class LocalDb {
         : SyncRecoveryActionResult.stale;
   }
 
+  @Deprecated('A lock is not an acceptance receipt; do not use for lock cleanup.')
   Future<void> dropPendingHr(String date, String section) async {
     final db = await database;
     await db.transaction((txn) async {
@@ -7051,7 +7278,8 @@ class LocalDb {
           "WHERE synced = 0 AND sync_state IN ('pending', 'retry_wait') "
           'AND (next_attempt_at IS NULL OR next_attempt_at <= ?) '
           'AND owner_user_id = ? '
-          'AND created_authorization_version = ? LIMIT 1',
+          'AND created_authorization_version = ? '
+          "${spec.table == 'pending_attendance' ? _attendanceClaimEligibilityWhere : ''}LIMIT 1",
           [
             nowText,
             binding['owner_user_id'],
@@ -7083,12 +7311,14 @@ class LocalDb {
       }
 
       Future<int> legacyState(String predicate,
-          [List<Object?> args = const []]) async {
+          [List<Object?> args = const [], String? attendancePredicate]) async {
         var total = 0;
         for (final spec in legacyOutboxTableSpecs) {
+          final scopedPredicate = spec.table == 'pending_attendance'
+              ? attendancePredicate ?? predicate : predicate;
           total += await scalar(
             'SELECT COUNT(DISTINCT client_op_id) FROM ${spec.table} '
-            'WHERE synced = 0 AND ($predicate) '
+            'WHERE synced = 0 AND ($scopedPredicate) '
             'AND owner_user_id = ? '
             'AND created_authorization_version = ?',
             [...args, ownerUserId, authorizationVersion],
@@ -7114,11 +7344,12 @@ class LocalDb {
         String legacyPredicate,
         String hymnPredicate,
         String commPredicate, {
+        String? attendancePredicate,
         List<Object?> legacyArgs = const [],
         List<Object?> hymnArgs = const [],
         List<Object?> commArgs = const [],
       }) async {
-        return await legacyState(legacyPredicate, legacyArgs) +
+        return await legacyState(legacyPredicate, legacyArgs, attendancePredicate) +
             await scalar(
               'SELECT COUNT(DISTINCT client_op_id) FROM pending_hymn_ops '
               'WHERE synced = 0 AND ($hymnPredicate)',
@@ -7143,6 +7374,9 @@ class LocalDb {
             'AND dependency.synced = 1))',
         "state IN ('pending', 'retry_wait') AND "
             '(next_attempt_at IS NULL OR next_attempt_at <= ?)',
+        attendancePredicate: "sync_state IN ('pending', 'retry_wait') AND "
+            '(next_attempt_at IS NULL OR next_attempt_at <= ?) '
+            '$_attendanceClaimEligibilityWhere',
         legacyArgs: [nowText],
         hymnArgs: [nowText],
         commArgs: [nowText],
@@ -7156,6 +7390,8 @@ class LocalDb {
             'WHERE dependency.id = pending_hymn_ops.depends_on '
             'AND dependency.synced = 0))',
         "state IN ('pending', 'retry_wait') AND next_attempt_at > ?",
+        attendancePredicate: "sync_state IN ('pending', 'retry_wait') "
+            'AND next_attempt_at > ? $_attendanceClaimEligibilityWhere',
         legacyArgs: [nowText],
         hymnArgs: [nowText],
         commArgs: [nowText],
@@ -7198,6 +7434,9 @@ class LocalDb {
         "sync_state = 'blocked_dependency'",
         "sync_state = 'blocked_dependency'",
         "state = 'blocked_dependency'",
+        attendancePredicate: "sync_state = 'blocked_dependency' OR "
+            "(sync_state IN ('pending', 'retry_wait') "
+            'AND NOT (1 = 1 $_attendanceClaimEligibilityWhere))',
       );
       final conflicts = await allState(
         "sync_state = 'resolved_conflict'",
@@ -7374,8 +7613,24 @@ class LocalDb {
     final db = await database;
     final cutoff =
         DateTime.now().subtract(const Duration(days: 7)).toIso8601String();
+    // Keep just the newest accepted checkpoint while older unsynced history
+    // could otherwise reappear in the latest-generation attendance overlay.
     await db.delete('pending_attendance',
-        where: 'synced = 1 AND synced_at < ?', whereArgs: [cutoff]);
+        where: 'synced = 1 AND synced_at < ? AND ('
+            'EXISTS (SELECT 1 FROM pending_attendance newer '
+            'WHERE newer.class_id = pending_attendance.class_id '
+            'AND newer.date = pending_attendance.date '
+            'AND newer.owner_user_id = pending_attendance.owner_user_id '
+            'AND newer.created_authorization_version = pending_attendance.created_authorization_version '
+            'AND newer.synced = 1 AND newer.id > pending_attendance.id '
+            'AND newer.client_op_id IS NOT pending_attendance.client_op_id) '
+            'OR NOT EXISTS (SELECT 1 FROM pending_attendance older '
+            'WHERE older.class_id = pending_attendance.class_id '
+            'AND older.date = pending_attendance.date '
+            'AND older.owner_user_id = pending_attendance.owner_user_id '
+            'AND older.created_authorization_version = pending_attendance.created_authorization_version '
+            'AND older.synced = 0 AND older.id < pending_attendance.id))',
+        whereArgs: [cutoff]);
     await db.delete('pending_grades',
         where: 'synced = 1 AND synced_at < ?', whereArgs: [cutoff]);
     await db.delete('pending_mezmur',
@@ -7411,6 +7666,10 @@ class LocalDb {
     try { await db.delete('cached_mezmur_sections'); } catch (_) {}
     try { await db.delete('cached_hr_sheet'); } catch (_) {}
     try { await db.delete('cached_hr_sections'); } catch (_) {}
+    await db.delete('attendance_preparation_snapshot');
+    await db.delete('grades_preparation_snapshot');
+    try { await db.delete('attendance_sync_receipt'); } catch (_) {}
+    try { await db.delete('grades_sync_receipt'); } catch (_) {}
     // NOTE: the hymn library (cached_hymns, cached_mezmur_categories,
     // hymn_sync_meta, pending_hymn_ops) is deliberately NOT cleared —
     // it is shared department content, not member data, and queued
@@ -7459,6 +7718,10 @@ class LocalDb {
         'pending_grades',
         'pending_mezmur',
         'pending_hr',
+        'attendance_preparation_snapshot',
+        'grades_preparation_snapshot',
+        'attendance_sync_receipt',
+        'grades_sync_receipt',
         'cached_hr_sheet',
         'cached_hr_sections',
         // Intentionally kept on logout: cached_hymns,

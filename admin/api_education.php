@@ -264,7 +264,6 @@ if (function_exists('ay_require_writable')) {
 $__dcHigh = [
     'delete_class'      => 'education.delete_class',
     'delete_term'       => 'education.delete_term',
-    'sync_member_types' => 'education.sync_types',
 ];
 if (isset($__dcHigh[$action])) {
     dc_require_phrase($__dcHigh[$action]);
@@ -1877,14 +1876,14 @@ switch ($action) {
         break;
 
     // ============================================================
-    // BATCH SYNC MEMBER TYPES (admin maintenance)
+    // RETIRED: member types are manual, never inferred from roles.
     // ============================================================
     case 'sync_member_types':
-        $result = batchSyncMemberTypes($conn);
+        http_response_code(410);
         echo json_encode([
-            'status' => 'success',
-            'message' => "Checked {$result['checked']} members, fixed {$result['fixed']} member types",
-            'details' => $result
+            'status' => 'error',
+            'code' => 'member_type_manual_only',
+            'message' => 'Automatic member type synchronization has been retired. Edit the member type manually in the member record.'
         ]);
         break;
 

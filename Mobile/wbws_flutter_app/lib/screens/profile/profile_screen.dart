@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../models/user_profile.dart';
+import '../update/app_updates_tile.dart';
 import '../../services/app_lock_service.dart';
 import '../../services/crash_log_service.dart';
 import '../../services/device_tier_service.dart';
@@ -832,6 +833,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                   ..._buildAppLockSection(),
                   const SizedBox(height: 12),
                   _buildSection('App', [
+                    const AppUpdatesTile(),
                     _infoTile(
                       Icons.info_outline,
                       'Version',
@@ -1375,9 +1377,9 @@ class _ProfileScreenState extends State<ProfileScreen>
               ),
               const SizedBox(height: 8),
               const Text(
-                'Copy the report and send it to the administrator when '
-                'asked. It contains device info and error traces only — no '
-                'personal data.',
+                'Review the report before sharing it privately with an '
+                'authorized administrator. It includes device details and '
+                'error logs, which may contain sensitive information.',
                 style: TextStyle(fontSize: 11, color: Colors.black54),
               ),
             ],

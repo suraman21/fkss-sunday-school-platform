@@ -29,9 +29,13 @@ from structure_paths import ROOT, first_party_php, includes  # noqa: E402
 # candidate list (secrets file, vendor/autoload.php, app-release file) or a
 # registry of optional services. Update only after reading the new code.
 DYNAMIC_ALLOWLIST = {
+    # Finite browser registry selects the handler; no request-supplied file path.
+    "browser_page.php": 1,
     "admin/api_export_members.php": 1,
     "admin/backend/reporting/ReportExportService.php": 1,
-    "admin/backend/services/AppReleaseManager.php": 4,
+    # 2026-10-28: publication reuses central release loading; two redundant
+    # variable includes were removed. Remaining root/core paths reviewed.
+    "admin/backend/services/AppReleaseManager.php": 2,
     "admin/backend/services/FailureAlertService.php": 1,
     "admin/backend/services/GuardianMatchService.php": 1,
     "admin/backend/services/TestMemberSeed.php": 1,

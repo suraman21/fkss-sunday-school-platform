@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../services/app_update_service.dart';
 import '../../utils/theme.dart';
-import '../../utils/transitions.dart';
 import 'update_screen.dart';
 
 /// P65: the optional-update banner — the quiet half of the update UX.
@@ -16,23 +15,27 @@ import 'update_screen.dart';
 /// full rebuild for it (a whole-shell rebuild visibly hitched the
 /// kept-alive tabs).
 class UpdateBanner extends StatefulWidget {
-  const UpdateBanner({super.key});
+  final AppUpdateService? service;
+  const UpdateBanner({super.key, this.service});
 
   @override
   State<UpdateBanner> createState() => _UpdateBannerState();
 }
 
 class _UpdateBannerState extends State<UpdateBanner> {
-  bool _dismissed = false;
+  String? _dismissedRelease;
 
   @override
   Widget build(BuildContext context) {
-    final svc = AppUpdateService();
+    final svc = widget.service ?? AppUpdateService();
     return ValueListenableBuilder<int>(
       valueListenable: svc.revision,
       builder: (context, _, __) {
         final cfg = svc.config;
-        if (_dismissed || !svc.decision.optional || cfg == null) {
+        if ((_dismissedRelease != null &&
+                _dismissedRelease == svc.releaseKey) ||
+            !svc.decision.optional ||
+            cfg == null) {
           return const SizedBox.shrink();
         }
         return TweenAnimationBuilder<double>(
@@ -50,10 +53,10 @@ class _UpdateBannerState extends State<UpdateBanner> {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
             decoration: BoxDecoration(
-              color: AppTheme.primary.withOpacity(0.10),
+              color: AppTheme.primary.withValues(alpha: 0.10),
               border: Border(
                 bottom:
-                    BorderSide(color: AppTheme.primary.withOpacity(0.25)),
+                    BorderSide(color: AppTheme.primary.withValues(alpha: 0.25)),
               ),
             ),
             child: SafeArea(
@@ -74,25 +77,30 @@ class _UpdateBannerState extends State<UpdateBanner> {
                     ),
                   ),
                   TextButton(
-                    onPressed: () => context
-                        .pushSmooth(const UpdateScreen(blocking: false)),
+                    onPressed: () =>
+                        AppUpdatesNavigation.open(context, service: svc),
                     style: TextButton.styleFrom(
                       foregroundColor: AppTheme.primary,
                       padding: const EdgeInsets.symmetric(horizontal: 12),
-                      minimumSize: const Size(0, 32),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      minimumSize: const Size(48, 48),
+                      tapTargetSize: MaterialTapTargetSize.padded,
                     ),
                     child: const Text('Update',
                         style: TextStyle(fontWeight: FontWeight.w700)),
                   ),
-                  InkWell(
-                    onTap: () => setState(() => _dismissed = true),
-                    borderRadius: BorderRadius.circular(16),
-                    child: const Padding(
-                      padding: EdgeInsets.all(6),
-                      child: Icon(Icons.close_rounded,
-                          size: 16, color: AppTheme.textSecondary),
-                    ),
+                  IconButton(
+                    tooltip: 'Dismiss update reminder',
+                    constraints:
+                        const BoxConstraints(minWidth: 48, minHeight: 48),
+                    onPressed: () {
+                      setState(() => _dismissedRelease = svc.releaseKey);
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text(
+                            'You can update anytime from Profile → App updates.'),
+                      ));
+                    },
+                    icon: const Icon(Icons.close_rounded,
+                        size: 20, color: AppTheme.textSecondary),
                   ),
                 ],
               ),

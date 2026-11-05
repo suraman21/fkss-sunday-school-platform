@@ -340,9 +340,13 @@ class P1DDoNotTouch(unittest.TestCase):
         self.ldb = read(LDB)
 
     def test_f8_unchanged(self):
-        self.assertEqual(self.ldb.count('sync_error IS NULL'), 4)
-        for name in ('dropPendingAttendance', 'dropPendingGrades',
-                     'dropPendingMezmur', 'dropPendingHr'):
+        # Attendance now refuses deletion entirely; other three F8 filters stay.
+        self.assertEqual(self.ldb.count('sync_error IS NULL'), 3)
+        attendance = method_body(self.ldb, 'Future<void> dropPendingAttendance(')
+        self.assertIn('throw StateError(', attendance)
+        self.assertNotIn('.delete(', attendance)
+        self.assertNotIn('await database', attendance)
+        for name in ('dropPendingGrades', 'dropPendingMezmur', 'dropPendingHr'):
             body = method_body(self.ldb, f'Future<void> {name}(')
             self.assertIn('sync_error IS NULL', body, name)
         sync = read(SYNC) + read(POLICY)

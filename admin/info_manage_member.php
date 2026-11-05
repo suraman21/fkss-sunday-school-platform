@@ -323,7 +323,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         $conn->commit();
         // Identity v2: apply submitted positions, re-code if needed and
-        // derive the legacy flags + member-type sync from them.
+        // derive legacy flags without changing the manual member type.
         require_once __DIR__ . '/backend/services/PositionSyncService.php';
         $editPositionIds = [];
         if (isset($_POST['position_ids']) && is_array($_POST['position_ids'])) {
@@ -1053,6 +1053,7 @@ $fullName = trim($m['student_name'] . ' ' . $m['father_name'] . ' ' . $m['grandf
                                     <option value="special_regular" <?= sel($m['member_type'], 'special_regular') ?>>Special Regular</option>
                                     <option value="honorary" <?= sel($m['member_type'], 'honorary') ?>>Honorary</option>
                                 </select>
+                                <small>Selected manually. Positions and teacher roles do not change this type.</small>
                             </div>
                         </div>
                     </div>

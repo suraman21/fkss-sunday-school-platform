@@ -65,7 +65,7 @@ exit(1);
 ') || exit 1
 
 # Read line-wise so a password containing spaces survives intact.
-IFS=$'"'"'\n'"'"' read -r -d "" DB_NAME DB_USER DB_PASS <<< "$_env_values" || true
+IFS=$'\n' read -r -d "" DB_NAME DB_USER DB_PASS <<< "$_env_values" || true
 if [ -z "${DB_NAME:-}" ] || [ -z "${DB_USER:-}" ]; then
   echo "provision_env.sh: could not read DB settings from the env file." >&2
   exit 1

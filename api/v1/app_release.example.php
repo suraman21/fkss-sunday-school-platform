@@ -20,19 +20,19 @@
  *   cp FKSS-arm64-v8a.apk    /home/arkeonet/fkss_releases/fkss-arm64.apk
  *
  * After each new build, raise latest_version / latest_build to match
- * pubspec.yaml (currently 1.7.3+40). Raise min_build only after the staged
+ * pubspec.yaml (currently 1.7.4+41). Raise min_build only after the staged
  * compatibility window and adoption checks in the release runbook.
  */
 return [
-    'latest_version' => '1.7.3',
-    'latest_build'   => 40,
+    'latest_version' => '1.7.4',
+    'latest_build'   => 41,
     'min_version'    => '1.0.0',
     'min_build'      => 1,
     'force_update'   => false,
     // Emergency containment: set false to pause outbound app outbox drains.
     // Local SQLite saves and queued rows continue and must not be deleted.
     'background_drains_enabled' => true,
-    'release_notes'  => 'This update fixes hymns from the old system still appearing after the move to felegekidusan.com: the app now rebuilds its hymn list from the current system automatically. Your account, downloads and pending changes are kept.',
+    'release_notes'  => 'Attendance follows configured class days, including saved calendar checks while offline. Day Offs, holidays and non-class days are read-only; allowed makeup days remain available.',
     'banner_text'    => '',
     'banner_kind'    => 'info',
     // Universal APK (both 32-bit and 64-bit phones) — ALWAYS publish.

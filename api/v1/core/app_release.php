@@ -56,8 +56,8 @@ function fkssLoadAppRelease(): array
         // Keep these synchronized with Mobile/wbws_flutter_app/pubspec.yaml
         // and AppConfig. Deployment-owned metadata may move ahead only after
         // the matching APK and checksums have been published.
-        'latest_version' => '1.7.3',
-        'latest_build'   => 40,
+        'latest_version' => '1.7.4',
+        'latest_build'   => 41,
         'min_version'    => '1.0.0',
         'min_build'      => 1,
         'force_update'   => false,
