@@ -13,6 +13,7 @@ import '../../services/local_db.dart';
 import '../../services/session_models.dart';
 import '../../services/api_service.dart';
 import '../../services/attendance_preparation_adapter.dart';
+import '../../services/attendance_preparation_envelope.dart';
 import '../../services/attendance_preparation_fetcher.dart';
 import '../../services/attendance_preparation_readiness.dart';
 import '../../services/attendance_preparation_store.dart';
