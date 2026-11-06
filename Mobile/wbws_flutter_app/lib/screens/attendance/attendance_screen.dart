@@ -86,6 +86,8 @@ class AttendanceScreenState extends State<AttendanceScreen> with WidgetsBindingO
   Map<String, dynamic>? _dateStatus;
   AttendanceCalendar? _calendar;
   bool _calendarFromCache = false;
+  /// Episode key of the last saved-calendar toast; null = fresh data shown.
+  String? _calendarToastKey;
   final _calendarCache = AttendanceCalendarCache();
   int _loadEpoch = 0;
   bool _accessDenied = false;
@@ -209,6 +211,8 @@ class AttendanceScreenState extends State<AttendanceScreen> with WidgetsBindingO
       if (hasLink) {
         unawaited(_loadAttendance());
         unawaited(_loadPreparationStatus());
+      } else {
+        _maybeShowCalendarToast();
       }
     });
     _dirty.addListener(_syncSaveGate);
@@ -657,6 +661,26 @@ class AttendanceScreenState extends State<AttendanceScreen> with WidgetsBindingO
     }
   }
 
+  /// Smart saved-calendar notice: a transient toast shown ONCE per fallback
+  /// episode (not a permanent banner, not on every rebuild). Fires when the
+  /// screen actually falls back to cache (refresh failed/offline) or when the
+  /// connection drops mid-screen while serving cache. Re-arms only after
+  /// fresh data lands, so repeat refreshes while offline stay silent.
+  void _maybeShowCalendarToast() {
+    if (!mounted) return;
+    if (!(_calendarFromCache && _calendar != null)) return;
+    final key = '$_selectedClassId|$_selectedDate';
+    if (_calendarToastKey == key) return;
+    _calendarToastKey = key;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Saved class-day calendar · will refresh when online'),
+        backgroundColor: AppTheme.info,
+        duration: Duration(seconds: 4),
+      ),
+    );
+  }
+
   Future<void> _refreshCalendar(String scope, bool Function() current) async {
     final etag = _calendar?.payload['etag'];
     final res = await _api.getAttendanceCalendar(etag: etag is String ? etag : null);
@@ -671,14 +695,21 @@ class AttendanceScreenState extends State<AttendanceScreen> with WidgetsBindingO
       return;
     }
     if (res.notModified) {
-      setState(() => _calendarFromCache = false);
+      setState(() {
+        _calendarFromCache = false;
+        _calendarToastKey = null;
+      });
       return;
     }
-    if (!res.success) return;
+    if (!res.success) {
+      if (current()) _maybeShowCalendarToast();
+      return;
+    }
     final calendar = AttendanceCalendar.parse(res.data);
     setState(() {
       _calendar = calendar;
       _calendarFromCache = false;
+      _calendarToastKey = null;
     });
     _syncSaveGate();
     try {
@@ -1284,8 +1315,8 @@ class AttendanceScreenState extends State<AttendanceScreen> with WidgetsBindingO
             ),
           ),
 
-          if (_calendarFromCache && _dateStatus == null && _calendar != null)
-            StatusBanner.info('Showing the saved class-day calendar · reconnect and refresh to check schedule changes.'),
+          // Saved-calendar provenance is a transient toast now (see
+          // _maybeShowCalendarToast) — no permanent banner, small screens keep ~50px.
           if (_selectedClassId != null && !_dayAllowed)
             StatusBanner.warning(_dayMessage),
           if (_effectiveDateStatus?['ok'] == true &&
