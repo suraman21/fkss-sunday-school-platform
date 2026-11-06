@@ -123,7 +123,16 @@ final class GradeMember {
   const GradeMember._({required this.memberId, required this.studentName, required this.fatherName, required this.memberCode});
   static GradeMember _decode(Map<String, dynamic> map) {
     const keys = {'member_id','student_name','father_name','member_code'}; _exactKeys(map, keys, 'member');
-    return GradeMember._(memberId: _id(map['member_id'], 'member.member_id'), studentName: _nonEmptyString(map['student_name'], 'member.student_name'), fatherName: _nonEmptyString(map['father_name'], 'member.father_name'), memberCode: _nonEmptyString(map['member_code'], 'member.member_code'));
+    // R5b: father_name may be empty/legacy — allow bounded string (attendance parity). Never abort whole roster for one bad name.
+    return GradeMember._(memberId: _id(map['member_id'], 'member.member_id'), studentName: _nonEmptyString(map['student_name'], 'member.student_name'), fatherName: _boundedString(map['father_name'], 'member.father_name', 200), memberCode: _nonEmptyString(map['member_code'], 'member.member_code'));
+  }
+  // Bounded string that tolerates empty/null (unlike _nonEmptyString) — mirrors AttendancePreparationDataset parity for R5b.
+  static String _boundedString(dynamic v, String ctx, int max) {
+    if (v == null) return '';
+    if (v is! String) throw FormatException('Invalid $ctx: expected string');
+    if (v.length > max) throw FormatException('Invalid $ctx: too long');
+    if (v.contains('\u0000')) throw FormatException('Invalid $ctx: contains NUL');
+    return v;
   }
 }
 

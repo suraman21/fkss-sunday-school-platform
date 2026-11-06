@@ -502,6 +502,16 @@ class EnrollmentService
      * Existing enrollment and dated Education eligibility rules are unchanged.
      * @return list<array{member_id:int,student_name:string,father_name:string,member_code:string}>
      */
+    // R5b — Sanitize member strings for preparation payloads. Never abort whole roster for one bad name; coerce to safe UTF-8.
+    private static function sanitizePrepString(?string $v, int $max = 200): string {
+        if ($v === null) return '';
+        $v = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $v) ?? '';
+        $v = trim($v);
+        if (!mb_check_encoding($v, 'UTF-8')) $v = mb_convert_encoding($v, 'UTF-8', 'UTF-8');
+        if (mb_strlen($v) > $max) $v = mb_substr($v, 0, $max);
+        return $v;
+    }
+
     public static function fetchPreparationRoster(\mysqli $conn, int $classId, int $rosterYearId, string $date): array
     {
         self::requirePreparationIds($classId, $rosterYearId);
@@ -521,9 +531,9 @@ class EnrollmentService
             }
             $seen[$id] = true;
             $row = ['member_id' => $id,
-                'student_name' => (string)$row['student_name'],
-                'father_name' => (string)$row['father_name'],
-                'member_code' => (string)$row['member_code']];
+                'student_name' => self::sanitizePrepString((string)$row['student_name'], 200),
+                'father_name' => self::sanitizePrepString((string)$row['father_name'], 200),
+                'member_code' => self::sanitizePrepString((string)$row['member_code'], 100)];
         }
         unset($row);
         return $rows;
@@ -577,8 +587,8 @@ class EnrollmentService
                     throw new \RuntimeException('Preparation member identities are incomplete or duplicated.');
                 }
                 $memberSeen[$id] = true;
-                $members[] = ['member_id'=>$id, 'student_name'=>(string)$row['student_name'],
-                    'father_name'=>(string)$row['father_name'], 'member_code'=>(string)$row['member_code']];
+                $members[] = ['member_id'=>$id, 'student_name'=>self::sanitizePrepString((string)$row['student_name'], 200),
+                    'father_name'=>self::sanitizePrepString((string)$row['father_name'], 200), 'member_code'=>self::sanitizePrepString((string)$row['member_code'], 100)];
             }
             if (count($memberSeen) !== count($ids)) throw new \RuntimeException('Preparation member coverage is incomplete.');
         }
