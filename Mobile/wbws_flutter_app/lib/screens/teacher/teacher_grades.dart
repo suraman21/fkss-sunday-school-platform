@@ -239,21 +239,22 @@ class TeacherGradesScreenState extends State<TeacherGradesScreen> {
 
     // Try preparation first — offline-first subjects+terms, no network needed (fixes WBSS-U01 offline fear on class switch).
     try {
-      final prep = _prepResolution?.isReady == true ? _prepResolution : await _prepAdapter.resolve();
+      final GradesPreparationResolution prep = _prepResolution?.isReady == true ? _prepResolution! : await _prepAdapter.resolve();
       _prepResolution = prep;
       if (prep.isReady && prep.dataset != null) {
         final ds = prep.dataset!;
         GradeClass? cl; for (final x in ds.classes) if (x.classId == _selectedClassId) { cl = x; break; }
         if (cl != null) {
-          final prepSubjects = cl.subjects.map((s) => {
+          final clNonNull = cl;
+          final prepSubjects = clNonNull.subjects.map((s) => {
             'id': s.id, 'subject_name': s.subjectName, 'subject_name_en': s.subjectNameEn, 'subject_code': s.subjectCode,
           }).toList();
-          final prepAssess = cl.assessments.map((a) => {
+          final prepAssess = clNonNull.assessments.map((a) => {
             'id': a.id, 'subject_id': a.subjectId, 'assessment_name': a.assessmentName,
             'assessment_type': a.assessmentType, 'weight_percentage': a.weightPercentage, 'max_score': a.maxScore,
             'assessment_order': a.assessmentOrder, 'is_published': a.isPublished,
             // offline counts default — real counts from network when online
-            'total_students': cl.memberIds.length, 'grades_entered': 0,
+            'total_students': clNonNull.memberIds.length, 'grades_entered': 0,
           }).toList();
           final prepTerms = ds.terms.map((t) => {
             'id': t.id, 'term_name': t.termName, 'term_number': t.termNumber, 'is_current': t.isCurrent, 'is_reopened': t.isReopened,
@@ -376,12 +377,13 @@ class TeacherGradesScreenState extends State<TeacherGradesScreen> {
 
     // Offline-first assessments from preparation (term-filtered, no network).
     try {
-      final prep = _prepResolution?.isReady == true ? _prepResolution : await _prepAdapter.resolve();
+      final GradesPreparationResolution prep = _prepResolution?.isReady == true ? _prepResolution! : await _prepAdapter.resolve();
       _prepResolution = prep;
       if (prep.isReady && prep.dataset != null) {
         final ds = prep.dataset!;
         GradeClass? cl; for (final x in ds.classes) if (x.classId == _selectedClassId) { cl = x; break; }
         if (cl != null) {
+          final clNonNull = cl;
           bool termMatchPrep(dynamic a) {
             final atid = a is Map ? (a['term_id'] is int ? a['term_id'] as int : int.tryParse('${a['term_id'] ?? ''}')) : null;
             // Preparation assessments don't carry term_id; they are write_year scoped.
@@ -391,11 +393,11 @@ class TeacherGradesScreenState extends State<TeacherGradesScreen> {
           }
           // Prefer boot prep assessments (already term-filtered for this class) else filter class assessments by subject.
           var src = _bootAssessments.isNotEmpty ? _bootAssessments.where((a) => (a['subject_id'] is int ? a['subject_id'] : int.tryParse('${a['subject_id']}')) == sid).toList()
-                : cl.assessments.where((a) => a.subjectId == sid).map((a) => {
+                : clNonNull.assessments.where((a) => a.subjectId == sid).map((a) => {
                     'id': a.id, 'subject_id': a.subjectId, 'assessment_name': a.assessmentName,
                     'assessment_type': a.assessmentType, 'weight_percentage': a.weightPercentage, 'max_score': a.maxScore,
                     'assessment_order': a.assessmentOrder, 'is_published': a.isPublished,
-                    'total_students': cl.memberIds.length, 'grades_entered': 0,
+                    'total_students': clNonNull.memberIds.length, 'grades_entered': 0,
                   }).toList();
           if (src.isNotEmpty) {
             if (mounted) setState(() { _assessments = src; _loadingAssessments = false; _isOffline = !ConnectivityService().hasLink; });
