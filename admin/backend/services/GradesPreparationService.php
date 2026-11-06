@@ -114,8 +114,9 @@ final class GradesPreparationService
                             $a['id']=(int)$a['id']; $a['subject_id']=(int)$a['subject_id']; $a['max_score']=(float)$a['max_score']; $a['weight_percentage']=(float)$a['weight_percentage']; $a['assessment_order']=(int)$a['assessment_order']; $a['is_published']=(bool)$a['is_published'];
                         } unset($a);
                     }
-                    $preparedClasses[] = ['class_id'=>$classId,'class_name'=>(string)$class['class_name'],
-                        'class_name_en'=>(string)$class['class_name_en'],'section'=>(string)$class['section'],
+                    // Parity+compat: classes.section/ class_name_en may be NULL/'' (DEFAULT NULL) — sanitize like member fields; '—' keeps old APKs (strict) from aborting whole payload.
+                    $preparedClasses[] = ['class_id'=>$classId,'class_name'=>self::sanitizePrepString((string)$class['class_name'],150) ?: '—',
+                        'class_name_en'=>self::sanitizePrepString((string)$class['class_name_en'],150) ?: '—','section'=>self::sanitizePrepString((string)$class['section'],50) ?: '—',
                         'write_year_id'=>$yearId,'roster_year_id'=>$rosterYear['year_id'],
                         'roster_fallback'=>$rosterYear['fallback'],'member_ids'=>array_keys($uniqueMemberIds),
                         'subjects'=>$subjects,'assessments'=>$assessments];
@@ -132,6 +133,16 @@ final class GradesPreparationService
             if ($knownDenial !== null) throw $knownDenial;
             throw $error;
         }
+    }
+
+    private static function sanitizePrepString(?string $v, int $max = 200): string
+    {
+        if ($v === null) return '';
+        $v = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $v) ?? '';
+        $v = trim($v);
+        if (!mb_check_encoding($v, 'UTF-8')) $v = mb_convert_encoding($v, 'UTF-8', 'UTF-8');
+        if (mb_strlen($v) > $max) $v = mb_substr($v, 0, $max);
+        return $v;
     }
 
     private static function id(mixed $value): int

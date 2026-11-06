@@ -169,7 +169,8 @@ final class GradeClass {
   const GradeClass._({required this.classId, required this.className, required this.classNameEn, required this.section, required this.writeYearId, required this.rosterYearId, required this.rosterFallback, required this.memberIds, required this.subjects, required this.assessments});
   static GradeClass _decode(Map<String, dynamic> map, List<GradeMember> allMembers) {
     const requiredKeys = {'class_id','class_name','class_name_en','section','write_year_id','roster_year_id','roster_fallback','member_ids','subjects','assessments'}; final keys = map.keys.toSet(); if (!keys.containsAll(requiredKeys)) throw FormatException('Wrong keys for class: expected $requiredKeys got $keys');
-    final classId = _id(map['class_id'], 'class.class_id'); final className = _nonEmptyString(map['class_name'], 'class.class_name'); final classNameEn = _nonEmptyString(map['class_name_en'], 'class.class_name_en'); final section = _nonEmptyString(map['section'], 'class.section');
+    // Parity with Attendance: section/class_name_en may be legacy empty/NULL (classes.section DEFAULT NULL) — bounded allows '' (old APKs get '—' from server).
+    final classId = _id(map['class_id'], 'class.class_id'); final className = _boundedString(map['class_name'], 'class.class_name', 150); final classNameEn = _boundedString(map['class_name_en'], 'class.class_name_en', 150); final section = _boundedString(map['section'], 'class.section', 50);
     final writeYearId = _id(map['write_year_id'], 'class.write_year_id'); final rosterYearId = _id(map['roster_year_id'], 'class.roster_year_id'); final rosterFallback = _bool(map['roster_fallback'], 'class.roster_fallback');
     final memberIds = (_asList(map['member_ids'], 'class.member_ids')).map((v) => _id(v, 'class.member_ids[]')).toList();
     final memberSet = allMembers.map((m)=>m.memberId).toSet(); for (final id in memberIds) { if (!memberSet.contains(id)) throw FormatException('class $classId member_id $id not in members'); }
@@ -192,6 +193,7 @@ int _nonNegativeInt(dynamic v, String ctx) { if (v is int && v >= 0) return v; t
 double _double(dynamic v, String ctx) { if (v is num) return v.toDouble(); throw FormatException('Invalid double for $ctx'); }
 bool _bool(dynamic v, String ctx) { if (v is bool) return v; throw FormatException('Invalid bool for $ctx'); }
 String _nonEmptyString(dynamic v, String ctx) { if (v is String && v.isNotEmpty) return v; throw FormatException('Invalid string for $ctx'); }
+String _boundedString(dynamic v, String ctx, int max) { if (v == null) return ''; if (v is! String) throw FormatException('Invalid $ctx: expected string'); if (v.length > max) throw FormatException('Invalid $ctx: too long'); if (v.contains('\u0000')) throw FormatException('Invalid $ctx: contains NUL'); return v; }
 String _hex(dynamic v, String ctx) { if (v is String && RegExp(r'^[a-f0-9]{64}$').hasMatch(v)) return v; throw FormatException('Invalid hex64 for $ctx'); }
 String _date(dynamic v, String ctx) { if (v is String && RegExp(r'^[0-9]{4}-[0-9]{2}-[0-9]{2}$').hasMatch(v)) { final y=int.parse(v.substring(0,4)), m=int.parse(v.substring(5,7)), d=int.parse(v.substring(8,10)); if (m>=1&&m<=12&&d>=1&&d<=31) return v; } throw FormatException('Invalid date for $ctx'); }
 String _serverIdentity(dynamic v) { if (v is String && v.startsWith('https://') && v.endsWith('/api/v1') && !v.contains(' ')) return v; throw const FormatException('Invalid server_identity'); }
