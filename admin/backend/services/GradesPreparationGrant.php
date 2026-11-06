@@ -38,15 +38,16 @@ final class GradesPreparationGrant
         $common = ['preparation_id'=>$preparationId,'server_identity'=>$serverIdentity,
             'owner_user_id'=>$facts['owner_user_id'],'authorization_version'=>$facts['authorization_version'],
             'role'=>$facts['role'],'family_id'=>$facts['family_id'],'issued_at'=>$facts['issued_at'],'deadline'=>$facts['deadline']];
-        foreach ($facts['classes'] as &$class) {
-            $rosterDigest = self::digest($class['member_ids'] ?? []);
-            $assessmentDigest = self::digest($class['assessments'] ?? []);
-            $context = $common + ['kind'=>'grades_class','class_id'=>$class['class_id'],
-                'write_year_id'=>$class['write_year_id'],'roster_year_id'=>$class['roster_year_id'],
-                'roster_digest'=>$rosterDigest,'assessment_digest'=>$assessmentDigest];
-            $class['context_token'] = self::sign($context,'grades_class',$secret);
-        }
-        unset($class);
+        // R5c-hotfix: context_token breaks already-installed APKs (exactKeys mismatch). Keep payload minimal for silent offline; provenance still via root grant.
+        // foreach ($facts['classes'] as &$class) {
+        //     $rosterDigest = self::digest($class['member_ids'] ?? []);
+        //     $assessmentDigest = self::digest($class['assessments'] ?? []);
+        //     $context = $common + ['kind'=>'grades_class','class_id'=>$class['class_id'],
+        //         'write_year_id'=>$class['write_year_id'],'roster_year_id'=>$class['roster_year_id'],
+        //         'roster_digest'=>$rosterDigest,'assessment_digest'=>$assessmentDigest];
+        //     $class['context_token'] = self::sign($context,'grades_class',$secret);
+        // }
+        // unset($class);
         $payload = self::json($facts);
         $grant = $common + ['kind'=>'root','payload_sha256'=>hash('sha256',$payload)];
         return ['preparation_version'=>1,'payload'=>self::encode($payload),
