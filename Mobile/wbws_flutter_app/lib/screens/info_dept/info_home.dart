@@ -67,8 +67,10 @@ class InfoHomeScreenState extends State<InfoHomeScreen> {
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
               sliver: SliverList(delegate: SliverChildListDelegate(
                 _loading ? [const DashboardSkeleton()]
-                : _error != null ? [if (_isOffline) _offlineBanner(), AppErrorCard(error: AppError.fromMessage(_error, isNetwork: _isOffline), onRetry: _load, autoRetry: true)]
-                : [if (_isOffline) _offlineBanner(), ..._buildContent()],
+                : _error != null ? [// per-screen generic offline removed — global AppStatusStrip covers it
+ AppErrorCard(error: AppError.fromMessage(_error, isNetwork: _isOffline), onRetry: _load, autoRetry: true)]
+                : [// per-screen generic offline removed — global AppStatusStrip covers it
+ ..._buildContent()],
               )),
             ),
           ],

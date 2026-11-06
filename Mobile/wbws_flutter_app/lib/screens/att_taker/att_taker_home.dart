@@ -114,9 +114,11 @@ class AttTakerHomeScreenState extends State<AttTakerHomeScreen> {
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
               sliver: SliverList(delegate: SliverChildListDelegate(
                 _loading ? [const DashboardSkeleton()]
-                : _error != null ? [if (_isOffline) _offlineBanner(), AppErrorCard(error: AppError.fromMessage(_error, isNetwork: _isOffline), onRetry: _load, autoRetry: true)]
+                : _error != null ? [// per-screen generic offline removed — global AppStatusStrip covers it
+ AppErrorCard(error: AppError.fromMessage(_error, isNetwork: _isOffline), onRetry: _load, autoRetry: true)]
                 : [
-                    if (_isOffline) _offlineBanner(),
+                    // per-screen generic offline removed — global AppStatusStrip covers it
+
 
                     // Focused banner
                     Container(

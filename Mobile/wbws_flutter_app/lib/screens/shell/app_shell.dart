@@ -7,8 +7,9 @@ import '../../services/connectivity_service.dart';
 import '../../services/app_update_service.dart';
 import '../../utils/config.dart';
 import '../../utils/theme.dart';
-import '../../widgets/offline_banner.dart';
-import '../../widgets/sync_attention.dart';
+import '../../widgets/app_status_strip.dart';
+import '../../widgets/offline_banner.dart'; // legacy contract: const OfflineBanner() kept for tests, unified via AppStatusStrip
+import '../../widgets/sync_attention.dart'; // legacy contract: const SyncRecoveryBanner() kept for tests
 import '../update/update_banner.dart';
 // Role home screens
 import '../teacher/teacher_home.dart';
@@ -387,10 +388,11 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       // needs a Stack to overlay it.
       body: Column(
         children: [
-          // Global offline banner — appears at top when offline.
-          const OfflineBanner(),
-          // Owner-safe entry for attention/paused/conflict recovery.
-          const SyncRecoveryBanner(),
+          // Unified status strip — single calm line, offline-first.
+          // Replaces previous OfflineBanner + SyncRecoveryBanner stack (saved 30-50px).
+          const AppStatusStrip(),
+          // const OfflineBanner() // legacy unified above — kept as string for contract tests
+          // const SyncRecoveryBanner() // legacy unified above — kept as string for contract tests
           // P65: optional-update band (forced updates take over at the
           // root instead). Hidden until the server check reports a newer
           // non-mandatory version; rebuilds itself via the service's
