@@ -205,7 +205,10 @@ class AttendanceScreenState extends State<AttendanceScreen> with WidgetsBindingO
     _netSub = ConnectivityService().statusStream.listen((hasLink) {
       if (!mounted || _isOffline == !hasLink) return;
       setState(() => _isOffline = !hasLink);
-      if (hasLink) unawaited(_loadAttendance());
+      if (hasLink) {
+        unawaited(_loadAttendance());
+        unawaited(_loadPreparationStatus());
+      }
     });
     _dirty.addListener(_syncSaveGate);
     _syncSaveGate();
@@ -244,7 +247,10 @@ class AttendanceScreenState extends State<AttendanceScreen> with WidgetsBindingO
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) unawaited(_loadAttendance());
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_loadAttendance());
+      unawaited(_loadPreparationStatus());
+    }
   }
 
   void refresh() {
@@ -272,12 +278,16 @@ class AttendanceScreenState extends State<AttendanceScreen> with WidgetsBindingO
       final res = await _prepAdapter.resolve();
       if (!mounted) return;
       setState(() => _prepResolution = res);
+      // Silent auto-download: non-technical teachers never tap Refresh.
+      if (!res.isReady && ConnectivityService().hasLink) {
+        unawaited(_refreshPreparation(silent: true));
+      }
     } catch (_) {
       // Preparation status is advisory; never blocks the roster.
     }
   }
 
-  Future<void> _refreshPreparation() async {
+  Future<void> _refreshPreparation({bool silent = false}) async {
     if (_refreshingPrep) return;
     setState(() => _refreshingPrep = true);
     try {
@@ -305,20 +315,16 @@ class AttendanceScreenState extends State<AttendanceScreen> with WidgetsBindingO
         expectedScope: expectedScope,
       );
       await _loadPreparationStatus();
-      if (mounted) {
+      if (mounted && !silent) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Preparation refreshed'), backgroundColor: AppTheme.success),
         );
       }
+      debugPrint('Preparation refresh succeeded (silent=$silent) classes=${(await _prepAdapter.resolve()).dataset?.classes.length}');
     } on AttendancePreparationFetchException catch (e) {
-      // Surface the machine code — screenshot this. Common codes:
-      // PREPARATION_BOUND_AUTH_REQUIRED (token has no fid/rsid),
-      // PREPARATION_SCOPE_CHANGED (role/AV changed),
-      // SESSION_REVOKED (refresh family revoked), PREPARATION_ACCOUNT_INACTIVE,
-      // PREPARATION_WRITE_YEAR_NOT_CURRENT (no single active academic year),
-      // ATTENDANCE_PREPARATION_UNAVAILABLE (server config error).
-      debugPrint('Preparation refresh failed: ${e.code}: ${e.message}');
-      if (mounted) {
+      // Silent for teachers, loud for admin diagnostics when not silent.
+      debugPrint('Preparation refresh failed: ${e.code}: ${e.message} (silent=$silent)');
+      if (mounted && !silent) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('${e.code}: ${e.message}'),
@@ -328,8 +334,8 @@ class AttendanceScreenState extends State<AttendanceScreen> with WidgetsBindingO
         );
       }
     } catch (e) {
-      debugPrint('Preparation refresh failed (unexpected): $e');
-      if (mounted) {
+      debugPrint('Preparation refresh failed (unexpected): $e (silent=$silent)');
+      if (mounted && !silent) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Refresh failed: $e'), backgroundColor: AppTheme.warning, duration: const Duration(seconds: 5)),
         );
@@ -1118,37 +1124,12 @@ class AttendanceScreenState extends State<AttendanceScreen> with WidgetsBindingO
           if (_rejectedCount > 0)
             SyncAttentionBanner(rejectedCount: _rejectedCount),
 
-          // Offline preparation readiness (truthful, never blocks roster).
-          if (_prepBanner != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(children: [
-                Expanded(child: StatusBanner.warning(_prepBanner!)),
-                const SizedBox(width: 8),
-                ElevatedButton(
-                  onPressed: _refreshingPrep ? null : _refreshPreparation,
-                  style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
-                  child: _refreshingPrep
-                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Text('Refresh', style: TextStyle(fontSize: 12)),
-                ),
-              ]),
-            ),
+          // Silent offline: background auto-download, no scary banner for teachers.
+          // Preparation status is still resolved for diagnostics (Settings → Diagnostics)
+          // but never blocks the roster with a big orange warning.
           if (_prepResolution?.isReady == true && _prepResolution?.dataset?.classes.isEmpty == true)
-            StatusBanner.info('Your preparation has no classes — you are ready, but there is nothing to mark.'),
-          // Also allow explicit refresh when ready (lease renewal).
-          if (_prepResolution?.isReady == true)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: _refreshingPrep ? null : _refreshPreparation,
-                  icon: const Icon(Icons.refresh, size: 16),
-                  label: const Text('Refresh preparation', style: TextStyle(fontSize: 12)),
-                ),
-              ),
-            ),
+            StatusBanner.info('No classes assigned for offline — contact Education.'),
+          // No manual Refresh button: handled automatically after login/resume.
 
           // Class + Date selector
           Padding(
