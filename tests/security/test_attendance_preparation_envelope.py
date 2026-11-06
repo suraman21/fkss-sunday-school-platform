@@ -33,10 +33,20 @@ echo "PASS\n";
     assert result.stdout == "PASS\n"
 
 
-def test_decoder_is_not_activated_by_this_slice():
+def test_active_transport_consumers_remain_bounded_and_scope_checked():
     lib = ROOT / 'Mobile/wbws_flutter_app/lib'
-    callers = [p.relative_to(lib).as_posix() for p in lib.rglob('*.dart')
-               if 'attendance_preparation_envelope.dart' in p.read_text()]
-    assert callers == []
+    callers = {p.relative_to(lib).as_posix() for p in lib.rglob('*.dart')
+               if 'attendance_preparation_envelope.dart' in p.read_text()}
+    assert callers == {
+        'services/attendance_preparation_fetcher.dart',
+        'services/attendance_preparation_store.dart',
+        'services/warm_store.dart',
+        'screens/attendance/attendance_screen.dart',
+    }
+    decoder = (lib / 'services/attendance_preparation_envelope.dart').read_text()
+    for field in ('owner_user_id', 'authorization_version', 'role', 'family_id', 'server_identity'):
+        assert f"root['{field}'] != expected." in decoder
+    assert "envelope['authorizes_settlement'] != false" in decoder
+    assert "digest != root['payload_sha256']" in decoder
     fixture = json.loads((ROOT / 'tests/fixtures/attendance_preparation_envelope_v1.json').read_text())
     assert fixture['envelope']['authorizes_settlement'] is False

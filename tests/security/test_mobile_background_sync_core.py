@@ -104,7 +104,7 @@ class BackgroundSyncCoreArchitecture(unittest.TestCase):
                       "the source must be written as a durable column value")
 
     def test_schema_version_and_column(self):
-        self.assertIn("const localDatabaseSchemaVersion = 38;", self.schema)
+        self.assertIn("const localDatabaseSchemaVersion = 42;", self.schema)
         self.assertIn("execution_source TEXT NOT NULL DEFAULT 'foreground'",
                       self.schema)
 

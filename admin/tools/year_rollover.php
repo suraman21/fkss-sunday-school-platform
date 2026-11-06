@@ -122,6 +122,7 @@ if ($action === 'run' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $conn->begin_transaction();
+    $commitAttempted = false;
     try {
         // 1. Make the new year current AND lifecycle-correct (status + is_current
         //    together). Any currently active year is CLOSED; the chosen new year
@@ -218,22 +219,35 @@ if ($action === 'run' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         // 3. Copy year-scoped teacher assignments into the new year (R4).
         // Global assignments (academic_year_id IS NULL) already apply to every
         // year via AttendancePreparationService, so only copy the scoped ones.
-        $copiedTA = 0;
+        $taStmt = $conn->prepare(
+            "INSERT INTO teacher_assignments
+                (teacher_id, class_id, subject_id, academic_year_id, is_class_teacher, is_primary, assignment_role, assigned_by, assigned_at, is_active)
+             SELECT source.teacher_id, source.class_id, source.subject_id, ?, source.is_class_teacher, source.is_primary, source.assignment_role, ?, NOW(), 1
+             FROM teacher_assignments AS source
+             WHERE source.academic_year_id = ? AND source.is_active = 1
+               AND NOT EXISTS (
+                   SELECT 1 FROM teacher_assignments AS target
+                   WHERE target.teacher_id = source.teacher_id
+                     AND target.class_id = source.class_id
+                     AND COALESCE(target.subject_id, 0) = COALESCE(source.subject_id, 0)
+                     AND target.academic_year_id = ?
+               )"
+        );
+        if (!$taStmt) throw new RuntimeException('Teacher assignment copy could not be prepared.');
         try {
-            $taStmt = $conn->prepare(
-                "INSERT IGNORE INTO teacher_assignments
-                    (teacher_id, class_id, subject_id, academic_year_id, is_class_teacher, is_primary, assignment_role, assigned_by, assigned_at, is_active)
-                 SELECT teacher_id, class_id, subject_id, ?, is_class_teacher, is_primary, assignment_role, ?, NOW(), 1
-                 FROM teacher_assignments
-                 WHERE academic_year_id = ? AND is_active = 1"
-            );
-            if ($taStmt) {
-                $taStmt->bind_param("iii", $newYearId, $adminId, $oldYearId);
-                $taStmt->execute();
-                $copiedTA = (int)$taStmt->affected_rows;
-                $taStmt->close();
+            if (!$taStmt->bind_param("iiii", $newYearId, $adminId, $oldYearId, $newYearId) || !$taStmt->execute()) {
+                throw new RuntimeException('Teacher assignment copy failed.');
             }
-        } catch (Throwable $e) { error_log('Rollover teacher copy: '.$e->getMessage()); }
+            $copiedTA = (int)$taStmt->affected_rows;
+            // An existing assignment is excluded above using the migration's
+            // unique-key semantics. Do not ignore any SQL warning: in lax SQL
+            // modes even a plain INSERT may otherwise silently coerce data.
+            if ($conn->warning_count > 0) {
+                throw new RuntimeException('Teacher assignment copy returned a data warning.');
+            }
+        } finally {
+            $taStmt->close();
+        }
 
         // 4. Mark the closed year's enrolments as completed (enrolment domain).
         $st = $conn->prepare("UPDATE class_enrollments SET status = 'completed' WHERE academic_year_id = ? AND status = 'active'");
@@ -242,7 +256,8 @@ if ($action === 'run' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $closedCount = $st->affected_rows;
         $st->close();
 
-        $conn->commit();
+        $commitAttempted = true;
+        if (!$conn->commit()) throw new RuntimeException('Rollover commit was not confirmed.');
 
         $report = [
             'mode'               => $mode,
@@ -275,10 +290,16 @@ if ($action === 'run' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             'report'  => $report,
         ]);
 
-    } catch (Exception $e) {
-        $conn->rollback();
+    } catch (Throwable $e) {
+        $rollbackConfirmed = false;
+        try { $rollbackConfirmed = $conn->rollback(); } catch (Throwable $rollbackError) {
+            error_log('Year rollover rollback could not be confirmed.');
+        }
         error_log("Year rollover failed: " . $e->getMessage());
-        _rollover_out(['status' => 'error', 'message' => 'The rollover failed and NOTHING was changed. The error was logged.']);
+        $message = !$commitAttempted && $rollbackConfirmed
+            ? 'The rollover failed and NOTHING was changed. The error was logged.'
+            : 'The rollover outcome could not be confirmed. Do not retry until an administrator checks the year and enrolments.';
+        _rollover_out(['status' => 'error', 'message' => $message]);
     }
 }
 

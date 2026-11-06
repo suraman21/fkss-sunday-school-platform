@@ -296,20 +296,20 @@ class V36FixtureFidelity(unittest.TestCase):
 
 
 class UpgradeBranchSelection(unittest.TestCase):
-    """Historical v37 remains; current opens also require attendance v38."""
+    """Historical v37 remains; current opens also run later additive migrations."""
 
     def test_the_migration_declares_a_v37_branch(self):
         self.assertIn(37, _upgrade_branch_versions())
 
-    def test_a_v36_device_enters_v37_and_attendance_v38_once(self):
+    def test_a_v36_device_enters_each_current_migration_once(self):
         entered = [v for v in _upgrade_branch_versions() if 36 < v]
         self.assertEqual(
-            entered, [37, 38],
-            "a v36 install must run each required v37/v38 branch exactly once",
+            entered, [37, 38, 39, 40, 41, 42],
+            "a v36 install must run each required migration branch exactly once",
         )
 
     def test_the_target_version_comes_from_the_production_constant(self):
-        self.assertEqual(_target_schema_version(), 38)
+        self.assertEqual(_target_schema_version(), 42)
 
     def test_the_extracted_alter_is_the_production_statement(self):
         self.assertEqual(
@@ -569,7 +569,7 @@ class MigrationSourceContract(unittest.TestCase):
                          self.upgrade)
 
     def test_the_v37_branch_performs_exactly_one_statement(self):
-        branch = self.upgrade[self.upgrade.index("if (oldVersion < 37) {"):]
+        branch = self.upgrade.split("if (oldVersion < 37) {", 1)[1].split("if (oldVersion < 38) {", 1)[0]
         self.assertEqual(branch.count("await db.execute("), 1)
 
     def test_the_table_probe_sql_matches_the_mirror(self):

@@ -225,7 +225,7 @@ class TestCoordinatorContract:
         # the current-version pin moves when a later migration lands (v36
         # added the S1 operation/attempt ledger; v37 added its
         # execution_source column).
-        assert "const localDatabaseSchemaVersion = 38;" in self.schema
+        assert "const localDatabaseSchemaVersion = 42;" in self.schema
         assert "if (oldVersion < 35)" in self.local_db
         assert "await db.execute(localSyncStateV35Sql);" in self.local_db
 

@@ -1,4 +1,4 @@
-"""Dataset validator is inactive pure Dart; no caller, no storage, no HMAC verification."""
+"""Bounded dataset validation and its active preparation consumers."""
 import json
 import pathlib
 import re
@@ -17,17 +17,31 @@ def test_fixture_is_complete_valid_payload():
     assert payload["classes"][0]["days"][0]["date"] == "2026-11-02"
 
 
-def test_dataset_decoder_has_no_caller():
-    # No production Dart file may import the dataset validator yet
+def test_dataset_consumers_are_bounded_and_publication_is_validated():
     lib = pathlib.Path("Mobile/wbws_flutter_app/lib")
-    offenders = []
+    consumers = set()
     for path in lib.rglob("*.dart"):
         if path.name == "attendance_preparation_dataset.dart":
             continue
         text = path.read_text()
         if "attendance_preparation_dataset" in text or "AttendancePreparationDataset" in text:
-            offenders.append(str(path))
-    assert offenders == [], f"Dataset decoder must remain inactive, found imports in {offenders}"
+            consumers.add(path.relative_to(lib).as_posix())
+    assert consumers == {
+        "services/attendance_preparation_fetcher.dart",
+        "services/attendance_preparation_adapter.dart",
+        "services/attendance_preparation_store.dart",
+        "services/grades_preparation_dataset.dart",
+    }
+    fetcher = (lib / "services/attendance_preparation_fetcher.dart").read_text()
+    assert fetcher.index("AttendancePreparationEnvelope.decode(") < fetcher.index("AttendancePreparationDataset.decode(") < fetcher.index("_store.publishPreparation(")
+    store = (lib / "services/attendance_preparation_store.dart").read_text()
+    assert "_activeSessionMatchesTxn(txn, expectedSession: expectedSession)" in store
+    assert "envelope.preparationId != dataset.preparationId" in store
+    assert "envelope.issuedAt != dataset.issuedAt" in store
+    assert "dataset.ownerUserId != expectedSession.ownerUserId" in store
+    assert "dataset.authorizationVersion != expectedSession.authorizationVersion" in store
+    adapter = (lib / "services/attendance_preparation_adapter.dart").read_text()
+    assert "if (!res.isReady) return null;" in adapter
 
 
 def test_dataset_does_not_verify_hmac():

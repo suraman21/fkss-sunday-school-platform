@@ -571,7 +571,7 @@ class HymnLedgerSourceContract(unittest.TestCase):
             self.assertNotIn("hymnExecutionSource", text)
 
     def test_attendance_v38_does_not_migrate_hymn_or_attempt_schema(self):
-        self.assertIn("const localDatabaseSchemaVersion = 38;", _schema_source())
+        self.assertIn("const localDatabaseSchemaVersion = 42;", _schema_source())
         # v38 adds attendance provenance only; the hymn/attempt contract stays.
         migration = _db_source().split("if (oldVersion < 38) {", 1)[1].split("}", 1)[0]
         self.assertEqual(migration.strip(), "await migrateAttendanceOriginalYear(db);")
