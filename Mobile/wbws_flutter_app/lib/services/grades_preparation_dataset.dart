@@ -123,16 +123,7 @@ final class GradeMember {
   const GradeMember._({required this.memberId, required this.studentName, required this.fatherName, required this.memberCode});
   static GradeMember _decode(Map<String, dynamic> map) {
     const keys = {'member_id','student_name','father_name','member_code'}; _exactKeys(map, keys, 'member');
-    // R5b++: father_name & member_code may be empty/legacy — allow bounded string (attendance parity). Silent, never abort whole roster for one bad field.
-    return GradeMember._(memberId: _id(map['member_id'], 'member.member_id'), studentName: _nonEmptyString(map['student_name'], 'member.student_name'), fatherName: _boundedString(map['father_name'], 'member.father_name', 200), memberCode: _boundedString(map['member_code'], 'member.member_code', 100));
-  }
-  // Bounded string that tolerates empty/null (unlike _nonEmptyString) — mirrors AttendancePreparationDataset parity for R5b.
-  static String _boundedString(dynamic v, String ctx, int max) {
-    if (v == null) return '';
-    if (v is! String) throw FormatException('Invalid $ctx: expected string');
-    if (v.length > max) throw FormatException('Invalid $ctx: too long');
-    if (v.contains('\u0000')) throw FormatException('Invalid $ctx: contains NUL');
-    return v;
+    return GradeMember._(memberId: _id(map['member_id'], 'member.member_id'), studentName: _nonEmptyString(map['student_name'], 'member.student_name'), fatherName: _nonEmptyString(map['father_name'], 'member.father_name'), memberCode: _nonEmptyString(map['member_code'], 'member.member_code'));
   }
 }
 
@@ -169,9 +160,7 @@ final class GradeClass {
   final List<int> memberIds; final List<GradeSubject> subjects; final List<GradeAssessment> assessments;
   const GradeClass._({required this.classId, required this.className, required this.classNameEn, required this.section, required this.writeYearId, required this.rosterYearId, required this.rosterFallback, required this.memberIds, required this.subjects, required this.assessments});
   static GradeClass _decode(Map<String, dynamic> map, List<GradeMember> allMembers) {
-    // R5c: tolerate extra server keys (e.g. context_token) for silent forward-compat — only require core keys.
-    const requiredKeys = {'class_id','class_name','class_name_en','section','write_year_id','roster_year_id','roster_fallback','member_ids','subjects','assessments'};
-    final keys = map.keys.toSet(); if (!keys.containsAll(requiredKeys)) throw FormatException('Wrong keys for class: expected $requiredKeys got $keys');
+    const keys = {'class_id','class_name','class_name_en','section','write_year_id','roster_year_id','roster_fallback','member_ids','subjects','assessments'}; _exactKeys(map, keys, 'class');
     final classId = _id(map['class_id'], 'class.class_id'); final className = _nonEmptyString(map['class_name'], 'class.class_name'); final classNameEn = _nonEmptyString(map['class_name_en'], 'class.class_name_en'); final section = _nonEmptyString(map['section'], 'class.section');
     final writeYearId = _id(map['write_year_id'], 'class.write_year_id'); final rosterYearId = _id(map['roster_year_id'], 'class.roster_year_id'); final rosterFallback = _bool(map['roster_fallback'], 'class.roster_fallback');
     final memberIds = (_asList(map['member_ids'], 'class.member_ids')).map((v) => _id(v, 'class.member_ids[]')).toList();
