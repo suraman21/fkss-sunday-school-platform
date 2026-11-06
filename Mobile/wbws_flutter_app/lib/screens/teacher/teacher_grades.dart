@@ -455,8 +455,30 @@ class TeacherGradesScreenState extends State<TeacherGradesScreen> {
               onPressed: () async {
                 final r = await _sync.syncAll(force: true);
                 if (mounted) {
+                  // Inventory-scoped truth: never success-green while work remains.
+                  final fb = SyncFeedback.describe(
+                    synced: r.synced,
+                    failed: r.failed,
+                    status: _sync.lastStatus,
+                    online: ConnectivityService().hasLink,
+                    drainsPaused: !_sync.drainsAllowed,
+                  );
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(r.message), backgroundColor: r.failed > 0 ? AppTheme.warning : AppTheme.success));
+                    SnackBar(
+                      content: Text(fb.message),
+                      backgroundColor: fb.kind == SyncFeedbackKind.success
+                          ? AppTheme.success
+                          : fb.kind == SyncFeedbackKind.attention
+                              ? AppTheme.warning
+                              : AppTheme.info,
+                      action: fb.kind == SyncFeedbackKind.attention
+                          ? SnackBarAction(
+                              label: 'Review',
+                              textColor: Colors.white,
+                              onPressed: () => Navigator.of(context).pushNamed('/sync-center'),
+                            )
+                          : null,
+                    ));
                   _updatePendingCount();
                 }
               },
@@ -1461,15 +1483,8 @@ class _GradeEntryScreenState extends State<_GradeEntryScreen> {
                       ),
                     )
                   : Column(children: [
-                      if (_isOffline)
-                        Container(width: double.infinity, padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          color: AppTheme.warning.withOpacity(0.15),
-                          child: Row(children: [
-                            Icon(Icons.cloud_off, size: 16, color: AppTheme.warning),
-                            const SizedBox(width: 8),
-                            Expanded(child: Text('Waiting for network — scores stay on this phone until you are back online',
-                                style: TextStyle(fontSize: 11, color: AppTheme.warning, fontWeight: FontWeight.w500))),
-                          ])),
+                      // Global AppStatusStrip is the single offline source — per-screen
+                      // generic duplicate removed (space saver, stops double-banner).
                       if (_rejectedCount > 0)
                         SyncAttentionBanner(rejectedCount: _rejectedCount),
                       if (_rosterNote != null)

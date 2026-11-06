@@ -634,10 +634,28 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
   Future<void> _manualSync() async {
     final result = await _sync.syncAll(force: true);
     if (!mounted) return;
+    // Inventory-scoped truth: never success-green while work remains.
+    final fb = SyncFeedback.describe(
+      synced: result.synced,
+      failed: result.failed,
+      status: _sync.lastStatus,
+      online: ConnectivityService().hasLink,
+      drainsPaused: !_sync.drainsAllowed,
+    );
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(result.message),
-      backgroundColor:
-          result.failed > 0 ? AppTheme.warning : AppTheme.success,
+      content: Text(fb.message),
+      backgroundColor: fb.kind == SyncFeedbackKind.success
+          ? AppTheme.success
+          : fb.kind == SyncFeedbackKind.attention
+              ? AppTheme.warning
+              : AppTheme.info,
+      action: fb.kind == SyncFeedbackKind.attention
+          ? SnackBarAction(
+              label: 'Review',
+              textColor: Colors.white,
+              onPressed: () => Navigator.of(context).pushNamed('/sync-center'),
+            )
+          : null,
     ));
     await _updatePendingCount();
   }

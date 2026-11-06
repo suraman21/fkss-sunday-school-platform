@@ -174,10 +174,13 @@ class _AppStatusStripState extends State<AppStatusStrip> with SingleTickerProvid
                   const Icon(Icons.chevron_right_rounded, size: 14, color: AppTheme.primary),
                 ] else if (_waiting && _pending > 0) ...[
                   const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(color: AppTheme.borderLight, borderRadius: BorderRadius.circular(4)),
-                    child: const Text('View', style: TextStyle(fontSize: 9.5, color: AppTheme.textSecondary, fontWeight: FontWeight.w600)),
+                  GestureDetector(
+                    onTap: () => Navigator.of(context).pushNamed('/sync-center'),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(color: AppTheme.borderLight, borderRadius: BorderRadius.circular(4)),
+                      child: Text(_status.syncing ? 'Sending…' : 'View', style: const TextStyle(fontSize: 9.5, color: AppTheme.textSecondary, fontWeight: FontWeight.w600)),
+                    ),
                   ),
                 ],
               ],

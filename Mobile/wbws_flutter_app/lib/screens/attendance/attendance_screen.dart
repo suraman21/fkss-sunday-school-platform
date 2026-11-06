@@ -149,6 +149,7 @@ class AttendanceScreenState extends State<AttendanceScreen> with WidgetsBindingO
   }
   /// Education's reason when this sheet was returned for correction.
   String? _returnNote;
+  bool _noticesExpanded = false;
   int _pendingCount = 0;
   int _rejectedCount = 0;
   /// WhatsApp-state visibility: true the moment anything changes after a
@@ -1015,15 +1016,89 @@ class AttendanceScreenState extends State<AttendanceScreen> with WidgetsBindingO
     }
   }
 
+  /// Advisory (non-blocking) notices. The blocking `_dayMessage` banner stays
+  /// always-visible at the call site; here we show the first advisory and
+  /// fold any overflow behind a toggle so 3+ orange banners never stack.
+  /// Redesign safety: every notice stays reachable, none removed.
+  List<Widget> _advisoryNotices() {
+    final extra = <Widget>[];
+    if (_rosterNote != null && _error == null) {
+      extra.add(StatusBanner.warning(_rosterNote!));
+    }
+    if (_returnNote != null && _returnNote!.isNotEmpty && !_locked) {
+      extra.add(StatusBanner.warning(
+          'Returned by Education — you can edit and resubmit. $_returnNote'));
+    }
+    if (_locked && _students.isNotEmpty && _error == null) {
+      extra.add(StatusBanner.warning(PacketLock.viewOnlyHint(_packetStatus)));
+    }
+    if (extra.length <= 1) return extra;
+    final hidden = extra.length - 1;
+    if (_noticesExpanded) {
+      return [
+        ...extra,
+        _noticesToggle(0, true),
+      ];
+    }
+    return [
+      extra.first,
+      _noticesToggle(hidden, false),
+    ];
+  }
+
+  Widget _noticesToggle(int hidden, bool expanded) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: InkWell(
+        onTap: () => setState(() => _noticesExpanded = !expanded),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              expanded ? 'Show less' : '$hidden more notice${hidden == 1 ? '' : 's'}',
+              style: const TextStyle(
+                  fontSize: 11,
+                  color: AppTheme.info,
+                  fontWeight: FontWeight.w600),
+            ),
+            Icon(
+              expanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+              size: 16,
+              color: AppTheme.info,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _manualSync() async {
     final result = await _sync.syncAll(force: true);
     if (!mounted) return;
 
+    // Inventory-scoped truth: never success-green while work remains.
+    final fb = SyncFeedback.describe(
+      synced: result.synced,
+      failed: result.failed,
+      status: _sync.lastStatus,
+      online: ConnectivityService().hasLink,
+      drainsPaused: !_sync.drainsAllowed,
+    );
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(result.message),
-        backgroundColor:
-            result.failed > 0 ? AppTheme.warning : AppTheme.success,
+        content: Text(fb.message),
+        backgroundColor: fb.kind == SyncFeedbackKind.success
+            ? AppTheme.success
+            : fb.kind == SyncFeedbackKind.attention
+                ? AppTheme.warning
+                : AppTheme.info,
+        action: fb.kind == SyncFeedbackKind.attention
+            ? SnackBarAction(
+                label: 'Review',
+                textColor: Colors.white,
+                onPressed: () => Navigator.of(context).pushNamed('/sync-center'),
+              )
+            : null,
       ),
     );
     await _updatePendingCount();
@@ -1210,7 +1285,7 @@ class AttendanceScreenState extends State<AttendanceScreen> with WidgetsBindingO
           ),
 
           if (_calendarFromCache && _dateStatus == null && _calendar != null)
-            StatusBanner.warning('Using the saved class-day calendar. Reconnect and refresh to check schedule changes.'),
+            StatusBanner.info('Showing the saved class-day calendar · reconnect and refresh to check schedule changes.'),
           if (_selectedClassId != null && !_dayAllowed)
             StatusBanner.warning(_dayMessage),
           if (_effectiveDateStatus?['ok'] == true &&
@@ -1223,15 +1298,8 @@ class AttendanceScreenState extends State<AttendanceScreen> with WidgetsBindingO
             StatusBanner.success(_successMsg!, onDismiss: () {
               if (mounted) setState(() => _successMsg = null);
             }),
-          if (_rosterNote != null && _error == null)
-            StatusBanner.warning(_rosterNote!),
-          if (_returnNote != null &&
-              _returnNote!.isNotEmpty &&
-              !_locked)
-            StatusBanner.warning(
-                'Returned by Education — you can edit and resubmit. $_returnNote'),
-          if (_locked && _students.isNotEmpty && _error == null)
-            StatusBanner.warning(PacketLock.viewOnlyHint(_packetStatus)),
+          // Advisory notices: first visible, overflow folded (nothing removed).
+          ..._advisoryNotices(),
 
           // Quick mark all
           if (_students.isNotEmpty)

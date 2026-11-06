@@ -66,6 +66,11 @@ class SyncService {
 
   bool get _drainsAllowed => drainEnabledGate?.call() != false;
 
+  /// Public read-only view of the runtime drain gate, for feedback text.
+  /// When false, rows stay saved but nothing is being attempted, so feedback
+  /// must say "paused" — never "retrying".
+  bool get drainsAllowed => _drainsAllowed;
+
   bool _ownsGeneration(int generation) =>
       activeSessionGate?.call() != false &&
       generation == (sessionGenerationProvider?.call() ?? generation);
@@ -423,20 +428,21 @@ class SyncService {
       unawaited(TelemetryService.instance.recordSyncPass(passSummary));
     }
 
+    // Inventory-scoped truth (not pass-scoped): _emitStatus() above refreshed
+    // _lastStatus from the outbox itself, so the message can never claim
+    // "nothing waiting" while rows remain in backoff/in-flight.
+    final feedback = SyncFeedback.describe(
+      synced: synced,
+      failed: failed,
+      status: _lastStatus,
+      online: ConnectivityService().hasLink,
+      drainsPaused: !_drainsAllowed,
+      supersededLocal: supersededLocal,
+    );
     return SyncResult(
       synced: synced,
       failed: failed,
-      message: passSummary.operationsNeedingAttention > 0
-          ? 'Saved work needs attention. Open Sync Center.'
-          : synced > 0
-              ? (failed > 0
-                  ? 'Sent $synced. $failed still waiting — will retry.'
-                  : 'Sent to Education')
-              : failed > 0
-                  ? 'Could not send yet. Will retry on its own.'
-                  : supersededLocal
-                      ? 'Local work changed while sending. Checking the new copy.'
-                      : 'Nothing waiting to send',
+      message: feedback.message,
     );
   }
 
@@ -954,4 +960,83 @@ class SyncResult {
   final String message;
   SyncResult(
       {required this.synced, required this.failed, required this.message});
+}
+
+/// Severity of a [SyncFeedback]. UI maps: success → green, attention →
+/// warning/danger, pending → muted/info. Deliberately UI-agnostic (no theme
+/// import in the service layer).
+enum SyncFeedbackKind { success, attention, pending }
+
+/// Canonical, inventory-scoped answer to "did my work send?" — the single
+/// source of truth for every sync-feedback surface (manual-sync SnackBars,
+/// drain result messages).
+///
+/// [SyncResult] alone is pass-scoped (what *this drain* did: synced/failed),
+/// which produced the false "Nothing waiting to send" green bar while rows
+/// sat in backoff (`retryableWaiting`) or mid-flight. This helper pairs the
+/// pass counts with the post-drain inventory snapshot ([status]) so the
+/// sentence always describes what REMAINS, and [kind] never reports success
+/// while work remains.
+class SyncFeedback {
+  final String message;
+  final SyncFeedbackKind kind;
+  const SyncFeedback(this.message, this.kind);
+
+  static SyncFeedback describe({
+    required int synced,
+    required int failed,
+    required SyncStatus status,
+    required bool online,
+    required bool drainsPaused,
+    bool supersededLocal = false,
+  }) {
+    final attention =
+        status.rejected + status.blockedDependency + status.resolvedConflict;
+    final paused = status.pausedAuth + status.pausedScope;
+    final remaining =
+        status.retryableDue + status.retryableWaiting + status.inFlight;
+
+    // 1. Anything the user must review or that is parked by the system.
+    if (attention + paused > 0) {
+      final parts = <String>[];
+      if (attention > 0) {
+        parts.add('$attention need${attention == 1 ? 's' : ''} review');
+      }
+      if (paused > 0) parts.add('$paused paused');
+      return SyncFeedback(
+          '${parts.join(' · ')} — open Sync Center', SyncFeedbackKind.attention);
+    }
+    // 2. Runtime gate closed: rows are saved but nothing is being attempted.
+    if (drainsPaused) {
+      return const SyncFeedback('Sync is paused — your work stays saved on this phone',
+          SyncFeedbackKind.attention);
+    }
+    // 3. Work remains: say so, with the honest reason.
+    if (remaining > 0) {
+      if (supersededLocal && synced == 0 && failed == 0) {
+        return const SyncFeedback(
+            'Local work changed while sending. Checking the new copy.',
+            SyncFeedbackKind.pending);
+      }
+      if (!online) {
+        return SyncFeedback(
+            'Offline — $remaining saved on this phone, sends automatically',
+            SyncFeedbackKind.pending);
+      }
+      return SyncFeedback('$remaining still waiting — retrying automatically',
+          SyncFeedbackKind.pending);
+    }
+    // 4. Outbox truly empty.
+    if (synced > 0) {
+      return const SyncFeedback('All sent ✓', SyncFeedbackKind.success);
+    }
+    if (failed > 0) {
+      // Defensive: failed>0 with an empty outbox should be unreachable
+      // (a failed op stays retryable/attention), but never claim success.
+      return const SyncFeedback('Could not send yet. Will retry on its own.',
+          SyncFeedbackKind.attention);
+    }
+    return const SyncFeedback(
+        'Already up to date', SyncFeedbackKind.pending);
+  }
 }
