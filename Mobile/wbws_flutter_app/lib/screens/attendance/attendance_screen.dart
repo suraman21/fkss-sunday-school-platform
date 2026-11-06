@@ -311,15 +311,27 @@ class AttendanceScreenState extends State<AttendanceScreen> with WidgetsBindingO
         );
       }
     } on AttendancePreparationFetchException catch (e) {
+      // Surface the machine code — screenshot this. Common codes:
+      // PREPARATION_BOUND_AUTH_REQUIRED (token has no fid/rsid),
+      // PREPARATION_SCOPE_CHANGED (role/AV changed),
+      // SESSION_REVOKED (refresh family revoked), PREPARATION_ACCOUNT_INACTIVE,
+      // PREPARATION_WRITE_YEAR_NOT_CURRENT (no single active academic year),
+      // ATTENDANCE_PREPARATION_UNAVAILABLE (server config error).
+      debugPrint('Preparation refresh failed: ${e.code}: ${e.message}');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message), backgroundColor: AppTheme.warning),
+          SnackBar(
+            content: Text('${e.code}: ${e.message}'),
+            backgroundColor: AppTheme.warning,
+            duration: const Duration(seconds: 5),
+          ),
         );
       }
     } catch (e) {
+      debugPrint('Preparation refresh failed (unexpected): $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Refresh failed: $e'), backgroundColor: AppTheme.warning),
+          SnackBar(content: Text('Refresh failed: $e'), backgroundColor: AppTheme.warning, duration: const Duration(seconds: 5)),
         );
       }
     } finally {
