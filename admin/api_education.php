@@ -1400,7 +1400,10 @@ switch ($action) {
         $reopen  = ($tstatus === 'closed');
         $confirm = strtoupper(trim((string)($_POST['confirm'] ?? '')));
         $need    = $reopen ? 'REOPEN' : 'SWITCH';
-        if ($confirm !== $need) {
+        // Allow ACTIVATE EMPTY as a stronger alternative to SWITCH for Upcoming years
+        // that are empty — the empty-year guard below will validate it.
+        $allowed = $reopen ? ['REOPEN'] : ['SWITCH', 'ACTIVATE EMPTY'];
+        if (!in_array($confirm, $allowed, true)) {
             echo json_encode([
                 'status'             => 'error',
                 'code'               => $reopen ? 'confirm_reopen' : 'confirm_switch',
@@ -1411,6 +1414,49 @@ switch ($action) {
                     ? 'This year is CLOSED. Reopening a past year makes it active again and NEW records will be stamped to it. This is unusual — only do it to correct a mistake. Type REOPEN to confirm.'
                     : 'Switching the active year will CLOSE the current year. New records will then belong to the newly selected year. Type SWITCH to confirm.'
             ]);
+            break;
+        }
+
+        // R1 — Empty-year guard: activating an Upcoming year that has no active
+        // enrolments is almost always a mistake (user meant Year Rollover). Require
+        // the stronger phrase ACTIVATE EMPTY unless the admin already typed it.
+        // This is a safety check, not a block — the admin can still force it.
+        if ($tstatus === 'upcoming' && $confirm === 'SWITCH') {
+            $emptyCheck = null;
+            try {
+                $chk = $conn->prepare("SELECT COUNT(*) AS c FROM class_enrollments WHERE academic_year_id = ? AND status = 'active'");
+                if ($chk) {
+                    $chk->bind_param('i', $yid);
+                    $chk->execute();
+                    $row = $chk->get_result()->fetch_assoc();
+                    $chk->close();
+                    if ($row && (int)$row['c'] === 0) {
+                        // Count active, year-scoped teacher assignments too — an empty
+                        // year with no teachers is even more likely to be wrong.
+                        $taCount = 0;
+                        $chk2 = $conn->prepare("SELECT COUNT(*) AS c FROM teacher_assignments WHERE academic_year_id = ? AND is_active = 1");
+                        if ($chk2) { $chk2->bind_param('i', $yid); $chk2->execute(); $r2 = $chk2->get_result()->fetch_assoc(); $chk2->close(); $taCount = (int)($r2['c'] ?? 0); }
+                        if ($taCount === 0) {
+                            echo json_encode([
+                                'status'             => 'error',
+                                'code'               => 'confirm_activate_empty',
+                                'needs_confirmation' => true,
+                                'target_name'        => $target['year_name'] ?? '',
+                                'message'            => 'The year "' . ($target['year_name'] ?? '') . '" has no students and no teacher assignments. If you switch now, the mobile app will show an empty year (no classes, no roster) and attendance preparation will fail until you enrol students. In most cases you want "Year Rollover" instead, which copies students into the new year in one safe step. To force an empty active year anyway, type ACTIVATE EMPTY.'
+                            ]);
+                            break;
+                        }
+                    }
+                }
+            } catch (Throwable $e) { /* safety check is best-effort */ }
+        }
+        // Explicit override: frontend re-sends with confirm=ACTIVATE EMPTY
+        if ($confirm === 'ACTIVATE EMPTY') {
+            $res = ay_switch_active($conn, $yid, false);
+            if (($res['status'] ?? '') === 'success') {
+                $res['message'] = 'Active year changed — the new year is empty. Enrol students or run Year Rollover to carry them from the prior year.';
+            }
+            echo json_encode($res);
             break;
         }
 

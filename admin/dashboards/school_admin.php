@@ -437,7 +437,7 @@ renderSidebarUserCard($fullName, 'School Admin', $todayFormatted, $initials, 'li
 <!-- ═══ ACADEMIC YEAR ═══ -->
 <div id="section-academicyear" class="cs">
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.85rem;flex-wrap:wrap;gap:.5rem"><div><h2 style="font-size:1.1rem;font-weight:700;color:var(--bright)"><i class="fa-solid fa-calendar-days" style="color:var(--purple)"></i> Academic Year & Semesters</h2><p style="font-size:.72rem;color:var(--dim)">Create the school year, set the active one, and manage semesters. Only one year is <b>Active</b> at a time.</p></div><div style="display:flex;gap:.4rem;flex-wrap:wrap"><button class="btn bo bs" onclick="toggleYearHelp()" title="Explain what each button here does"><i class="fa-solid fa-circle-question"></i> Help</button><button class="btn bo bs" onclick="openRolloverModal()" title="Start the next school year and move students forward in one safe step"><i class="fa-solid fa-rotate"></i> Year Rollover</button><a class="btn bo bs" href="/admin/school_calendar.php" title="Yearly calendar: holidays and Day Off days (attendance is taken only on class days)"><i class="fa-solid fa-calendar-check"></i> School Calendar</a><button class="btn bp bs" onclick="openYearModal()"><i class="fa-solid fa-plus"></i> Add Year</button></div></div>
-<div id="rolloverHint" style="display:none;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.35);border-radius:10px;padding:.7rem .9rem;margin-bottom:.85rem;font-size:.76rem;display:none;align-items:center;gap:.7rem;flex-wrap:wrap"><i class="fa-solid fa-calendar-check" style="color:var(--warn)"></i><span id="rolloverHintText" style="color:var(--text);flex:1;min-width:200px"></span><button class="btn bp bs" onclick="openRolloverModal()"><i class="fa-solid fa-rotate"></i> Run Year Rollover</button><button class="btn bo bs" onclick="document.getElementById('rolloverHint').style.display='none'" title="Hide until the page is opened again">Dismiss</button></div>
+<div id="rolloverHint" style="display:none;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.35);border-radius:10px;padding:.7rem .9rem;margin-bottom:.85rem;font-size:.76rem;align-items:center;gap:.7rem;flex-wrap:wrap"><i class="fa-solid fa-calendar-check" style="color:var(--warn)"></i><span id="rolloverHintText" style="color:var(--text);flex:1;min-width:200px"></span><button class="btn bp bs" onclick="openRolloverModal()"><i class="fa-solid fa-rotate"></i> Run Year Rollover</button><button class="btn bo bs" onclick="document.getElementById('rolloverHint').style.display='none'" title="Hide until the page is opened again">Dismiss</button></div>
 <div id="yearHelp" style="display:none;background:rgba(59,130,246,.06);border:1px solid rgba(59,130,246,.25);border-radius:10px;padding:.85rem 1rem;margin-bottom:.85rem;font-size:.76rem;line-height:1.5">
 <div style="font-weight:700;color:var(--bright);margin-bottom:.4rem"><i class="fa-solid fa-circle-info" style="color:#60a5fa"></i> What each control does</div>
 <ul style="margin:0;padding-left:1.1rem;color:var(--dim)">
@@ -1346,9 +1346,19 @@ async function setCurrentYear(id){
         keeps:['No records are deleted.'],phrase:'SWITCH',confirmLabel:'Switch to '+nm});
     if(!dc)return;
     const fd=new FormData();fd.append('action','set_current_year');fd.append('year_id',id);fd.append('confirm',phrase);fd.append('csrf_token',CSRF);
-    try{const r=await fetch('/admin/api_education.php',{method:'POST',body:fd,credentials:'same-origin'});const d=await r.json();
+    try{
+        const r=await fetch('/admin/api_education.php',{method:'POST',body:fd,credentials:'same-origin'});const d=await r.json();
+        if(d.code==='confirm_activate_empty'){
+            const dc2=await dcAsk({tier:'high',title:'Activate EMPTY year "'+nm+'"?',object:nm,summary:d.message||'This year has no students or teachers.',intent:'I want to activate an empty year anyway',consequences:['The new active year will be EMPTY — mobile teachers will see no classes and no students.','Attendance preparation will fail until you enrol students.','In most cases you should close this dialog and use Year Rollover instead, which copies every student safely.'],keeps:['No records are deleted.','You can still run Year Rollover afterward to fill the year.'],phrase:'ACTIVATE EMPTY',confirmLabel:'Activate empty year anyway'});
+            if(!dc2)return;
+            const fd2=new FormData();fd2.append('action','set_current_year');fd2.append('year_id',id);fd2.append('confirm','ACTIVATE EMPTY');fd2.append('csrf_token',CSRF);
+            const r2=await fetch('/admin/api_education.php',{method:'POST',body:fd2,credentials:'same-origin'});const d2=await r2.json();
+            toast(d2.message||(d2.status==='success'?'Active year changed':'Failed'),d2.status==='success'?'s':'e');
+            if(d2.status==='success'){loadYears(); if(window._ayToastUpdate) window._ayToastUpdate();}
+            return;
+        }
         toast(d.message||(d.status==='success'?'Active year changed':'Failed'),d.status==='success'?'s':'e');
-        if(d.status==='success')loadYears();
+        if(d.status==='success'){loadYears(); if(window._ayToastUpdate) window._ayToastUpdate();}
     }catch(e){toast('Error','e');}
 }
 async function deleteYear(id){

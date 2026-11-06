@@ -215,7 +215,27 @@ if ($action === 'run' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $gradMember->close();
         }
 
-        // 3. Mark the closed year's enrolments as completed (enrolment domain).
+        // 3. Copy year-scoped teacher assignments into the new year (R4).
+        // Global assignments (academic_year_id IS NULL) already apply to every
+        // year via AttendancePreparationService, so only copy the scoped ones.
+        $copiedTA = 0;
+        try {
+            $taStmt = $conn->prepare(
+                "INSERT IGNORE INTO teacher_assignments
+                    (teacher_id, class_id, subject_id, academic_year_id, is_class_teacher, is_primary, assignment_role, assigned_by, assigned_at, is_active)
+                 SELECT teacher_id, class_id, subject_id, ?, is_class_teacher, is_primary, assignment_role, ?, NOW(), 1
+                 FROM teacher_assignments
+                 WHERE academic_year_id = ? AND is_active = 1"
+            );
+            if ($taStmt) {
+                $taStmt->bind_param("iii", $newYearId, $adminId, $oldYearId);
+                $taStmt->execute();
+                $copiedTA = (int)$taStmt->affected_rows;
+                $taStmt->close();
+            }
+        } catch (Throwable $e) { error_log('Rollover teacher copy: '.$e->getMessage()); }
+
+        // 4. Mark the closed year's enrolments as completed (enrolment domain).
         $st = $conn->prepare("UPDATE class_enrollments SET status = 'completed' WHERE academic_year_id = ? AND status = 'active'");
         $st->bind_param("i", $oldYearId);
         $st->execute();
@@ -225,12 +245,13 @@ if ($action === 'run' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $conn->commit();
 
         $report = [
-            'mode'      => $mode,
-            'carried'   => $carried,
-            'promoted'  => $promoted,
-            'graduated' => $graduated,
-            'skipped'   => $skipped,
-            'closed'    => $closedCount,
+            'mode'               => $mode,
+            'carried'            => $carried,
+            'promoted'           => $promoted,
+            'graduated'          => $graduated,
+            'skipped'            => $skipped,
+            'closed'             => $closedCount,
+            'teacher_assignments_copied' => $copiedTA,
         ];
 
         // Optional: log it (non-fatal).
@@ -238,7 +259,7 @@ if ($action === 'run' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $lg = $conn->prepare("INSERT INTO activity_logs (user_id, username, action, details, created_at) VALUES (?, ?, 'Year Rollover', ?, NOW())");
             if ($lg) {
                 $uname = $_SESSION['admin_username'] ?? 'admin';
-                $details = "Mode=$mode closed_year=$oldYearId new_year=$newYearId carried=$carried promoted=$promoted graduated=$graduated skipped=$skipped";
+                $details = "Mode=$mode closed_year=$oldYearId new_year=$newYearId carried=$carried promoted=$promoted graduated=$graduated skipped=$skipped teacher_assignments_copied=$copiedTA";
                 $lg->bind_param("iss", $adminId, $uname, $details);
                 $lg->execute();
                 $lg->close();
@@ -246,8 +267,8 @@ if ($action === 'run' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         } catch (Exception $e) { /* logging is optional */ }
 
         $summary = ($mode === 'carry_forward')
-            ? "$carried student(s) carried into the new year."
-            : "$promoted promoted, $graduated graduated" . ($skipped ? ", $skipped need manual placement" : "") . ".";
+            ? "$carried student(s) carried into the new year" . ($copiedTA ? " and $copiedTA teacher assignment(s) copied" : "") . "."
+            : "$promoted promoted, $graduated graduated" . ($skipped ? ", $skipped need manual placement" : "") . ($copiedTA ? ", $copiedTA teacher assignment(s) copied" : "") . ".";
         _rollover_out([
             'status'  => 'success',
             'message' => 'Rollover complete. ' . $summary,
