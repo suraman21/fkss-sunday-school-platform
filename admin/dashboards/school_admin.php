@@ -436,7 +436,7 @@ renderSidebarUserCard($fullName, 'School Admin', $todayFormatted, $initials, 'li
 
 <!-- ═══ ACADEMIC YEAR ═══ -->
 <div id="section-academicyear" class="cs">
-<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.85rem;flex-wrap:wrap;gap:.5rem"><div><h2 style="font-size:1.1rem;font-weight:700;color:var(--bright)"><i class="fa-solid fa-calendar-days" style="color:var(--purple)"></i> Academic Year & Semesters</h2><p style="font-size:.72rem;color:var(--dim)">Create the school year, set the active one, and manage semesters. Only one year is <b>Active</b> at a time.</p></div><div style="display:flex;gap:.4rem;flex-wrap:wrap"><button class="btn bo bs" onclick="toggleYearHelp()" title="Explain what each button here does"><i class="fa-solid fa-circle-question"></i> Help</button><button class="btn bo bs" onclick="openRolloverModal()" title="Start the next school year and move students forward in one safe step"><i class="fa-solid fa-rotate"></i> Year Rollover</button><a class="btn bo bs" href="/admin/school_calendar.php" title="Yearly calendar: holidays and Day Off days (attendance is taken only on class days)"><i class="fa-solid fa-calendar-check"></i> School Calendar</a><button class="btn bp bs" onclick="openYearModal()"><i class="fa-solid fa-plus"></i> Add Year</button></div></div>
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.85rem;flex-wrap:wrap;gap:.5rem"><div><h2 style="font-size:1.1rem;font-weight:700;color:var(--bright)"><i class="fa-solid fa-calendar-days" style="color:var(--purple)"></i> Academic Year & Semesters</h2><p style="font-size:.72rem;color:var(--dim)">Create the school year, set the active one, and manage semesters. Only one year is <b>Active</b> at a time.</p></div><div style="display:flex;gap:.4rem;flex-wrap:wrap"><button class="btn bo bs" onclick="toggleYearHelp()" title="Explain what each button here does"><i class="fa-solid fa-circle-question"></i> Help</button><button class="btn bo bs" onclick="openRolloverModal()" title="Start the next school year and move students forward in one safe step"><i class="fa-solid fa-rotate"></i> Year Rollover</button><button class="btn bo bs" onclick="openCopyAssessmentsModal()" title="Copy assessment templates from a prior year into the active year"><i class="fa-solid fa-copy"></i> Copy Assessments</button><a class="btn bo bs" href="/admin/school_calendar.php" title="Yearly calendar: holidays and Day Off days (attendance is taken only on class days)"><i class="fa-solid fa-calendar-check"></i> School Calendar</a><button class="btn bp bs" onclick="openYearModal()"><i class="fa-solid fa-plus"></i> Add Year</button></div></div>
 <div id="rolloverHint" style="display:none;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.35);border-radius:10px;padding:.7rem .9rem;margin-bottom:.85rem;font-size:.76rem;align-items:center;gap:.7rem;flex-wrap:wrap"><i class="fa-solid fa-calendar-check" style="color:var(--warn)"></i><span id="rolloverHintText" style="color:var(--text);flex:1;min-width:200px"></span><button class="btn bp bs" onclick="openRolloverModal()"><i class="fa-solid fa-rotate"></i> Run Year Rollover</button><button class="btn bo bs" onclick="document.getElementById('rolloverHint').style.display='none'" title="Hide until the page is opened again">Dismiss</button></div>
 <div id="yearHelp" style="display:none;background:rgba(59,130,246,.06);border:1px solid rgba(59,130,246,.25);border-radius:10px;padding:.85rem 1rem;margin-bottom:.85rem;font-size:.76rem;line-height:1.5">
 <div style="font-weight:700;color:var(--bright);margin-bottom:.4rem"><i class="fa-solid fa-circle-info" style="color:#60a5fa"></i> What each control does</div>
@@ -558,6 +558,17 @@ renderProfileTabSection('section-profile', 'cs');
 <div id="roPreview" style="font-size:.75rem;color:var(--dim);background:rgba(148,163,184,.08);border-radius:6px;padding:.45rem .6rem">Loading…</div>
 <div style="font-size:.74rem;color:var(--dim)"><i class="fa-solid fa-shield-halved"></i> After you press Run, a 3-step confirmation explains what will happen and asks you to type <code>ROLLOVER</code>.</div>
 <button class="btn bp" id="roRunBtn" onclick="runRollover()"><i class="fa-solid fa-rotate"></i> Run Year Rollover</button>
+</div>
+</div></div>
+
+<div class="mo" id="copyAssessmentsModal"><div class="md" style="max-width:520px">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.85rem"><h3 style="margin:0"><i class="fa-solid fa-copy" style="color:var(--purple)"></i> Copy Assessment Templates</h3><button onclick="document.getElementById('copyAssessmentsModal').classList.remove('show')" style="background:none;border:none;color:var(--dim);font-size:1.1rem;cursor:pointer"><i class="fa-solid fa-xmark"></i></button></div>
+<div style="display:flex;flex-direction:column;gap:.6rem">
+<div style="font-size:.72rem;background:rgba(59,130,246,.08);border-left:3px solid #60a5fa;color:var(--dim);padding:.5rem .65rem;border-radius:4px">Copies only the <b>assessment structure</b> (name, type, weight, max score) from one year to another — no student grades are copied. Use this after a Year Rollover to avoid rebuilding every test/quiz manually.</div>
+<div><label class="flbl">Copy FROM year (has assessments)</label><select id="caSource" class="inp" style="width:100%"></select></div>
+<div><label class="flbl">Copy TO year (target — usually the new Active year)</label><select id="caTarget" class="inp" style="width:100%"></select></div>
+<div id="caPreview" style="font-size:.75rem;color:var(--dim);background:rgba(148,163,184,.08);border-radius:6px;padding:.45rem .6rem">Choose both years.</div>
+<button class="btn bp" id="caRunBtn" onclick="runCopyAssessments()"><i class="fa-solid fa-copy"></i> Copy Assessments</button>
 </div>
 </div></div>
 
@@ -1348,11 +1359,14 @@ async function setCurrentYear(id){
     const fd=new FormData();fd.append('action','set_current_year');fd.append('year_id',id);fd.append('confirm',phrase);fd.append('csrf_token',CSRF);
     try{
         const r=await fetch('/admin/api_education.php',{method:'POST',body:fd,credentials:'same-origin'});const d=await r.json();
-        if(d.code==='confirm_activate_empty'){
-            const dc2=await dcAsk({tier:'high',title:'Activate EMPTY year "'+nm+'"?',object:nm,summary:d.message||'This year has no students or teachers.',intent:'I want to activate an empty year anyway',consequences:['The new active year will be EMPTY — mobile teachers will see no classes and no students.','Attendance preparation will fail until you enrol students.','In most cases you should close this dialog and use Year Rollover instead, which copies every student safely.'],keeps:['No records are deleted.','You can still run Year Rollover afterward to fill the year.'],phrase:'ACTIVATE EMPTY',confirmLabel:'Activate empty year anyway'});
+        if(d.code==='confirm_activate_empty' || d.code==='confirm_activate_invalid'){
+            const isEmpty = d.code==='confirm_activate_empty';
+            const phrase = isEmpty ? 'ACTIVATE EMPTY' : 'ACTIVATE ANYWAY';
+            const dc2=await dcAsk({tier:'high',title:(isEmpty ? 'Activate EMPTY year "'+nm+'"?' : 'Activate year "'+nm+'" with warnings?'),object:nm,summary:d.message||'',intent:(isEmpty ? 'I want to activate an empty year anyway' : 'I want to activate despite warnings'),consequences:(isEmpty ? ['The new active year will be EMPTY — mobile teachers will see no classes and no students.','Attendance preparation will fail until you enrol students.','Use Year Rollover instead to copy students safely.'] : ['Some dates/semesters/weights are missing or wrong — mobile preparation may fail.','Attendance calendar may have no class days, reports may misplace.','You can fix the year after activating but teachers will be affected.']),keeps:(isEmpty ? ['No records are deleted.','You can still run Year Rollover afterward.'] : ['No records are deleted.','Fix the dates/semesters soon after.']),phrase:phrase,confirmLabel:(isEmpty ? 'Activate empty year anyway' : 'Activate anyway')});
             if(!dc2)return;
-            const fd2=new FormData();fd2.append('action','set_current_year');fd2.append('year_id',id);fd2.append('confirm','ACTIVATE EMPTY');fd2.append('csrf_token',CSRF);
+            const fd2=new FormData();fd2.append('action','set_current_year');fd2.append('year_id',id);fd2.append('confirm',phrase);fd2.append('csrf_token',CSRF);
             const r2=await fetch('/admin/api_education.php',{method:'POST',body:fd2,credentials:'same-origin'});const d2=await r2.json();
+            (d2.warnings||[]).forEach(w=>toast(w,'e'));
             toast(d2.message||(d2.status==='success'?'Active year changed':'Failed'),d2.status==='success'?'s':'e');
             if(d2.status==='success'){loadYears(); if(window._ayToastUpdate) window._ayToastUpdate();}
             return;
@@ -1421,6 +1435,40 @@ async function runRollover(){
         const r=await fetch('/admin/tools/year_rollover.php',{method:'POST',body:fd,credentials:'same-origin'});const d=await r.json();
         toast(d.message||(d.status==='success'?'Rollover complete':'Failed'),d.status==='success'?'s':'e');
         if(d.status==='success'){document.getElementById('rolloverModal').classList.remove('show');loadYears();}
+    }catch(e){toast('Network error','e');}
+    finally{btn.disabled=false;btn.style.opacity=1;}
+}
+async function openCopyAssessmentsModal(){
+    const m=document.getElementById('copyAssessmentsModal');if(!m)return;
+    m.classList.add('show');
+    document.getElementById('caPreview').textContent='Loading years…';
+    try{
+        const r=await fetch('/admin/tools/year_rollover.php?action=preview',{credentials:'same-origin'});const d=await r.json();
+        if(d.status!=='success'){toast(d.message||'Could not load years','e');return;}
+        const years=d.years||[];
+        const stTag=x=>{const s=x.status||(x.is_current==1?'active':'upcoming');return s==='active'?'Active':(s==='closed'?'Closed':'Upcoming');};
+        const opts=years.map(x=>`<option value="${parseInt(x.id)}">${esc(x.year_name)} · ${stTag(x)}</option>`).join('');
+        const srcEl=document.getElementById('caSource'), tgtEl=document.getElementById('caTarget');
+        srcEl.innerHTML=opts; tgtEl.innerHTML=opts;
+        // Default: source=active, target=upcoming if exists
+        try{ const act=years.find(x=> (x.status||(x.is_current==1?'active':'upcoming'))==='active'); const upc=years.find(x=> (x.status||(x.is_current==1?'active':'upcoming'))==='upcoming'); if(act) srcEl.value=act.id; if(upc) tgtEl.value=upc.id; }catch(e){}
+        document.getElementById('caPreview').textContent='Choose source and target. Only the template (not grades) will be copied.';
+    }catch(e){toast('Network error loading years','e');}
+}
+async function runCopyAssessments(){
+    const src=document.getElementById('caSource')?.value, tgt=document.getElementById('caTarget')?.value;
+    if(!src||!tgt){toast('Choose both years','e');return;}
+    if(src===tgt){toast('Source and target must be different','e');return;}
+    const sel=id=>{const e=document.getElementById(id);return e&&e.selectedIndex>=0?e.options[e.selectedIndex].text.replace(/\s*·\s*(Active|Upcoming|Closed|Current)\s*$/i,''):'';};
+    const srcN=sel('caSource'), tgtN=sel('caTarget');
+    const dc=await dcAsk({tier:'medium',title:'Copy assessments from "'+srcN+'" to "'+tgtN+'"?',object:srcN+' → '+tgtN,summary:'Copies the assessment structure only — no grades.',intent:'I want to copy assessment templates',consequences:['All assessment definitions (name, type, weight, max score) from '+srcN+' will be duplicated into '+tgtN+'.','Existing assessments in '+tgtN+' with the same class/subject/name/type are skipped (no duplicates).','Semester mapping uses term number — ensure '+tgtN+' has the same semester numbers as '+srcN+'.'],keeps:['No student grades are copied or changed.','You can run this again safely — duplicates are skipped.'],phrase:'COPY',confirmLabel:'Copy assessments'});
+    if(!dc)return;
+    const btn=document.getElementById('caRunBtn');btn.disabled=true;btn.style.opacity=.6;
+    const fd=new FormData();fd.append('action','copy_assessments');fd.append('source_year_id',src);fd.append('target_year_id',tgt);fd.append('confirm','COPY');fd.append('csrf_token',CSRF);
+    try{
+        const r=await fetch('/admin/api_education.php',{method:'POST',body:fd,credentials:'same-origin'});const d=await r.json();
+        toast(d.message||(d.status==='success'?'Copy complete':'Failed'),d.status==='success'?'s':'e');
+        if(d.status==='success'){document.getElementById('copyAssessmentsModal').classList.remove('show');}
     }catch(e){toast('Network error','e');}
     finally{btn.disabled=false;btn.style.opacity=1;}
 }

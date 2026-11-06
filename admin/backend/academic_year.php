@@ -223,6 +223,47 @@ function ay_switch_active($conn, $targetYearId, $reopen = false) {
     }
 }
 
+/**
+ * R3 — Validate a target year before it becomes Active.
+ * Returns ['ok'=>bool, 'errors'=>string[], 'warnings'=>string[]]
+ * Hard errors = missing dates / inverted dates / duplicate ec_year.
+ * Warnings = no semesters / weights not 100 / today outside range.
+ * Caller decides whether to block or require stronger confirmation.
+ */
+function ay_validate_target_year($conn, $targetYearId) {
+    $errors = []; $warnings = [];
+    $y = ay_year_by_id($conn, (int)$targetYearId);
+    if (!$y) return ['ok'=>false, 'errors'=>['That academic year does not exist.'], 'warnings'=>[]];
+    $start = $y['start_date'] ?? null;
+    $end   = $y['end_date'] ?? null;
+    if (empty($start) || empty($end)) {
+        $errors[] = 'The year "' . ($y['year_name']??'') . '" has no start/end dates — set the School Year dates (Meskerem → Sene) before activating, or attendance calendar will have no class days.';
+    } elseif (strtotime($start) > strtotime($end)) {
+        $errors[] = 'Start date (' . $start . ') is after end date (' . $end . ') — correct the dates before activating.';
+    } else {
+        $today = date('Y-m-d');
+        if ($today < $start || $today > $end) {
+            $warnings[] = 'Today (' . $today . ') is outside this year\'s date window (' . $start . ' → ' . $end . ') — mobile attendance preparation requires today ∈ [start_date, end_date]; teachers may see "Year not current" until the window is corrected.';
+        }
+    }
+    // Semester / weight checks
+    try {
+        $tc = 0;
+        $r = $conn->query("SELECT COUNT(*) c FROM academic_terms WHERE academic_year_id=" . (int)$targetYearId);
+        if ($r) { $row=$r->fetch_assoc(); $tc=(int)($row['c']??0); }
+        if ($tc === 0) {
+            $warnings[] = 'This year has no semesters (academic_terms) — create at least Semester 1 & 2, or term-scoped assessments and reports will have nowhere to belong.';
+        }
+        $s1 = isset($y['s1_weight_pct']) ? (float)$y['s1_weight_pct'] : null;
+        $s2 = isset($y['s2_weight_pct']) ? (float)$y['s2_weight_pct'] : null;
+        if ($s1 !== null && $s2 !== null) {
+            $tot = round($s1 + $s2, 2);
+            if ($tot != 100.00) $warnings[] = 'Semester weights total ' . $tot . '% (must be 100%) — the annual score weighting will be wrong until corrected.';
+        }
+    } catch (Throwable $e) {}
+    return ['ok'=> empty($errors), 'errors'=>$errors, 'warnings'=>$warnings];
+}
+
 /** Years for a selector dropdown: [{id, year_name, ec_year, status, is_active}]. */
 function ay_year_list($conn) {
     ay_ensure_schema($conn);

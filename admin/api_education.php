@@ -38,7 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $action = is_scalar($_REQUEST['action'] ?? '') ? (string)($_REQUEST['action'] ?? '') : '';
-requirePostActions($action, ['enroll', 'assign_teacher', 'record_grade', 'record_attendance', 'batch_attendance', 'promote', 'unenroll_student', 'save_class', 'delete_class', 'save_academic_year', 'set_current_year', 'delete_year', 'save_term', 'set_current_term', 'reopen_term', 'close_term_reopen', 'delete_term', 'bulk_enroll', 'transfer_student', 'sync_member_types', 'toggle_class', 'save_assessment_type', 'toggle_assessment_type', 'delete_assessment_type']);
+requirePostActions($action, ['enroll', 'assign_teacher', 'record_grade', 'record_attendance', 'batch_attendance', 'promote', 'unenroll_student', 'save_class', 'delete_class', 'save_academic_year', 'set_current_year', 'delete_year', 'save_term', 'set_current_term', 'reopen_term', 'close_term_reopen', 'delete_term', 'bulk_enroll', 'transfer_student', 'sync_member_types', 'toggle_class', 'save_assessment_type', 'toggle_assessment_type', 'delete_assessment_type', 'copy_assessments']);
 $__featureActions = [
     'grades' => ['record_grade'],
     'attendance' => ['record_attendance', 'batch_attendance'],
@@ -91,7 +91,7 @@ if (in_array($action, $__termActions, true)
 $__manageActions = [
     'enroll', 'unenroll_student', 'promote', 'bulk_enroll', 'transfer_student',
     'assign_teacher', 'save_class', 'delete_class', 'toggle_class',
-    'sync_member_types', 'impact_delete_class',
+    'sync_member_types', 'impact_delete_class', 'copy_assessments',
 ];
 if (in_array($action, $__manageActions, true)) {
     if (!in_array($__role, ['super_admin', 'school_admin', 'edu_dept'], true)) {
@@ -1402,7 +1402,7 @@ switch ($action) {
         $need    = $reopen ? 'REOPEN' : 'SWITCH';
         // Allow ACTIVATE EMPTY as a stronger alternative to SWITCH for Upcoming years
         // that are empty — the empty-year guard below will validate it.
-        $allowed = $reopen ? ['REOPEN'] : ['SWITCH', 'ACTIVATE EMPTY'];
+        $allowed = $reopen ? ['REOPEN'] : ['SWITCH', 'ACTIVATE EMPTY', 'ACTIVATE ANYWAY'];
         if (!in_array($confirm, $allowed, true)) {
             echo json_encode([
                 'status'             => 'error',
@@ -1417,44 +1417,54 @@ switch ($action) {
             break;
         }
 
-        // R1 — Empty-year guard: activating an Upcoming year that has no active
-        // enrolments is almost always a mistake (user meant Year Rollover). Require
-        // the stronger phrase ACTIVATE EMPTY unless the admin already typed it.
-        // This is a safety check, not a block — the admin can still force it.
+        // R1+R3 — Empty-year + structural validation before activating.
+        // Empty Upcoming year (0 enrolments + 0 teacher assignments) OR missing
+        // dates / inverted dates / no semesters / bad weights almost always means
+        // the admin meant Year Rollover, not a bare switch. We block with a
+        // stronger phrase (ACTIVATE EMPTY / ACTIVATE ANYWAY) but never hard-
+        // block — the admin can still force it with the explicit phrase.
         if ($tstatus === 'upcoming' && $confirm === 'SWITCH') {
-            $emptyCheck = null;
+            // 1) Empty enrolment check (R1)
+            $isEmpty = false;
             try {
                 $chk = $conn->prepare("SELECT COUNT(*) AS c FROM class_enrollments WHERE academic_year_id = ? AND status = 'active'");
-                if ($chk) {
-                    $chk->bind_param('i', $yid);
-                    $chk->execute();
-                    $row = $chk->get_result()->fetch_assoc();
-                    $chk->close();
-                    if ($row && (int)$row['c'] === 0) {
-                        // Count active, year-scoped teacher assignments too — an empty
-                        // year with no teachers is even more likely to be wrong.
-                        $taCount = 0;
-                        $chk2 = $conn->prepare("SELECT COUNT(*) AS c FROM teacher_assignments WHERE academic_year_id = ? AND is_active = 1");
-                        if ($chk2) { $chk2->bind_param('i', $yid); $chk2->execute(); $r2 = $chk2->get_result()->fetch_assoc(); $chk2->close(); $taCount = (int)($r2['c'] ?? 0); }
-                        if ($taCount === 0) {
-                            echo json_encode([
-                                'status'             => 'error',
-                                'code'               => 'confirm_activate_empty',
-                                'needs_confirmation' => true,
-                                'target_name'        => $target['year_name'] ?? '',
-                                'message'            => 'The year "' . ($target['year_name'] ?? '') . '" has no students and no teacher assignments. If you switch now, the mobile app will show an empty year (no classes, no roster) and attendance preparation will fail until you enrol students. In most cases you want "Year Rollover" instead, which copies students into the new year in one safe step. To force an empty active year anyway, type ACTIVATE EMPTY.'
-                            ]);
-                            break;
-                        }
+                if ($chk) { $chk->bind_param('i', $yid); $chk->execute(); $row=$chk->get_result()->fetch_assoc(); $chk->close(); if ($row && (int)$row['c']===0) {
+                    $taCount=0; $chk2=$conn->prepare("SELECT COUNT(*) c FROM teacher_assignments WHERE academic_year_id=? AND is_active=1");
+                    if($chk2){$chk2->bind_param('i',$yid);$chk2->execute();$r2=$chk2->get_result()->fetch_assoc();$chk2->close();$taCount=(int)($r2['c']??0);}
+                    if($taCount===0) $isEmpty=true;
+                } }
+            } catch (Throwable $e) {}
+            if ($isEmpty) {
+                echo json_encode(['status'=>'error','code'=>'confirm_activate_empty','needs_confirmation'=>true,'target_name'=>$target['year_name']??'',
+                    'message'=>'The year "' . ($target['year_name']??'') . '" has no students and no teacher assignments. If you switch now, the mobile app will show an empty year (no classes, no roster) and attendance preparation will fail until you enrol students. In most cases you want "Year Rollover" instead, which copies students into the new year in one safe step. To force an empty active year anyway, type ACTIVATE EMPTY.']);
+                break;
+            }
+            // 2) Structural validation (R3) — dates / semesters / weights
+            if (function_exists('ay_validate_target_year')) {
+                $val = ay_validate_target_year($conn, $yid);
+                if (!$val['ok'] || !empty($val['warnings'])) {
+                    $all = array_merge($val['errors'], $val['warnings']);
+                    if (!empty($all)) {
+                        $msg = 'The year "' . ($target['year_name']??'') . '" has ' . (empty($val['errors'])?'warnings':'issues') . ' that will affect attendance and grades:' . "\n• " . implode("\n• ", array_slice($all,0,5));
+                        $msg .= "\n\nIn most cases you should fix these before activating. To force activation anyway, type ACTIVATE ANYWAY.";
+                        // Distinguish hard errors vs warnings for the phrase
+                        $phrase = empty($val['errors']) ? 'ACTIVATE ANYWAY' : 'ACTIVATE ANYWAY';
+                        echo json_encode(['status'=>'error','code'=>'confirm_activate_invalid','needs_confirmation'=>true,'target_name'=>$target['year_name']??'','message'=>$msg,'details'=>$all]);
+                        break;
                     }
                 }
-            } catch (Throwable $e) { /* safety check is best-effort */ }
+            }
         }
-        // Explicit override: frontend re-sends with confirm=ACTIVATE EMPTY
-        if ($confirm === 'ACTIVATE EMPTY') {
+        // Explicit overrides: frontend re-sends with stronger phrase
+        if ($confirm === 'ACTIVATE EMPTY' || $confirm === 'ACTIVATE ANYWAY') {
             $res = ay_switch_active($conn, $yid, false);
             if (($res['status'] ?? '') === 'success') {
-                $res['message'] = 'Active year changed — the new year is empty. Enrol students or run Year Rollover to carry them from the prior year.';
+                $suffix = ($confirm === 'ACTIVATE EMPTY') ? ' — the new year is empty. Enrol students or run Year Rollover to carry them from the prior year.' : ' — activated with warnings. Please fix the dates/semesters soon or mobile preparation may fail.';
+                $res['message'] = 'Active year changed' . $suffix;
+                if (function_exists('ay_validate_target_year')) {
+                    $val = ay_validate_target_year($conn, $yid);
+                    if (!empty($val['warnings']) || !empty($val['errors'])) $res['warnings'] = array_merge($val['errors'], $val['warnings']);
+                }
             }
             echo json_encode($res);
             break;
@@ -1497,6 +1507,83 @@ switch ($action) {
             $conn->rollback();
             error_log('delete_year failed: '.$e->getMessage());
             echo json_encode(['status'=>'error','message'=>'Could not delete the year. No changes were made.']);
+        }
+        break;
+
+    case 'copy_assessments':
+        // R5 — Copy assessment templates (definitions) from one year to another.
+        // Only copies the assessment *structure* (name, type, weight, max_score,
+        // order) — never copies student grades. Idempotent via UNIQUE guard.
+        // School Admin + Super Admin + Edu Dept may run it.
+        $sourceId = (int)($_POST['source_year_id'] ?? 0);
+        $targetId = (int)($_POST['target_year_id'] ?? 0);
+        $confirm  = strtoupper(trim((string)($_POST['confirm'] ?? '')));
+        if (!$sourceId || !$targetId) { echo json_encode(['status'=>'error','message'=>'Please choose both the source year and the target year.']); break; }
+        if ($sourceId === $targetId) { echo json_encode(['status'=>'error','message'=>'Source and target year must be different.']); break; }
+        if ($confirm !== 'COPY') { echo json_encode(['status'=>'error','code'=>'confirm_copy','message'=>'Type COPY to confirm you want to copy assessment templates from the prior year.']); break; }
+        // Both years must exist
+        $src = function_exists('ay_year_by_id') ? ay_year_by_id($conn, $sourceId) : null;
+        $tgt = function_exists('ay_year_by_id') ? ay_year_by_id($conn, $targetId) : null;
+        if (!$src || !$tgt) { echo json_encode(['status'=>'error','message'=>'One of the selected years does not exist.']); break; }
+        // Refuse while time-travelling — copy should be done from the current year view
+        if (function_exists('ay_is_readonly') && ay_is_readonly($conn)) {
+            echo json_encode(['status'=>'error','message'=>'You are viewing a past year (read-only). Return to the current year before copying assessments.']); break;
+        }
+        // Must have assessments in source
+        $cntSrc = 0;
+        try { $r=$conn->query("SELECT COUNT(*) c FROM assessments WHERE academic_year_id=".(int)$sourceId); if($r) $cntSrc=(int)$r->fetch_assoc()['c']; } catch (Throwable $e) {}
+        if ($cntSrc === 0) { echo json_encode(['status'=>'error','message'=>'The source year has no assessments to copy.']); break; }
+        // Build term mapping: term_number -> new term id
+        $termMap = []; // old_term_id_or_null -> new_term_id_or_null
+        try {
+            $m = $conn->query("SELECT id, term_number FROM academic_terms WHERE academic_year_id=".(int)$targetId);
+            $byNumber = [];
+            if ($m) while($row=$m->fetch_assoc()) $byNumber[(int)$row['term_number']] = (int)$row['id'];
+            $oldTerms = $conn->query("SELECT id, term_number FROM academic_terms WHERE academic_year_id=".(int)$sourceId);
+            if ($oldTerms) while($row=$oldTerms->fetch_assoc()) {
+                $num = (int)$row['term_number'];
+                $termMap[(int)$row['id']] = $byNumber[$num] ?? null;
+            }
+            $termMap[0] = null; // for NULL term_id
+        } catch (Throwable $e) {}
+        $copied = 0; $skipped = 0;
+        $conn->begin_transaction();
+        try {
+            // Fetch source assessments
+            $sel = $conn->prepare("SELECT class_id, subject_id, term_id, assessment_name, assessment_type, weight_percentage, max_score, description, assessment_order FROM assessments WHERE academic_year_id=?");
+            if (!$sel) throw new Exception($conn->error);
+            $sel->bind_param('i', $sourceId);
+            $sel->execute();
+            $res = $sel->get_result();
+            $ins = $conn->prepare("INSERT INTO assessments (class_id, subject_id, academic_year_id, term_id, assessment_name, assessment_type, weight_percentage, max_score, description, assessment_order, created_by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,NOW())");
+            if (!$ins) throw new Exception($conn->error);
+            $createdBy = (int)($_SESSION['admin_id'] ?? 0);
+            while ($a = $res->fetch_assoc()) {
+                $cid = (int)$a['class_id']; $sid=(int)$a['subject_id'];
+                $oldTermId = $a['term_id'] !== null ? (int)$a['term_id'] : 0;
+                $newTermId = $termMap[$oldTermId] ?? null;
+                $newTermOrZero = $newTermId ?? 0;
+                // Idempotency: skip if an assessment with same (class, subject, year, term, name, type) already exists
+                $dup = $conn->prepare("SELECT id FROM assessments WHERE class_id=? AND subject_id=? AND academic_year_id=? AND IFNULL(term_id,0)=IFNULL(?,0) AND assessment_name=? AND assessment_type=? LIMIT 1");
+                $dup->bind_param('iiiiss', $cid, $sid, $targetId, $newTermOrZero, $a['assessment_name'], $a['assessment_type']);
+                $dup->execute();
+                $exists = $dup->get_result()->fetch_assoc();
+                $dup->close();
+                if ($exists) { $skipped++; continue; }
+                // For INSERT we need real NULL, not 0, so bind $newTermId directly (mysqli treats null as NULL)
+                $ins->bind_param('iiiissdsisi', $cid, $sid, $targetId, $newTermId, $a['assessment_name'], $a['assessment_type'], $a['weight_percentage'], $a['max_score'], $a['description'], $a['assessment_order'], $createdBy);
+                $ins->execute();
+                if ($ins->affected_rows > 0) $copied++; else $skipped++;
+            }
+            $sel->close(); $ins->close();
+            $conn->commit();
+            // Log
+            try { $lg=$conn->prepare("INSERT INTO activity_logs (user_id, username, action, details, created_at) VALUES (?,?, 'Copy Assessments', ?, NOW())"); if($lg){ $u=$_SESSION['admin_username']??'admin'; $det="Copy assessments source=$sourceId target=$targetId copied=$copied skipped=$skipped"; $lg->bind_param("iss", $createdBy, $u, $det); $lg->execute(); $lg->close(); } } catch (Throwable $e) {}
+            echo json_encode(['status'=>'success','message'=>"$copied assessment template(s) copied to the target year" . ($skipped ? ", $skipped already existed and were skipped" : "") . ".",'copied'=>$copied,'skipped'=>$skipped]);
+        } catch (Throwable $e) {
+            $conn->rollback();
+            error_log('copy_assessments failed: '.$e->getMessage());
+            echo json_encode(['status'=>'error','message'=>'Copy failed and nothing was changed. The error was logged.']);
         }
         break;
 
