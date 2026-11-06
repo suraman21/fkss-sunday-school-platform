@@ -123,8 +123,8 @@ final class GradeMember {
   const GradeMember._({required this.memberId, required this.studentName, required this.fatherName, required this.memberCode});
   static GradeMember _decode(Map<String, dynamic> map) {
     const keys = {'member_id','student_name','father_name','member_code'}; _exactKeys(map, keys, 'member');
-    // R5b: father_name may be empty/legacy — allow bounded string (attendance parity). Never abort whole roster for one bad name.
-    return GradeMember._(memberId: _id(map['member_id'], 'member.member_id'), studentName: _nonEmptyString(map['student_name'], 'member.student_name'), fatherName: _boundedString(map['father_name'], 'member.father_name', 200), memberCode: _nonEmptyString(map['member_code'], 'member.member_code'));
+    // R5b++: father_name & member_code may be empty/legacy — allow bounded string (attendance parity). Silent, never abort whole roster for one bad field.
+    return GradeMember._(memberId: _id(map['member_id'], 'member.member_id'), studentName: _nonEmptyString(map['student_name'], 'member.student_name'), fatherName: _boundedString(map['father_name'], 'member.father_name', 200), memberCode: _boundedString(map['member_code'], 'member.member_code', 100));
   }
   // Bounded string that tolerates empty/null (unlike _nonEmptyString) — mirrors AttendancePreparationDataset parity for R5b.
   static String _boundedString(dynamic v, String ctx, int max) {

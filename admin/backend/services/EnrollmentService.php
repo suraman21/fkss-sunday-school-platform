@@ -533,7 +533,7 @@ class EnrollmentService
             $row = ['member_id' => $id,
                 'student_name' => self::sanitizePrepString((string)$row['student_name'], 200),
                 'father_name' => self::sanitizePrepString((string)$row['father_name'], 200) ?: '—',
-                'member_code' => self::sanitizePrepString((string)$row['member_code'], 100)];
+                'member_code' => self::sanitizePrepString((string)$row['member_code'], 100) ?: '—',];
         }
         unset($row);
         return $rows;
@@ -588,7 +588,7 @@ class EnrollmentService
                 }
                 $memberSeen[$id] = true;
                 $members[] = ['member_id'=>$id, 'student_name'=>self::sanitizePrepString((string)$row['student_name'], 200),
-                    'father_name'=>self::sanitizePrepString((string)$row['father_name'], 200) ?: '—', 'member_code'=>self::sanitizePrepString((string)$row['member_code'], 100)];
+                    'father_name'=>self::sanitizePrepString((string)$row['father_name'], 200) ?: '—', 'member_code'=>self::sanitizePrepString((string)$row['member_code'], 100) ?: '—',];
             }
             if (count($memberSeen) !== count($ids)) throw new \RuntimeException('Preparation member coverage is incomplete.');
         }
