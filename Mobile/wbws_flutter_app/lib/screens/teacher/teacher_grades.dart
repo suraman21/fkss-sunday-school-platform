@@ -1470,7 +1470,7 @@ class _GradeEntryScreenState extends State<_GradeEntryScreen> {
         Expanded(child: _loading
           ? const StudentListSkeleton()
           : _error != null
-              ? Padding(padding: const EdgeInsets.all(16), child: AppErrorCard(error: AppError.fromMessage(_error), onRetry: _loadStudents, autoRetry: true))
+              ? Padding(padding: const EdgeInsets.all(16), child: AppErrorCard(error: AppError.fromMessage(_error, isNetwork: _isOffline), onRetry: _loadStudents, autoRetry: true))
               : _students.isEmpty
                   ? EmptyState(
                       icon: Icons.people_outline,

@@ -30,6 +30,10 @@ class AppError {
     final lower = (msg ?? '').toLowerCase();
     if (lower.contains('timeout') || lower.contains('taking too long')) return timeout;
     if (lower.contains('no internet') || lower.contains('socket')) return noConnection;
+    // App's own ApiService vocabulary: offline/DNS-shaped failures are
+    // network states, never WBSS-U01. Single source — call sites need no sniffing.
+    if (lower.contains('waiting for network') || lower.contains('could not reach the school')) return noConnection;
+    if (lower.contains('school is busy')) return serverError;
     if (lower.contains('401') || lower.contains('unauthorized') || lower.contains('expired')) return authExpired;
     if (lower.contains('403') || lower.contains('forbidden')) return forbidden;
     if (lower.contains('404') || lower.contains('not found')) return notFound;
@@ -50,7 +54,7 @@ class AppError {
   static const noConnection = AppError(
     code: 'WBSS-N01',
     title: 'Waiting for network',
-    message: 'Turn on mobile data or Wi‑Fi, then try again',
+    message: 'Your work stays saved on this phone. Turn on data or Wi-Fi to refresh.',
     icon: Icons.cloud_off_rounded,
     color: AppTheme.warning,
   );

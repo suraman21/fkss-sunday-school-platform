@@ -887,36 +887,9 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
                 ),
       body: Column(
         children: [
-          if (_isOffline)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              color: AppTheme.warning.withOpacity(0.15),
-              child: Row(
-                children: [
-                  Icon(Icons.cloud_off, size: 16, color: AppTheme.warning),
-                  const SizedBox(width: 8),
-                  const Expanded(
-                    child: Text(
-                      'Waiting for network — kept on this phone until you are back online',
-                      style: TextStyle(
-                          fontSize: 11,
-                          color: AppTheme.warning,
-                          fontWeight: FontWeight.w500),
-                    ),
-                  ),
-                  if (_pendingCount > 0)
-                    GestureDetector(
-                      onTap: _manualSync,
-                      child: Text('Sync now',
-                          style: TextStyle(
-                              fontSize: 11,
-                              color: AppTheme.primary,
-                              fontWeight: FontWeight.w600)),
-                    ),
-                ],
-              ),
-            ),
+          // Global AppStatusStrip is the single offline source — per-screen
+          // duplicate removed (space saver). One-tap sync lives in the
+          // AppBar badge; details in Sync Center.
 
           // F8: packets the school's workflow refused — kept on
           // this phone; Review explains and offers Discard.
