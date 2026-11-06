@@ -44,8 +44,16 @@ class _AppStatusStripState extends State<AppStatusStrip> with SingleTickerProvid
     _updateAnim();
     _connSub = _connectivity.statusStream.listen((hasLink) {
       if (!mounted) return;
-      final waiting = !hasLink;
-      setState(() => _waiting = waiting);
+      // Disconnect during the back-online window must not keep showing
+      // "Back online" — offline truth wins immediately.
+      if (!hasLink) {
+        setState(() {
+          _waiting = true;
+          _justOnline = false;
+        });
+      } else {
+        setState(() => _waiting = false);
+      }
       if (hasLink) {
         setState(() => _justOnline = true);
         _sync.syncAll();
@@ -113,7 +121,7 @@ class _AppStatusStripState extends State<AppStatusStrip> with SingleTickerProvid
     if (totalAttention > 0) {
       // Actionable attention — keep warning/danger but compact, not full banner
       final parts = <String>[];
-      if (attention > 0) parts.add('$attention need review');
+      if (attention > 0) parts.add('$attention need${attention == 1 ? 's' : ''} review');
       if (paused > 0) parts.add('$paused paused');
       text = parts.join(' · ');
       icon = Icons.sync_problem_rounded;

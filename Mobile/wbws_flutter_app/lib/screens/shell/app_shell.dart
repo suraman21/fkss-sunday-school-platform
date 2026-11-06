@@ -8,8 +8,6 @@ import '../../services/app_update_service.dart';
 import '../../utils/config.dart';
 import '../../utils/theme.dart';
 import '../../widgets/app_status_strip.dart';
-import '../../widgets/offline_banner.dart'; // legacy contract: const OfflineBanner() kept for tests, unified via AppStatusStrip
-import '../../widgets/sync_attention.dart'; // legacy contract: const SyncRecoveryBanner() kept for tests
 import '../update/update_banner.dart';
 // Role home screens
 import '../teacher/teacher_home.dart';

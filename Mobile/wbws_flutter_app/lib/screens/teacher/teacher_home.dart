@@ -249,23 +249,8 @@ class TeacherHomeScreenState extends State<TeacherHomeScreen> {
 
   List<Widget> _buildContent() {
     return [
-      // Offline banner
-      if (_isOffline)
-        Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            color: AppTheme.warning.withOpacity(0.12),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: AppTheme.warning.withOpacity(0.25)),
-          ),
-          child: Row(children: [
-            Icon(Icons.cloud_off, size: 16, color: AppTheme.warning),
-            const SizedBox(width: 8),
-            Expanded(child: Text('Waiting for network — showing the last list saved on this phone',
-                style: TextStyle(fontSize: 11, color: AppTheme.warning, fontWeight: FontWeight.w500))),
-          ]),
-        ),
+      // Global AppStatusStrip is the single offline source — per-screen
+      // duplicate removed (space saver). Verified live by audit.
 
       // Welcome banner
       _buildWelcomeBanner(),

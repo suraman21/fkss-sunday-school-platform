@@ -1023,7 +1023,8 @@ class SyncFeedback {
             'Offline — $remaining saved on this phone, sends automatically',
             SyncFeedbackKind.pending);
       }
-      return SyncFeedback('$remaining still waiting — retrying automatically',
+      final sentPrefix = synced > 0 ? 'Sent $synced · ' : '';
+      return SyncFeedback('${sentPrefix}$remaining still waiting — retrying automatically',
           SyncFeedbackKind.pending);
     }
     // 4. Outbox truly empty.
