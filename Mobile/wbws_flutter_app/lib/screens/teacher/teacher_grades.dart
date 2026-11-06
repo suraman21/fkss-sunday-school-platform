@@ -137,6 +137,33 @@ class TeacherGradesScreenState extends State<TeacherGradesScreen> {
 
   Future<void> _loadClasses() async {
     setState(() { _error = null; });
+    // Offline-first: preparation snapshot already has classes+roster+subjects+assessments.
+    // Use it instantly if ready; CatalogService/network only revalidates.
+    try {
+      final prep = await _prepAdapter.resolve();
+      if (mounted && prep.isReady && prep.dataset != null && prep.dataset!.classes.isNotEmpty) {
+        _prepResolution = prep;
+        final prepClasses = prep.dataset!.classes.map((cl) => {
+          'id': cl.classId,
+          'class_name': cl.className,
+          'class_name_en': cl.classNameEn,
+          'section': cl.section,
+          'write_year_id': cl.writeYearId,
+          'roster_year_id': cl.rosterYearId,
+        }).toList();
+        setState(() { _classes = prepClasses; _loadingClasses = false; _isOffline = !ConnectivityService().hasLink; });
+        AppNav().markGradesLoaded();
+        if (prepClasses.length == 1) {
+          final id = prepClasses[0]['id'] as int;
+          _selectedClassId = id;
+          _selectedClassName = prepClasses[0]['class_name'] as String;
+          _loadSubjects();
+        }
+        // Best-effort network refresh in background (counts, new assignments)
+        CatalogService().classes().then((net) { if (mounted && net.isNotEmpty) setState(() => _classes = net); });
+        return;
+      }
+    } catch (_) {}
     final warm = CatalogService().cached;
     if (warm.isNotEmpty && mounted) {
       setState(() { _classes = warm; _loadingClasses = false; _isOffline = !ConnectivityService().hasLink; });
@@ -209,6 +236,51 @@ class TeacherGradesScreenState extends State<TeacherGradesScreen> {
       }
     });
 
+    // Try preparation first — offline-first subjects+terms, no network needed (fixes WBSS-U01 offline fear on class switch).
+    try {
+      final prep = _prepResolution?.isReady == true ? _prepResolution : await _prepAdapter.resolve();
+      _prepResolution = prep;
+      if (prep.isReady && prep.dataset != null) {
+        final ds = prep.dataset!;
+        GradeClass? cl; for (final x in ds.classes) if (x.classId == _selectedClassId) { cl = x; break; }
+        if (cl != null) {
+          final prepSubjects = cl.subjects.map((s) => {
+            'id': s.id, 'subject_name': s.subjectName, 'subject_name_en': s.subjectNameEn, 'subject_code': s.subjectCode,
+          }).toList();
+          final prepAssess = cl.assessments.map((a) => {
+            'id': a.id, 'subject_id': a.subjectId, 'assessment_name': a.assessmentName,
+            'assessment_type': a.assessmentType, 'weight_percentage': a.weightPercentage, 'max_score': a.maxScore,
+            'assessment_order': a.assessmentOrder, 'is_published': a.isPublished,
+            // offline counts default — real counts from network when online
+            'total_students': cl.memberIds.length, 'grades_entered': 0,
+          }).toList();
+          final prepTerms = ds.terms.map((t) => {
+            'id': t.id, 'term_name': t.termName, 'term_number': t.termNumber, 'is_current': t.isCurrent, 'is_reopened': t.isReopened,
+          }).toList();
+          await _db.cacheSubjects(_selectedClassId!, prepSubjects);
+          if (mounted) {
+            setState(() {
+              _subjects = prepSubjects;
+              _bootAssessments = prepAssess;
+              if (prepTerms.isNotEmpty) {
+                _terms = prepTerms;
+                _currentTerm = prepTerms.firstWhere((x) => x['is_current'] == true, orElse: () => prepTerms.first).cast<String, dynamic>();
+              }
+              if (_selectedTermId != null && !_terms.any((t) => (t['id'] is int ? t['id'] : int.tryParse('${t['id']}')) == _selectedTermId)) _selectedTermId = null;
+              _didBootstrap = true; _loadingSubjects = false; _isOffline = !ConnectivityService().hasLink; _subjectsNotice = null;
+            });
+          }
+          // background network best-effort for live counts (don't await)
+          if (ConnectivityService().hasLink) _api.getGradeBootstrap(_selectedClassId!).then((nr) async {
+            if (mounted && nr.success && nr.data != null) {
+              await _db.cacheSubjects(_selectedClassId!, nr.data['subjects'] ?? []);
+              if (mounted) setState(() { _subjects = nr.data['subjects'] ?? _subjects; _bootAssessments = nr.data['assessments'] ?? _bootAssessments; });
+            }
+          });
+          return;
+        }
+      }
+    } catch (_) {}
     final res = await _api.getGradeBootstrap(_selectedClassId!);
     if (!mounted) return;
 
@@ -240,7 +312,13 @@ class TeacherGradesScreenState extends State<TeacherGradesScreen> {
       if (_subjects.isNotEmpty) {
         _isOffline = !ConnectivityService().hasLink;
       } else if (!res.success) {
-        _error = res.message ?? 'Could not load subjects. Pull to refresh.';
+        // Calm offline: don't scare with WBSS-U01 + countdown when we know it's just no network.
+        _isOffline = res.isNetworkError || !ConnectivityService().hasLink;
+        if (_isOffline && _classes.isNotEmpty) {
+          _error = null; // show EmptyState + offline banner, not AppErrorCard
+        } else {
+          _error = res.message ?? 'Could not load subjects. Pull to refresh.';
+        }
       }
     });
   }
@@ -295,6 +373,45 @@ class TeacherGradesScreenState extends State<TeacherGradesScreen> {
       return;
     }
 
+    // Offline-first assessments from preparation (term-filtered, no network).
+    try {
+      final prep = _prepResolution?.isReady == true ? _prepResolution : await _prepAdapter.resolve();
+      _prepResolution = prep;
+      if (prep.isReady && prep.dataset != null) {
+        final ds = prep.dataset!;
+        GradeClass? cl; for (final x in ds.classes) if (x.classId == _selectedClassId) { cl = x; break; }
+        if (cl != null) {
+          bool termMatchPrep(dynamic a) {
+            final atid = a is Map ? (a['term_id'] is int ? a['term_id'] as int : int.tryParse('${a['term_id'] ?? ''}')) : null;
+            // Preparation assessments don't carry term_id; they are write_year scoped.
+            // Use them as current-semester working set when viewing current.
+            if (_selectedTermId == null) return true;
+            return atid == _selectedTermId;
+          }
+          // Prefer boot prep assessments (already term-filtered for this class) else filter class assessments by subject.
+          var src = _bootAssessments.isNotEmpty ? _bootAssessments.where((a) => (a['subject_id'] is int ? a['subject_id'] : int.tryParse('${a['subject_id']}')) == sid).toList()
+                : cl.assessments.where((a) => a.subjectId == sid).map((a) => {
+                    'id': a.id, 'subject_id': a.subjectId, 'assessment_name': a.assessmentName,
+                    'assessment_type': a.assessmentType, 'weight_percentage': a.weightPercentage, 'max_score': a.maxScore,
+                    'assessment_order': a.assessmentOrder, 'is_published': a.isPublished,
+                    'total_students': cl.memberIds.length, 'grades_entered': 0,
+                  }).toList();
+          if (src.isNotEmpty) {
+            if (mounted) setState(() { _assessments = src; _loadingAssessments = false; _isOffline = !ConnectivityService().hasLink; });
+            if (_selectedTermId == null) await _db.cacheAssessments(_selectedClassId!, sid, src);
+            // background network for live counts
+            if (ConnectivityService().hasLink) _api.getAssessments(_selectedClassId!, sid, termId: _selectedTermId).then((nr) async {
+              if (mounted && nr.success && nr.data != null) {
+                final na = nr.data['assessments'] ?? [];
+                if (mounted) setState(() { _assessments = na; _terms = nr.data['terms'] ?? _terms; });
+                if (_selectedTermId == null) await _db.cacheAssessments(_selectedClassId!, sid, na);
+              }
+            });
+            return;
+          }
+        }
+      }
+    } catch (_) {}
     if (cached.isEmpty) {
       setState(() => _loadingAssessments = true);
     }
@@ -353,7 +470,7 @@ class TeacherGradesScreenState extends State<TeacherGradesScreen> {
       body: _loadingClasses
           ? const DashboardSkeleton()
           : _error != null
-              ? Padding(padding: const EdgeInsets.all(16), child: AppErrorCard(error: AppError.fromMessage(_error), onRetry: refresh, autoRetry: true))
+              ? Padding(padding: const EdgeInsets.all(16), child: AppErrorCard(error: AppError.fromMessage(_error, isNetwork: (_error ?? '').toLowerCase().contains('waiting for network') || (_error ?? '').toLowerCase().contains('no internet')), onRetry: refresh, autoRetry: !_isOffline))
               : _classes.isEmpty
                   ? const EmptyState(icon: Icons.grading_rounded, title: 'No classes assigned',
                       subtitle: 'You need to be assigned to classes to enter grades.')
