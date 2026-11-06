@@ -479,7 +479,8 @@ class TeacherGradesScreenState extends State<TeacherGradesScreen> {
                       child: ListView(
                         padding: const EdgeInsets.all(16),
                         children: [
-                          if (_isOffline) _offlineBanner(),
+                          // Offline-first: global OfflineBanner in AppShell already shows compact offline status.
+                          // Per-screen duplicate removed to save space — only show prep/rejected specifics here.
                           if (_prepBanner != null)
                             Container(
                               margin: const EdgeInsets.only(bottom: 12),
@@ -503,20 +504,8 @@ class TeacherGradesScreenState extends State<TeacherGradesScreen> {
   }
 
   Widget _offlineBanner() {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      decoration: BoxDecoration(
-        color: AppTheme.warning.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(children: [
-        Icon(Icons.cloud_off, size: 16, color: AppTheme.warning),
-        const SizedBox(width: 8),
-        Expanded(child: Text('Waiting for network — grades stay on this phone until you are back online.',
-            style: TextStyle(fontSize: 11, color: AppTheme.warning, fontWeight: FontWeight.w500))),
-      ]),
-    );
+    // Kept for API compat but no longer used — global OfflineBanner is the single source of truth.
+    return const SizedBox.shrink();
   }
 
   Widget _buildClassSelector() {

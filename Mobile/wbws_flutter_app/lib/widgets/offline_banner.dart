@@ -109,16 +109,16 @@ class _OfflineBannerState extends State<OfflineBanner>
       axisAlignment: -1,
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
         decoration: BoxDecoration(
           color: _justCameOnline
-              ? AppTheme.success.withOpacity(0.15)
-              : AppTheme.warning.withOpacity(0.15),
+              ? AppTheme.success.withOpacity(0.12)
+              : AppTheme.surfaceLight,
           border: Border(
             bottom: BorderSide(
               color: _justCameOnline
-                  ? AppTheme.success.withOpacity(0.3)
-                  : AppTheme.warning.withOpacity(0.3),
+                  ? AppTheme.success.withOpacity(0.25)
+                  : AppTheme.borderLight,
               width: 1,
             ),
           ),
@@ -129,21 +129,21 @@ class _OfflineBannerState extends State<OfflineBanner>
             children: [
               Icon(
                 _justCameOnline ? Icons.cloud_done : Icons.cloud_off,
-                size: 16,
-                color: _justCameOnline ? AppTheme.success : AppTheme.warning,
+                size: 13,
+                color: _justCameOnline ? AppTheme.success : AppTheme.textSecondary,
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               Expanded(
                 child: Text(
                   _justCameOnline
                       ? 'Back online — sending…'
                       : _pendingCount > 0
-                          ? 'Waiting for network — $_pendingCount unsaved changes will send when connected'
-                          : 'Waiting for network',
+                          ? 'Offline — $_pendingCount change${_pendingCount == 1 ? '' : 's'} saved, will send when online'
+                          : 'Offline — work saves on this phone',
                   style: TextStyle(
-                    fontSize: 11,
+                    fontSize: 10.5,
                     color:
-                        _justCameOnline ? AppTheme.success : AppTheme.warning,
+                        _justCameOnline ? AppTheme.success : AppTheme.textSecondary,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -154,16 +154,16 @@ class _OfflineBannerState extends State<OfflineBanner>
                       Navigator.of(context).pushNamed('/sync-center'),
                   child: Container(
                     padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                     decoration: BoxDecoration(
-                      color: AppTheme.warning.withOpacity(0.2),
+                      color: AppTheme.borderLight,
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
-                      _syncing ? 'Sending…' : 'Details',
+                      _syncing ? 'Sending…' : 'View',
                       style: TextStyle(
-                        fontSize: 10,
-                        color: AppTheme.warning,
+                        fontSize: 9.5,
+                        color: AppTheme.textSecondary,
                         fontWeight: FontWeight.w600,
                       ),
                     ),

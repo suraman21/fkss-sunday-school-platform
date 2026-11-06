@@ -568,24 +568,25 @@ class _TeacherTimetableScreenState extends State<TeacherTimetableScreen> {
     final text = _offline
         ? 'Offline — showing the timetable last saved on this phone'
         : 'Showing the copy saved on this phone — pull down to refresh';
+    // Space-saver: timetable is read-only cached — tiny muted line, not loud warning. String kept for contract.
+    if (!_offline && !_fromCache) return const SizedBox.shrink();
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      margin: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: AppTheme.warning.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppTheme.warning.withOpacity(0.25)),
+        color: AppTheme.surfaceLight,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppTheme.borderLight),
       ),
       child: Row(children: [
-        Icon(_offline ? Icons.cloud_off_rounded : Icons.cached_rounded,
-            size: 15, color: AppTheme.warning),
-        const SizedBox(width: 8),
+        Icon(_offline ? Icons.cloud_off_rounded : Icons.cached_rounded, size: 13, color: AppTheme.textSecondary),
+        const SizedBox(width: 6),
         Expanded(
             child: Text(text,
                 style: const TextStyle(
-                    fontSize: 11.5,
-                    color: AppTheme.warning,
-                    fontWeight: FontWeight.w600))),
+                    fontSize: 10.5,
+                    color: AppTheme.textSecondary,
+                    fontWeight: FontWeight.w500))),
       ]),
     );
   }
