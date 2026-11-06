@@ -310,8 +310,9 @@ class ApiService {
     if (t == null || t.isEmpty) return null;
     try {
       final parts = t.split('.');
-      if (parts.length != 3) return null;
-      final padded = parts[1].replaceAll('-', '+').replaceAll('_', '/');
+      // Server PHP token is 2-part: base64(json_payload) + '.' + hex_hmac (not 3-part JWT).
+      if (parts.length != 2) return null;
+      final padded = parts[0].replaceAll('-', '+').replaceAll('_', '/');
       final normalized = base64.normalize(padded);
       final payload = jsonDecode(utf8.decode(base64.decode(normalized)));
       if (payload is! Map) return null;
