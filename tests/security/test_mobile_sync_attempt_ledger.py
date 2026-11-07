@@ -146,7 +146,7 @@ class SyncAttemptSchemaTests(unittest.TestCase):
         db = DB_FILE.read_text(encoding="utf-8")
         # Only the current-version pin moves when a later migration lands.
         # v37 (S2 Goal A.1) added sync_attempts.execution_source.
-        self.assertIn("const localDatabaseSchemaVersion = 38;", schema)
+        self.assertIn("const localDatabaseSchemaVersion = 42;", schema)
         # The migration must be reachable from onUpgrade AND onCreate, or a
         # fresh install and an upgraded install diverge. The v36 step is
         # unchanged history and must remain reachable.

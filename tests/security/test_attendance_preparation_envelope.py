@@ -33,10 +33,26 @@ echo "PASS\n";
     assert result.stdout == "PASS\n"
 
 
-def test_decoder_is_not_activated_by_this_slice():
+def test_activated_decoder_callers_and_captured_scope_boundary():
     lib = ROOT / 'Mobile/wbws_flutter_app/lib'
-    callers = [p.relative_to(lib).as_posix() for p in lib.rglob('*.dart')
-               if 'attendance_preparation_envelope.dart' in p.read_text()]
-    assert callers == []
+    callers = {p.relative_to(lib).as_posix() for p in lib.rglob('*.dart')
+               if 'attendance_preparation_envelope.dart' in p.read_text()}
+    assert callers == {
+        'services/attendance_preparation_fetcher.dart',
+        'services/attendance_preparation_store.dart',
+        'services/warm_store.dart',
+        'screens/attendance/attendance_screen.dart',
+    }
+    decoder = (lib / 'services/attendance_preparation_envelope.dart').read_text()
+    for check in ("root['owner_user_id'] != expected.ownerUserId",
+                  "root['authorization_version'] != expected.authorizationVersion",
+                  "root['role'] != expected.role",
+                  "root['family_id'] != expected.familyId",
+                  "root['server_identity'] != expected.serverIdentity"):
+        assert check in decoder
+    for path in ('services/warm_store.dart', 'screens/attendance/attendance_screen.dart'):
+        caller = (lib / path).read_text()
+        assert 'serverIdentity: AppConfig.apiBaseUrl' in caller
+        assert 'familyId: fid' in caller and 'expectedScope:' in caller
     fixture = json.loads((ROOT / 'tests/fixtures/attendance_preparation_envelope_v1.json').read_text())
     assert fixture['envelope']['authorizes_settlement'] is False

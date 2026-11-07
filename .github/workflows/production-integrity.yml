@@ -92,29 +92,10 @@ jobs:
           echo "The tracked tree is free of token and private-key patterns."
 
       - name: No secret-shaped material anywhere in history
-        run: |
-          set -euo pipefail
-          # Pickaxe over every commit on every branch: a secret pushed and
-          # later removed in a follow-up commit still exists in history and
-          # still ships with every clone of the production repository. The
-          # needles are assembled at runtime for the same self-match reason
-          # as above.
-          n1="gh""p_"
-          n2="github""_pat_"
-          n3='PRIVATE KEY''-----'
-          status=0
-          for n in "$n1" "$n2" "$n3"; do
-            hits=$(git log --all --oneline -S"$n" || true)
-            if [ -n "$hits" ]; then
-              echo "::error::History contains commit(s) touching a secret marker (first 3 chars: ${n:0:3})."
-              echo "$hits" | head -5
-              status=1
-            fi
-          done
-          if [ "$status" -eq 0 ]; then
-            echo "The full history is free of token and private-key markers."
-          fi
-          exit $status
+        # Check actual credential shapes rather than bare instructional prefixes.
+        # The checker inspects all reachable commits, including roots and merge
+        # parents, and prints commit IDs only, never secret-bearing lines.
+        run: python3 scripts/check_git_history_secrets.py
 
       - name: No oversized tracked files
         run: |

@@ -32,6 +32,21 @@ header('Content-Type: application/json; charset=utf-8');
 
 function _rollover_out($arr) { echo json_encode($arr); exit; }
 
+/** INSERT IGNORE may suppress errors as well as duplicates; accept duplicates only. */
+function _rollover_check_ignore_warnings(mysqli $conn, string $context): void {
+    $count = $conn->warning_count;
+    if ($count === 0) return;
+    $warnings = $conn->get_warnings();
+    if (!$warnings) throw new RuntimeException($context . ' warnings unavailable.');
+    $inspected = 0;
+    do {
+        $inspected++;
+        if ((int)$warnings->errno !== 1062) throw new RuntimeException($context . ' produced a warning.');
+    } while ($warnings->next());
+    // Servers may truncate details at max_error_count; omitted warnings are unknown.
+    if ($inspected !== $count) throw new RuntimeException($context . ' warning details were truncated.');
+}
+
 // ── School Admin (owner) + Super Admin (break-glass) ONLY ──
 if (empty($_SESSION['admin_logged_in']) || !in_array($_SESSION['admin_role'] ?? '', ['super_admin', 'school_admin'], true)) {
     http_response_code(403);
@@ -121,8 +136,31 @@ if ($action === 'run' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         _rollover_out(['status' => 'error', 'message' => 'The year to close and the new year must be different.']);
     }
 
-    $conn->begin_transaction();
+    // This endpoint must not commit after a silently failed SQL statement,
+    // even on hosts that globally disable mysqli exceptions.
+    mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
+    $transactionStarted = false;
+    $commitAttempted = false;
     try {
+        if (!$conn->begin_transaction()) throw new RuntimeException('Could not start rollover transaction.');
+        $transactionStarted = true;
+        // Lock and validate the lifecycle before changing any years or enrolments.
+        // A missing target must not close every existing year, and a stale form
+        // must not roll over a year that is no longer the active one.
+        $years = $conn->query("SELECT id, status, is_current FROM academic_years ORDER BY id FOR UPDATE");
+        if (!$years) throw new RuntimeException('Could not verify rollover years.');
+        $oldYear = null; $newYear = null; $activeCount = 0;
+        while ($year = $years->fetch_assoc()) {
+            if ($year['status'] === 'active') $activeCount++;
+            if ((int)$year['id'] === $oldYearId) $oldYear = $year;
+            if ((int)$year['id'] === $newYearId) $newYear = $year;
+        }
+        $years->free();
+        if (!$oldYear || !$newYear || $activeCount !== 1
+            || $oldYear['status'] !== 'active' || (int)$oldYear['is_current'] !== 1
+            || $newYear['status'] !== 'upcoming' || (int)$newYear['is_current'] !== 0) {
+            throw new DomainException('Choose the current active year and an upcoming year. Refresh the page and check the year settings.');
+        }
         // 1. Make the new year current AND lifecycle-correct (status + is_current
         //    together). Any currently active year is CLOSED; the chosen new year
         //    becomes active. Inline (not ay_switch_active) — that helper opens
@@ -154,7 +192,13 @@ if ($action === 'run' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $st->bind_param("iii", $newYearId, $adminId, $oldYearId);
             $st->execute();
             $carried = $st->affected_rows;
+            _rollover_check_ignore_warnings($conn, 'Enrollment copy');
             $st->close();
+            $check = $conn->prepare("SELECT COUNT(*) AS missing FROM class_enrollments src JOIN members m ON m.id=src.member_id WHERE src.academic_year_id=? AND src.status='active' AND m.status <> 'archived' AND NOT EXISTS (SELECT 1 FROM class_enrollments dest WHERE dest.member_id=src.member_id AND dest.class_id=src.class_id AND dest.academic_year_id=?)");
+            if (!$check || !$check->bind_param('ii', $oldYearId, $newYearId) || !$check->execute()) throw new RuntimeException('Enrollment verification failed.');
+            $checked = $check->get_result();
+            if (!$checked || !($checkRow = $checked->fetch_assoc()) || (int)$checkRow['missing'] !== 0) throw new RuntimeException('Enrollments are missing after copy.');
+            $checked->free(); $check->close();
 
         } else {
             // 2b. Promote one level. If none higher → graduate. If ambiguous
@@ -199,6 +243,15 @@ if ($action === 'run' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     $toClass = $targets[0];
                     $insEnr->bind_param("iiiii", $memberId, $toClass, $newYearId, $fromClass, $adminId);
                     $insEnr->execute();
+                    $inserted = $insEnr->affected_rows;
+                    _rollover_check_ignore_warnings($conn, 'Promotion enrollment');
+                    if ($inserted === 0) {
+                        $check = $conn->prepare("SELECT 1 FROM class_enrollments WHERE member_id=? AND class_id=? AND academic_year_id=? LIMIT 1");
+                        if (!$check || !$check->bind_param('iii', $memberId, $toClass, $newYearId) || !$check->execute()) throw new RuntimeException('Promotion enrollment verification failed.');
+                        $checked = $check->get_result();
+                        if (!$checked || !$checked->fetch_assoc()) throw new RuntimeException('Promotion enrollment is missing.');
+                        $checked->free(); $check->close();
+                    }
                     $updMember->bind_param("ii", $toClass, $memberId);
                     $updMember->execute();
                     $promoted++;
@@ -219,21 +272,52 @@ if ($action === 'run' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         // Global assignments (academic_year_id IS NULL) already apply to every
         // year via AttendancePreparationService, so only copy the scoped ones.
         $copiedTA = 0;
+        $taStmt = $conn->prepare(
+            "INSERT IGNORE INTO teacher_assignments
+                (teacher_id, class_id, subject_id, academic_year_id, is_class_teacher, is_primary, assignment_role, assigned_by, assigned_at, is_active)
+             SELECT teacher_id, class_id, subject_id, ?, is_class_teacher, is_primary, assignment_role, ?, NOW(), 1
+             FROM teacher_assignments
+             WHERE academic_year_id = ? AND is_active = 1"
+        );
+        if (!$taStmt) throw new RuntimeException('Teacher assignment copy could not be prepared.');
         try {
-            $taStmt = $conn->prepare(
-                "INSERT IGNORE INTO teacher_assignments
-                    (teacher_id, class_id, subject_id, academic_year_id, is_class_teacher, is_primary, assignment_role, assigned_by, assigned_at, is_active)
-                 SELECT teacher_id, class_id, subject_id, ?, is_class_teacher, is_primary, assignment_role, ?, NOW(), 1
-                 FROM teacher_assignments
-                 WHERE academic_year_id = ? AND is_active = 1"
-            );
-            if ($taStmt) {
-                $taStmt->bind_param("iii", $newYearId, $adminId, $oldYearId);
-                $taStmt->execute();
-                $copiedTA = (int)$taStmt->affected_rows;
-                $taStmt->close();
+            if (!$taStmt->bind_param("iii", $newYearId, $adminId, $oldYearId) || !$taStmt->execute()) {
+                throw new RuntimeException('Teacher assignment copy failed.');
             }
-        } catch (Throwable $e) { error_log('Rollover teacher copy: '.$e->getMessage()); }
+            $copiedTA = (int)$taStmt->affected_rows;
+            // INSERT IGNORE is retained for already-existing assignments only.
+            _rollover_check_ignore_warnings($conn, 'Teacher assignment copy');
+        } finally {
+            $taStmt->close();
+        }
+        // A duplicate on an unexpected unique index must not silently omit an
+        // assignment. Existing inactive target rows still count, matching the
+        // previous unique-key/INSERT IGNORE behavior without changing them.
+        $taCheck = $conn->prepare(
+            "SELECT COUNT(*) AS missing FROM teacher_assignments src
+             WHERE src.academic_year_id = ? AND src.is_active = 1
+               AND NOT EXISTS (
+                   SELECT 1 FROM teacher_assignments dest
+                   WHERE dest.academic_year_id = ? AND dest.teacher_id = src.teacher_id
+                     AND dest.class_id = src.class_id
+                     AND IFNULL(dest.subject_id, 0) = IFNULL(src.subject_id, 0)
+               )"
+        );
+        if (!$taCheck) throw new RuntimeException('Teacher assignment verification could not be prepared.');
+        try {
+            if (!$taCheck->bind_param("ii", $oldYearId, $newYearId) || !$taCheck->execute()) {
+                throw new RuntimeException('Teacher assignment verification failed.');
+            }
+            $result = $taCheck->get_result();
+            if (!$result) throw new RuntimeException('Teacher assignment verification result unavailable.');
+            $row = $result->fetch_assoc();
+            $result->free();
+            if (!$row || (int)$row['missing'] !== 0) {
+                throw new RuntimeException('Teacher assignments are missing after copy.');
+            }
+        } finally {
+            $taCheck->close();
+        }
 
         // 4. Mark the closed year's enrolments as completed (enrolment domain).
         $st = $conn->prepare("UPDATE class_enrollments SET status = 'completed' WHERE academic_year_id = ? AND status = 'active'");
@@ -242,7 +326,10 @@ if ($action === 'run' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $closedCount = $st->affected_rows;
         $st->close();
 
-        $conn->commit();
+        // If commit fails or the connection drops, the outcome may be unknown.
+        $commitAttempted = true;
+        if (!$conn->commit()) throw new RuntimeException('Rollover commit was not confirmed.');
+        $transactionStarted = false;
 
         $report = [
             'mode'               => $mode,
@@ -264,7 +351,7 @@ if ($action === 'run' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 $lg->execute();
                 $lg->close();
             }
-        } catch (Exception $e) { /* logging is optional */ }
+        } catch (Throwable $e) { /* logging is optional */ }
 
         $summary = ($mode === 'carry_forward')
             ? "$carried student(s) carried into the new year" . ($copiedTA ? " and $copiedTA teacher assignment(s) copied" : "") . "."
@@ -275,10 +362,20 @@ if ($action === 'run' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             'report'  => $report,
         ]);
 
-    } catch (Exception $e) {
-        $conn->rollback();
+    } catch (Throwable $e) {
+        $rolledBack = !$transactionStarted;
+        if ($transactionStarted) {
+            try { $rolledBack = $conn->rollback(); } catch (Throwable $rollbackError) { $rolledBack = false; }
+        }
         error_log("Year rollover failed: " . $e->getMessage());
-        _rollover_out(['status' => 'error', 'message' => 'The rollover failed and NOTHING was changed. The error was logged.']);
+        if ($commitAttempted || !$rolledBack) {
+            $message = 'The rollover outcome could not be confirmed. Do not retry until an administrator checks the years and enrolments.';
+        } elseif ($e instanceof DomainException) {
+            $message = $e->getMessage();
+        } else {
+            $message = 'The rollover failed and NOTHING was changed. The error was logged.';
+        }
+        _rollover_out(['status' => 'error', 'message' => $message]);
     }
 }
 

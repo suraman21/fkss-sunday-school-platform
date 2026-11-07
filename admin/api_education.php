@@ -1525,6 +1525,7 @@ switch ($action) {
         $src = function_exists('ay_year_by_id') ? ay_year_by_id($conn, $sourceId) : null;
         $tgt = function_exists('ay_year_by_id') ? ay_year_by_id($conn, $targetId) : null;
         if (!$src || !$tgt) { echo json_encode(['status'=>'error','message'=>'One of the selected years does not exist.']); break; }
+        if (($tgt['status'] ?? '') === 'closed') { echo json_encode(['status'=>'error','message'=>'The target year is closed and read-only. Choose an active or upcoming year.']); break; }
         // Refuse while time-travelling — copy should be done from the current year view
         if (function_exists('ay_is_readonly') && ay_is_readonly($conn)) {
             echo json_encode(['status'=>'error','message'=>'You are viewing a past year (read-only). Return to the current year before copying assessments.']); break;
@@ -1533,57 +1534,90 @@ switch ($action) {
         $cntSrc = 0;
         try { $r=$conn->query("SELECT COUNT(*) c FROM assessments WHERE academic_year_id=".(int)$sourceId); if($r) $cntSrc=(int)$r->fetch_assoc()['c']; } catch (Throwable $e) {}
         if ($cntSrc === 0) { echo json_encode(['status'=>'error','message'=>'The source year has no assessments to copy.']); break; }
-        // Build term mapping: term_number -> new term id
-        $termMap = []; // old_term_id_or_null -> new_term_id_or_null
-        try {
-            $m = $conn->query("SELECT id, term_number FROM academic_terms WHERE academic_year_id=".(int)$targetId);
-            $byNumber = [];
-            if ($m) while($row=$m->fetch_assoc()) $byNumber[(int)$row['term_number']] = (int)$row['id'];
-            $oldTerms = $conn->query("SELECT id, term_number FROM academic_terms WHERE academic_year_id=".(int)$sourceId);
-            if ($oldTerms) while($row=$oldTerms->fetch_assoc()) {
-                $num = (int)$row['term_number'];
-                $termMap[(int)$row['id']] = $byNumber[$num] ?? null;
-            }
-            $termMap[0] = null; // for NULL term_id
-        } catch (Throwable $e) {}
         $copied = 0; $skipped = 0;
-        $conn->begin_transaction();
+        $transactionStarted = false; $commitAttempted = false;
         try {
+            if (!$conn->begin_transaction()) throw new RuntimeException('Could not start assessment copy.');
+            $transactionStarted = true;
+            // Serialize copies involving the same years, in deterministic order.
+            // This also rechecks that both years still exist after validation.
+            $lock = $conn->prepare("SELECT id, status FROM academic_years WHERE id IN (?,?) ORDER BY id FOR UPDATE");
+            if (!$lock || !$lock->bind_param('ii', $sourceId, $targetId) || !$lock->execute()) throw new RuntimeException('Could not lock assessment years.');
+            $locked = $lock->get_result();
+            if (!$locked || $locked->num_rows !== 2) throw new RuntimeException('Assessment years changed.');
+            while ($year = $locked->fetch_assoc()) {
+                if ((int)$year['id'] === $targetId && $year['status'] === 'closed') throw new DomainException('The target year is closed and read-only. Choose an active or upcoming year.');
+            }
+            $locked->free(); $lock->close();
+
+            // A missing or ambiguous matching semester must never silently
+            // become NULL. Only a genuinely NULL source term remains NULL.
+            $termMap = [0 => null]; $byNumber = [];
+            $terms = $conn->prepare("SELECT id, term_number FROM academic_terms WHERE academic_year_id=? ORDER BY id FOR UPDATE");
+            if (!$terms || !$terms->bind_param('i', $targetId) || !$terms->execute()) throw new RuntimeException('Could not read target semesters.');
+            $targetTerms = $terms->get_result();
+            if (!$targetTerms) throw new RuntimeException('Could not read target semesters.');
+            while ($row = $targetTerms->fetch_assoc()) {
+                $number = (int)$row['term_number'];
+                if (array_key_exists($number, $byNumber)) throw new DomainException('The target year has duplicate semester numbers. Correct them before copying assessments.');
+                $byNumber[$number] = (int)$row['id'];
+            }
+            $targetTerms->free(); $terms->close();
+            $terms = $conn->prepare("SELECT id, term_number FROM academic_terms WHERE academic_year_id=? ORDER BY id FOR UPDATE");
+            if (!$terms || !$terms->bind_param('i', $sourceId) || !$terms->execute()) throw new RuntimeException('Could not read source semesters.');
+            $sourceTerms = $terms->get_result();
+            if (!$sourceTerms) throw new RuntimeException('Could not read source semesters.');
+            while ($row = $sourceTerms->fetch_assoc()) $termMap[(int)$row['id']] = $byNumber[(int)$row['term_number']] ?? null;
+            $sourceTerms->free(); $terms->close();
             // Fetch source assessments
             $sel = $conn->prepare("SELECT class_id, subject_id, term_id, assessment_name, assessment_type, weight_percentage, max_score, description, assessment_order FROM assessments WHERE academic_year_id=?");
             if (!$sel) throw new Exception($conn->error);
-            $sel->bind_param('i', $sourceId);
-            $sel->execute();
+            if (!$sel->bind_param('i', $sourceId) || !$sel->execute()) throw new RuntimeException('Could not read assessments.');
             $res = $sel->get_result();
+            if (!$res) throw new RuntimeException('Could not read assessments.');
             $ins = $conn->prepare("INSERT INTO assessments (class_id, subject_id, academic_year_id, term_id, assessment_name, assessment_type, weight_percentage, max_score, description, assessment_order, created_by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,NOW())");
             if (!$ins) throw new Exception($conn->error);
             $createdBy = (int)($_SESSION['admin_id'] ?? 0);
             while ($a = $res->fetch_assoc()) {
                 $cid = (int)$a['class_id']; $sid=(int)$a['subject_id'];
                 $oldTermId = $a['term_id'] !== null ? (int)$a['term_id'] : 0;
-                $newTermId = $termMap[$oldTermId] ?? null;
+                if ($oldTermId !== 0 && (!array_key_exists($oldTermId, $termMap) || $termMap[$oldTermId] === null)) {
+                    throw new DomainException('Each source assessment semester must have a matching semester number in the target year.');
+                }
+                $newTermId = $termMap[$oldTermId];
                 $newTermOrZero = $newTermId ?? 0;
                 // Idempotency: skip if an assessment with same (class, subject, year, term, name, type) already exists
                 $dup = $conn->prepare("SELECT id FROM assessments WHERE class_id=? AND subject_id=? AND academic_year_id=? AND IFNULL(term_id,0)=IFNULL(?,0) AND assessment_name=? AND assessment_type=? LIMIT 1");
-                $dup->bind_param('iiiiss', $cid, $sid, $targetId, $newTermOrZero, $a['assessment_name'], $a['assessment_type']);
-                $dup->execute();
-                $exists = $dup->get_result()->fetch_assoc();
+                if (!$dup || !$dup->bind_param('iiiiss', $cid, $sid, $targetId, $newTermOrZero, $a['assessment_name'], $a['assessment_type']) || !$dup->execute()) throw new RuntimeException('Could not verify existing assessment.');
+                $dupResult = $dup->get_result();
+                if (!$dupResult) throw new RuntimeException('Could not verify existing assessment.');
+                $exists = $dupResult->fetch_assoc();
+                $dupResult->free();
                 $dup->close();
                 if ($exists) { $skipped++; continue; }
                 // For INSERT we need real NULL, not 0, so bind $newTermId directly (mysqli treats null as NULL)
-                $ins->bind_param('iiiissdsisi', $cid, $sid, $targetId, $newTermId, $a['assessment_name'], $a['assessment_type'], $a['weight_percentage'], $a['max_score'], $a['description'], $a['assessment_order'], $createdBy);
-                $ins->execute();
+                if (!$ins->bind_param('iiiisssssii', $cid, $sid, $targetId, $newTermId, $a['assessment_name'], $a['assessment_type'], $a['weight_percentage'], $a['max_score'], $a['description'], $a['assessment_order'], $createdBy) || !$ins->execute()) throw new RuntimeException('Assessment copy failed.');
                 if ($ins->affected_rows > 0) $copied++; else $skipped++;
             }
             $sel->close(); $ins->close();
-            $conn->commit();
+            $commitAttempted = true;
+            if (!$conn->commit()) throw new RuntimeException('Assessment copy commit was not confirmed.');
+            $transactionStarted = false;
             // Log
             try { $lg=$conn->prepare("INSERT INTO activity_logs (user_id, username, action, details, created_at) VALUES (?,?, 'Copy Assessments', ?, NOW())"); if($lg){ $u=$_SESSION['admin_username']??'admin'; $det="Copy assessments source=$sourceId target=$targetId copied=$copied skipped=$skipped"; $lg->bind_param("iss", $createdBy, $u, $det); $lg->execute(); $lg->close(); } } catch (Throwable $e) {}
             echo json_encode(['status'=>'success','message'=>"$copied assessment template(s) copied to the target year" . ($skipped ? ", $skipped already existed and were skipped" : "") . ".",'copied'=>$copied,'skipped'=>$skipped]);
         } catch (Throwable $e) {
-            $conn->rollback();
+            $rolledBack = !$transactionStarted;
+            if ($transactionStarted) { try { $rolledBack = $conn->rollback(); } catch (Throwable $rollbackError) { $rolledBack = false; } }
             error_log('copy_assessments failed: '.$e->getMessage());
-            echo json_encode(['status'=>'error','message'=>'Copy failed and nothing was changed. The error was logged.']);
+            if ($commitAttempted || !$rolledBack) {
+                $message = 'The copy outcome could not be confirmed. Do not retry until an administrator checks the target assessments.';
+            } elseif ($e instanceof DomainException) {
+                $message = $e->getMessage();
+            } else {
+                $message = 'Copy failed and nothing was changed. The error was logged.';
+            }
+            echo json_encode(['status'=>'error','message'=>$message]);
         }
         break;
 
