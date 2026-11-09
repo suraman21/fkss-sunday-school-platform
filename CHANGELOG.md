@@ -9,6 +9,8 @@ A curated history of notable changes to FKSS, newest first.
 
 ## Unreleased
 
+- Mobile 1.7.5+42 (source checkpoint, not published): after a section's attendance is submitted the section picker and the date chip stay live, so the same day's other sections can be taken in a row while the submitted sheet stays view-only. Fixes a locked sheet that refused to be left, a refused save that stranded the loading skeleton and a throwing save that could leave the switch gate stuck. Three new widget tests (17 in the file); no schema, API or dependency change.
+
 - Browser pages: finite, same-directory clean URL aliases with temporary document-navigation redirects; retain legacy links, queries, write requests, role/feature checks and API/mobile endpoints. Includes handler-identity, security and compatibility regression coverage. Development-first change; no production deployment implied. See the architecture and testing guides for hosting requirements and legacy POST-address limitations.
 
 - Documentation renewal, first reviewed scope: add an evidence-based authoring/lifecycle standard and partial mobile account/device, update and recovery manuals with an explicit source-coverage queue; correct stale CI/version/logout and development-versus-production claims; retire the obsolete nonexecuting CI proposal/template after knowledge/reference review. The full all-department/all-control manual remains incomplete. Diagnostics wording now warns users to review raw logs before private sharing; no report-generation, permission, schema or API behavior changes.
@@ -55,6 +57,7 @@ Manual SFTP deployment; see [docs/OPERATIONS.md](docs/OPERATIONS.md).
 
 | Version | Date | Highlights | Commit |
 |---|---|---|---|
+| 1.7.5+42 | Pending | Mezmur section picker usable after a submission; device acceptance and signed APK publication pending | Feature checkpoint |
 | 1.7.4+41 | Pending | Offline class-day attendance gate; device acceptance and signed APK publication pending | Feature checkpoint |
 | 1.7.3+40 | 2026-10-22 | Live mark limit, "Did not take", view-only lock, paging. **Not yet released**; the field runs 1.6.10+36 | `d854591` |
 | 1.7.2+39 | 2026-10-20 | Teacher timetable (Daily / Weekly / Monthly) | `7162d42` |

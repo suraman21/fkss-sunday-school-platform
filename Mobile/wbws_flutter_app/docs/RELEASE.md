@@ -2,7 +2,7 @@
 
 **Maintained procedure, reviewed 2026-10-28 against `7e28157`.** Use the owner-controlled release script, preserve the installed signing identity and test the actual APK on representative phones. Development-main merge, a debug build, publication, installer launch and installation are distinct events. Follow [development-first release policy](../../../docs/PRODUCTION_WORKFLOW.md); production publication requires separate owner authorization.
 
-## Source checkpoint: 1.7.4+41, not proof of publication
+## Source checkpoint: 1.7.5+42, not proof of publication
 
 Run the [class-day attendance acceptance checklist](ATTENDANCE_CLASS_DAY_1_7_4.md) on development before production approval. The [Profile App updates contract](PROFILE_APP_UPDATES.md) describes the delivered updater and its remaining phone-acceptance gates. Source metadata does not establish the offered APK, installed fleet or minimum-build policy. This documentation change reserves no release number and changes no signing or update policy.
 

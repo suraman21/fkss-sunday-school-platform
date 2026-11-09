@@ -174,12 +174,12 @@ class OfflineFirstClientTests(unittest.TestCase):
         self.assertIn("txn.delete('comm_threads')", replace)
 
     def test_version_is_162_build_28(self):
-        # Bumped 2026-10-19 for attendance warnings, Phase 2 mobile (build 37).
+        # Bumped for the Mezmur section selector fix (build 42).
         config = (MOBILE / "utils/config.dart").read_text(encoding="utf-8")
         pubspec = (ROOT / "Mobile/wbws_flutter_app/pubspec.yaml").read_text(encoding="utf-8")
-        self.assertIn("appVersion = '1.7.4'", config)
-        self.assertIn("appBuild = 41", config)
-        self.assertIn("version: 1.7.4+41", pubspec)
+        self.assertIn("appVersion = '1.7.5'", config)
+        self.assertIn("appBuild = 42", config)
+        self.assertIn("version: 1.7.5+42", pubspec)
 
 
 if __name__ == "__main__":

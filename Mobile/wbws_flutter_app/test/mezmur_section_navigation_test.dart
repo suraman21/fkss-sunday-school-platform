@@ -9,6 +9,7 @@ import 'package:fkss_app/services/legacy_outbox_models.dart';
 import 'package:fkss_app/services/local_db.dart';
 import 'package:fkss_app/services/sync_service.dart';
 import 'package:fkss_app/utils/theme.dart';
+import 'package:fkss_app/widgets/loading_skeleton.dart';
 
 class TestApi implements ApiService {
   final statuses = <String, String>{};
@@ -352,5 +353,64 @@ void main() {
     await t.tap(find.widgetWithText(OutlinedButton, 'Submit'));
     await t.pump();
     expect(db.saved['${api.date}:B']?.single['packet_kind'], 'submitted');
+  });
+
+  testWidgets('several sections of the same day can be taken in a row',
+      (t) async {
+    await open(t);
+    // Section A: submit.
+    await t.tap(find.widgetWithText(OutlinedButton, 'Submit'));
+    await t.pump();
+    expect(db.saved['${api.date}:A']?.single['packet_kind'], 'submitted');
+    DropdownButtonFormField<String> picker() =>
+        t.widget<DropdownButtonFormField<String>>(
+            find.byType(DropdownButtonFormField<String>));
+    expect(picker().onChanged, isNotNull,
+        reason: 'submitting A must not disable the section picker');
+    // Section B: still selectable, and it can be submitted too.
+    await switchTo(t, 'B');
+    expect(find.text('Member B Test'), findsOneWidget);
+    expect(picker().onChanged, isNotNull);
+    await t.tap(find.widgetWithText(OutlinedButton, 'Submit'));
+    await t.pump();
+    expect(db.saved['${api.date}:B']?.single['packet_kind'], 'submitted');
+    // Both submitted sheets stay view-only, and both stay reachable.
+    await switchTo(t, 'A');
+    expect(find.text('Member A Test'), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, 'Submit'), findsNothing);
+    expect(picker().onChanged, isNotNull);
+    await switchTo(t, 'B');
+    expect(find.text('Member B Test'), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, 'Submit'), findsNothing);
+    expect(db.writes.where((w) => w.endsWith(':submitted')).length, 2);
+  });
+  testWidgets('a refused save leaves the roster on screen, never a skeleton',
+      (t) async {
+    await open(t);
+    db.refuseSave = true;
+    await t.tap(find.text('P'));
+    await t.pump();
+    final refresh =
+        t.widget<RefreshIndicator>(find.byType(RefreshIndicator)).onRefresh();
+    await t.pump();
+    await refresh;
+    await t.pumpAndSettle();
+    expect(find.text('Member A Test'), findsOneWidget);
+    expect(find.byType(StudentListSkeleton), findsNothing);
+    expect(find.textContaining('storage refused'), findsOneWidget);
+  });
+  testWidgets('a failed submit re-enables the selector immediately', (t) async {
+    db.refuseSave = true;
+    await open(t);
+    await t.tap(find.widgetWithText(OutlinedButton, 'Submit'));
+    await t.pumpAndSettle();
+    expect(
+        t
+            .widget<DropdownButtonFormField<String>>(
+                find.byType(DropdownButtonFormField<String>))
+            .onChanged,
+        isNotNull);
+    await switchTo(t, 'B');
+    expect(find.text('Member B Test'), findsOneWidget);
   });
 }
