@@ -246,7 +246,18 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
   Future<void> _loadSheet() async {
     if (_submitting || _switching) return;
     final before = _loadEpoch;
-    if (!await _flushPendingEdits() || !mounted || before != _loadEpoch) return;
+    if (!await _flushPendingEdits() || !mounted || before != _loadEpoch) {
+      // A refused save must not leave the skeleton up: the roster the taker
+      // can already see stays the truth, and the banner says why the sheet
+      // did not move.
+      if (mounted && before == _loadEpoch && _loading) {
+        setState(() {
+          _loading = false;
+          _rosterReady = _members.isNotEmpty;
+        });
+      }
+      return;
+    }
     final section = _selectedSection;
     if (section == null || section.isEmpty) return;
     final date = _selectedDate;
@@ -499,13 +510,25 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
     return true;
   }
 
+  /// Leaves the open sheet before the taker moves to another section or date.
+  ///
+  /// A locked sheet (submitted, approved, rejected) cannot be written any
+  /// more, so there is nothing to flush: refusing to leave dead-ended the
+  /// section selector, which is what stopped a teacher from taking the other
+  /// sections of the same day. The marks stay on screen and were already
+  /// mirrored into the local packet store when they were made.
   Future<bool> _flushPendingEdits() async {
     _autoSave.cancel();
+    if (_locked) {
+      _durableRevision = _editRevision;
+      _dirty.value = false;
+      return true;
+    }
     while (_durableRevision < _editRevision) {
-      if (_locked || !await _autoSaveNow()) {
+      if (!await _autoSaveNow()) {
         if (mounted) {
           setState(() => _error =
-              'Phone storage refused the save or this sheet was locked. Your changes are still on screen; resolve this before switching.');
+              'Phone storage refused the save. Your changes are still on screen; resolve this before switching.');
         }
         return false;
       }
@@ -614,6 +637,9 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
         notBefore: DateTime.now().add(const Duration(seconds: 5)),
       );
     } catch (_) {
+      // Both branches clear _submitting before returning, so the section
+      // selector and the date chip come back immediately: a refused
+      // submission must never lock the taker out of the next section.
       if (mounted && epoch == _loadEpoch) {
         setState(() {
           _submitting = false;
@@ -752,7 +778,14 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
       return;
     }
     setState(() => _switching = true);
-    final saved = await _flushPendingEdits();
+    var saved = false;
+    try {
+      saved = await _flushPendingEdits();
+    } catch (_) {
+      // A throwing save must not pin _switching true, or the date chip and
+      // the section selector stay inert until the app is restarted.
+      saved = false;
+    }
     if (!mounted) return;
     if (!saved || epoch != _loadEpoch || _submitting) {
       setState(() => _switching = false);
@@ -782,9 +815,16 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
     }
     final epoch = _loadEpoch;
     setState(() => _switching = true);
-    final saved = await _flushPendingEdits();
+    var saved = false;
+    try {
+      saved = await _flushPendingEdits();
+    } catch (_) {
+      saved = false;
+    }
     if (!mounted) return;
     if (!saved || epoch != _loadEpoch || _submitting) {
+      // Snap the field back to the section that is really open, and always
+      // release the switch gate so the next attempt is possible.
       _sectionFieldKey.currentState?.didChange(_selectedSection);
       setState(() => _switching = false);
       return;
