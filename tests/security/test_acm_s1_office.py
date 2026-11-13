@@ -2,13 +2,13 @@
 
 Static pins (no PHP runtime in CI sandbox): mode-aware maker-checker,
 solo designee enforcement, reviewer independence, and the completed
-seat rename (old names survive only in migration 080 + docs).
+seat rename (old names survive only in migration 081 + docs).
 """
 import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-SQL80 = ROOT / "sql" / "080_acm_office_model.sql"
+SQL81 = ROOT / "sql" / "081_acm_office_model.sql"
 SVC = ROOT / "admin" / "backend" / "services" / "Acm"  # S2: shims only
 ACMSRC = ROOT / "acm" / "src"
 API = ROOT / "admin" / "api_acm.php"
@@ -21,10 +21,10 @@ def read(p: Path) -> str:
     return p.read_text(encoding="utf-8")
 
 
-# ---- migration 080 ----
+# ---- migration 081 ----
 
 def test_s1_migration_is_idempotent_and_fk_free():
-    s = read(SQL80)
+    s = read(SQL81)
     for table in ("acm_office_approvers", "acm_office_reviewers",
                   "acm_office_attestations", "acm_office_mode_history"):
         assert f"CREATE TABLE IF NOT EXISTS `{table}`" in s, table
@@ -38,7 +38,7 @@ def test_s1_migration_is_idempotent_and_fk_free():
 
 
 def test_s1_migration_seeds_settings_and_renames_seats():
-    s = read(SQL80)
+    s = read(SQL81)
     assert "acm.office_mode" in s and "'separated'" in s
     assert "acm.office_network_enforced" in s
     assert "acm.max_accounts_per_device" in s and "'5'" in s
@@ -171,7 +171,7 @@ def test_ticket_page_shows_solo_state():
 def test_old_seat_names_survive_only_in_migration_and_docs():
     hits = []
     for path in list((ROOT / "admin").rglob("*.php")) + list((ROOT / "sql").glob("0*.sql")):
-        if path.name == "080_acm_office_model.sql":
+        if path.name == "081_acm_office_model.sql":
             continue
         text = path.read_text(encoding="utf-8")
         if "'registrar'" in text or "'account_activator'" in text or '"registrar"' in text:

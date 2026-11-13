@@ -1,5 +1,5 @@
 -- ============================================================
--- 080_acm_office_model.sql   (IDEMPOTENT / RE-RUNNABLE)
+-- 081_acm_office_model.sql   (IDEMPOTENT / RE-RUNNABLE)
 -- ACM S1: single accounts_office seat + office modes + designated
 -- approvers + independent reviewers + monthly attestations.
 -- Shared-hosting safe: no FOREIGN KEYs (application-enforced, same
@@ -11,9 +11,12 @@
 -- The owner applies this by hand in phpMyAdmin; the verification
 -- SELECTs at the end must show 0 old-role rows before deploying
 -- the matching code.
--- Numbering verified 2026-11-13: 079 is the highest applied file,
--- 047 was a reverted migration (must not reuse), 061 never existed
--- (must not backfill), no 080 exists anywhere in history.
+-- Numbering: first written as 080 (verified 2026-11-13: 079 highest,
+-- 047 reverted, 061 never existed). A parallel line landed
+-- 080_telegram_registration_foundation.sql on remote main first, so
+-- this file takes the next free number 081 at merge time. It was
+-- never applied as 080 anywhere (owner-applies-by-hand, dev step
+-- still pending), so the rename is deployment-safe.
 -- ============================================================
 
 -- Designated solo approvers. One row per designation event; revoke
@@ -105,7 +108,7 @@ SELECT 'acm.max_accounts_per_device', '5' FROM DUAL
 WHERE NOT EXISTS (SELECT 1 FROM `system_settings` WHERE `setting_key` = 'acm.max_accounts_per_device');
 
 -- Solo self-approval flag on tickets (immutable once set; S1 only).
-SET @ssms_080_sql = (
+SET @ssms_081_sql = (
     SELECT IF(
         NOT EXISTS(
             SELECT 1 FROM information_schema.COLUMNS
@@ -117,9 +120,9 @@ SET @ssms_080_sql = (
         'SELECT 1'
     )
 );
-PREPARE ssms_080_stmt FROM @ssms_080_sql;
-EXECUTE ssms_080_stmt;
-DEALLOCATE PREPARE ssms_080_stmt;
+PREPARE ssms_081_stmt FROM @ssms_081_sql;
+EXECUTE ssms_081_stmt;
+DEALLOCATE PREPARE ssms_081_stmt;
 
 -- P0 seat rename: registrar + account_activator -> accounts_office.
 UPDATE `users` SET `role` = 'accounts_office'

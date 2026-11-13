@@ -201,8 +201,20 @@ class DangerConfirmMigration(unittest.TestCase):
                     t = line.strip()
                     if t.startswith(('//', '*', '/*', '<!--')):
                         continue
-                    if re.search(r"(^|[^.\w$])(window\.)?(confirm|prompt)\s*\(", line):
+                    for m in re.finditer(r"(^|[^.\w$])(window\.)?(confirm|prompt)\s*\(", line):
+                        before = line[:m.start()]
+                        # Group 1 consumes the char before the keyword, so the
+                        # window ending one char later reveals a PHP `->`.
+                        window = line[:m.start() + 1]
+                        # PHP method calls (->prompt()/->confirm()) and method
+                        # definitions (function prompt()/confirm()) are
+                        # server-side symbols, provably not the browser's
+                        # native functions this pin bans (2026-11-13: the
+                        # Telegram service's conversation-step builder).
+                        if re.search(r"->\s*$", window) or re.search(r"\bfunction\s*$", before):
+                            continue
                         bad.append(f'{p.relative_to(ROOT)}:{i}')
+                        break
         self.assertEqual(bad, [])
 
     def test_dc4_group_delete_is_atomic_and_previewed(self):

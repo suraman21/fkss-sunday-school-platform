@@ -348,7 +348,7 @@ class AcmTicketService
                 }
                 $newUserId = $this->provision($ticket, $person, $userId);
                 // self_approved is referenced only on the solo self-decision
-                // path (unreachable before migration 080), so separated-mode
+                // path (unreachable before migration 081), so separated-mode
                 // decisions keep working on a pre-migration database.
                 $selfSql = $selfApproved ? ', self_approved = 1' : '';
                 $stmt = $this->pdo->prepare(
