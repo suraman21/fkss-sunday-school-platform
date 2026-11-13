@@ -182,7 +182,7 @@ $departments = [
     ['name' => 'Mezmur Dept', 'icon' => 'fa-music', 'color' => '#06b6d4', 'amharic' => 'መዝሙር ክፍል'],
 ];
 
-$roles = ['super_admin' => 'Super Admin', 'school_admin' => 'School Admin', 'hr_dept' => 'HR Dept', 'info_dept' => 'Info Dept', 'edu_dept' => 'Edu Dept', 'finance_dept' => 'Finance Dept', 'material_dept' => 'Material Dept', 'mezmur_dept' => 'Mezmur Dept', 'teacher' => 'Teacher', 'attendance_taker' => 'Attendance Taker', 'content_editor' => 'Content Editor (Website)'];
+$roles = ['super_admin' => 'Super Admin', 'school_admin' => 'School Admin', 'hr_dept' => 'HR Dept', 'info_dept' => 'Info Dept', 'edu_dept' => 'Edu Dept', 'finance_dept' => 'Finance Dept', 'material_dept' => 'Material Dept', 'mezmur_dept' => 'Mezmur Dept', 'teacher' => 'Teacher', 'attendance_taker' => 'Attendance Taker', 'content_editor' => 'Content Editor (Website)', 'registrar' => 'Registrar (ACM)', 'account_activator' => 'Account Activator (ACM)'];
 
 $checks = [
     ['name' => 'PHP', 'status' => version_compare($phpVersion, '7.4', '>=') ? 'good' : 'warning', 'value' => $phpVersion],

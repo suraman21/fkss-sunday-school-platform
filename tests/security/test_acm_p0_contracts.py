@@ -172,3 +172,14 @@ def test_seats_creatable_via_ui_but_member_parent_are_not():
     users = read(ROOT / "admin" / "users.php")
     assert "'registrar' => 'Registrar (ACM)'" in users
     assert "'account_activator' => 'Account Activator (ACM)'" in users
+
+
+def test_inline_dashboard_dropdown_and_toggle_cover_acm_seats():
+    dash = read(ROOT / "admin" / "dashboards" / "super-admin.php")
+    assert "'registrar' => 'Registrar (ACM)'" in dash
+    assert "'account_activator' => 'Account Activator (ACM)'" in dash
+    toggle = read(ROOT / "admin" / "backend" / "user-toggle.php")
+    super_row = next(ln for ln in toggle.splitlines() if "'super_admin' =>" in ln)
+    assert "'registrar'" in super_row and "'account_activator'" in super_row
+    school_row = next(ln for ln in toggle.splitlines() if "'school_admin' =>" in ln)
+    assert "'registrar'" not in school_row and "'account_activator'" not in school_row
