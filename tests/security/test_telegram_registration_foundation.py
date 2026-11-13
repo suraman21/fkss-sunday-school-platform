@@ -1,6 +1,8 @@
 """Static safety contracts for review-only Telegram registration."""
 from pathlib import Path
 import re
+import subprocess
+import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -257,6 +259,40 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn("public static function pairHash", normalizer)
         self.assertIn("AmharicIdentityNormalizer::pairHash", canonical)
         self.assertIn("self::pairHash($student, $father)", normalizer)
+
+    def test_rendered_console_javascript_parses_for_super_admin_and_hr(self):
+        page = (ROOT / "admin/telegram_registration.php").read_text(encoding="utf-8")
+        start = page.index("<script>", page.index("danger_confirm.js")) + len("<script>")
+        script = page[start:page.index("</script>", start)]
+
+        hr = script.replace("<?=json_encode($csrf)?>", "'csrf'").replace("<?=json_encode($canManage)?>", "true")
+        hr = hr.replace("<?php if(!$isSetup):?>", "").replace("<?php if($canManage):?>", "")
+        hr = hr.replace("<?php endif;?><?php endif;?>", "")
+        hr = "\n".join(line for line in hr.splitlines() if "<?php if($role==='super_admin'):?>" not in line)
+
+        rendered = []
+        skip = False
+        for line in script.splitlines():
+            if line.startswith("<?php if(!$isSetup):?>"):
+                skip = True
+                continue
+            if skip:
+                if line.endswith("<?php endif;?><?php endif;?>"):
+                    skip = False
+                continue
+            if line.startswith("<?php if($role==='super_admin'):?>"):
+                line = line.replace("<?php if($role==='super_admin'):?>", "", 1)
+                line = line.removesuffix("<?php endif;?>")
+            rendered.append(line)
+        super_admin = "\n".join(rendered).replace("<?=json_encode($csrf)?>", "'csrf'")
+        super_admin = super_admin.replace("<?=json_encode($canManage)?>", "false")
+
+        for role, javascript in [("hr", hr), ("super_admin", super_admin)]:
+            with tempfile.NamedTemporaryFile("w", suffix=".js", encoding="utf-8") as handle:
+                handle.write(javascript)
+                handle.flush()
+                result = subprocess.run(["node", "--check", handle.name], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, f"{role} console JavaScript failed to parse: {result.stderr}")
 
     def test_schema_has_review_and_audit_boundaries(self):
         for table in [
