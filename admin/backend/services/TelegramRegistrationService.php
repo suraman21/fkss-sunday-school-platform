@@ -41,11 +41,8 @@ final class TelegramRegistrationService
             $this->audit('telegram', $telegramId, 'access_denied', 'bot_user', (int)($actor['id'] ?? 0), 'denied');
             $pairing = (int)($actor['id'] ?? 0);
             return self::message($chatId,
-                "ይህ መለያ ገና አልተፈቀደም። / This account is not authorized yet.\n\nTelegram ID: {$telegramId}\nPairing request: {$pairing}\nAsk an administrator to link it to your active HR/admin account."
+                "ይህ መለያ ገና አልተፈቀደም። / This account is not authorized yet.\n\nTelegram ID: {$telegramId}\nPairing request: {$pairing}\nAsk an administrator to link it to your active system account."
             );
-        }
-        if (!in_array((string)$actor['system_role'], ['super_admin','school_admin','hr_dept'], true)) {
-            return self::message($chatId, 'Your linked system role is not allowed to register members.');
         }
         $this->expireStale((int)$actor['id']);
 

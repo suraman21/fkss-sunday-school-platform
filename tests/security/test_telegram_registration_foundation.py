@@ -39,6 +39,7 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn("empty($actor['linked_user_id'])", self.service)
         self.assertIn("empty($actor['system_user_active'])", self.service)
         self.assertNotIn("WHERE tb.username", self.service)
+        self.assertNotIn("system_role'], ['super_admin'", self.service)
 
     def test_submission_never_inserts_member(self):
         submit = self.service[self.service.index("private function submitReview"):]
@@ -77,7 +78,7 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn("Only HR may manage operators.", api)
         self.assertIn("Super Admin access required.", api)
         self.assertIn("Only super administrators may run this operation.", api)
-        self.assertIn("role IN ('super_admin','school_admin','hr_dept')", api)
+        self.assertIn("SELECT id FROM users WHERE id=? AND is_active=1", api)
         self.assertNotIn("TELEGRAM_BOT_TOKEN]", api)
         self.assertNotIn("TELEGRAM_WEBHOOK_SECRET]", api)
         for action in ["overview", "operators", "forms", "sessions", "audit", "operator_save", "canonical_backfill"]:
@@ -94,6 +95,9 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertNotIn("TELEGRAM_BOT_TOKEN", page)
         self.assertNotIn("TELEGRAM_WEBHOOK_SECRET", page)
         self.assertNotIn("approve member", page.lower())
+        self.assertNotIn("Credentials are deployment-local", page)
+        self.assertNotIn("Development, FKSS and WBSS", page)
+        self.assertNotIn("above public_html", page)
 
     def test_form_builder_versions_and_validates_closed_registry(self):
         service = (ROOT / "admin/backend/services/TelegramFormAdminService.php").read_text(encoding="utf-8")
@@ -185,17 +189,19 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn("Activate HTTPS webhook", page)
         self.assertIn("Verify bot token", page)
 
-    def test_hr_operator_management_uses_eligible_account_picker(self):
+    def test_hr_operator_management_allows_any_active_account(self):
         api = (ROOT / "admin/api_telegram_registration.php").read_text(encoding="utf-8")
         page = (ROOT / "admin/telegram_registration.php").read_text(encoding="utf-8")
         self.assertIn("case 'eligible_users'", api)
-        self.assertIn("is_active=1 AND role IN ('super_admin','school_admin','hr_dept')", api)
+        self.assertIn("WHERE is_active=1 ORDER BY full_name,id LIMIT 100", api)
+        self.assertNotIn("is_active=1 AND role IN ('super_admin','school_admin','hr_dept')", api)
         self.assertIn("ORDER BY full_name,id LIMIT 100", api)
         self.assertIn("status='cancelled',lock_version=lock_version+1", api)
         self.assertIn('id="linkedUserSelect"', page)
         self.assertIn("loadEligibleUsers", page)
         self.assertIn("editOperator", page)
-        self.assertNotIn("Active HR/admin web-account ID", page)
+        self.assertIn("Active system account", page)
+        self.assertNotIn("active HR/admin", page)
 
     def test_duplicate_refinement_is_live_and_cap_is_explicit(self):
         duplicate = (ROOT / "admin/backend/services/TelegramDuplicateCandidateService.php").read_text(encoding="utf-8")
