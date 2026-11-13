@@ -8,7 +8,7 @@ The [Finance/Materials gate and action matrix](api/LEDGER_PERMISSIONS.md), basel
 
 ## 1. Roles defined in code
 
-`admin/backend/user-save.php` (`$validRoles`) accepts 13 roles:
+`admin/backend/user-save.php` (`$validRoles`) accepts 15 roles (13 + 2 ACM seats since P0, 2026-11-13):
 
 | Role | Abbreviation | Purpose (from code comments and dashboards) |
 |---|---|---|
@@ -25,6 +25,8 @@ The [Finance/Materials gate and action matrix](api/LEDGER_PERMISSIONS.md), basel
 | `content_editor` | CE | Public website content (CMS) |
 | `mezmur_attendance_taker` | MEZ-T | Department-owned attendance taker, created through `api_dept_takers.php` |
 | `hr_attendance_taker` | HR-T | Legacy department-taker identifier retained for account compatibility; HR attendance is retired. Mobile navigation is Home/Profile, not an attendance-entry workflow (`lib/utils/config.dart`, source baseline `7209278`) |
+| `registrar` | REG | ACM intake: register persons, link family, submit activation tickets; cannot approve (maker–checker) |
+| `account_activator` | ACT | ACM review: approve/reject tickets against identity evidence; cannot create persons |
 
 `user-save.php` is limited to `super_admin` by `ROLE_MAP`. In practice, therefore, only super admins create staff accounts through it, even though its internal `$rolePermissions` table also lists `school_admin` and `edu_dept`. Department takers are created through `api_dept_takers.php`.
 

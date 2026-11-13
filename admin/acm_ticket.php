@@ -62,13 +62,13 @@ acm_chrome_open('queue', (string)($ticket['ticket_no'] ?? 'Ticket'), 'Activation
 <div class="acm-alert err"><i class="fa-solid fa-triangle-exclamation"></i> <?= e($pageError) ?></div>
 <?php endif; ?>
 
-<div class="acm-card">
-    <h3><i class="fa-solid fa-ticket"></i> <?= e((string)($ticket['ticket_no'] ?? '')) ?>
-        <span class="acm-pill acm-st-<?= e($status) ?>"><?= e(str_replace('_', ' ', $status)) ?></span>
-        <span class="acm-pill acm-st-draft"><?= e((string)($ticket['account_type'] ?? '')) ?> account</span>
-    </h3>
+<div class="cd">
+    <div class="ct"><i class="fa-solid fa-ticket"></i> <?= e((string)($ticket['ticket_no'] ?? '')) ?>
+        <span class="bg <?= acm_status_bg($status) ?>"><?= e(str_replace('_', ' ', $status)) ?></span>
+        <span class="bg bg-n"><?= e((string)($ticket['account_type'] ?? '')) ?> account</span>
+    </div>
     <dl class="acm-kv">
-        <dt>Person</dt><dd><a href="/admin/acm_person.php?id=<?= (int)$ticket['person_id'] ?>"><span class="eth"><?= e((string)($ticket['full_name_am'] ?? '')) ?></span></a></dd>
+        <dt>Person</dt><dd><a href="/admin/acm_person.php?id=<?= (int)$ticket['person_id'] ?>"><span class="amharic"><?= e((string)($ticket['full_name_am'] ?? '')) ?></span></a></dd>
         <dt>Submitted by</dt><dd><?= e((string)($ticket['submitter_name'] ?? '—')) ?> · <?= e((string)($ticket['created_at'] ?? '')) ?></dd>
         <dt>SLA due</dt><dd class="<?= $od ? 'acm-overdue' : '' ?>"><?= e((string)($ticket['sla_due'] ?? '—')) ?><?= $od ? ' · OVERDUE' : '' ?></dd>
         <dt>Assignee</dt><dd><?= e((string)($ticket['assignee_name'] ?? 'Unclaimed')) ?></dd>
@@ -82,10 +82,10 @@ acm_chrome_open('queue', (string)($ticket['ticket_no'] ?? 'Ticket'), 'Activation
     <?php endif; ?>
     <div class="acm-btn-row">
         <?php if ($canClaim): ?>
-        <button class="acm-btn acm-btn-info" data-act="claim"><i class="fa-solid fa-hand"></i> Claim for review</button>
+        <button class="btn bo" data-act="claim"><i class="fa-solid fa-hand"></i> Claim for review</button>
         <?php endif; ?>
         <?php if ($canRelease): ?>
-        <button class="acm-btn acm-btn-ghost" data-act="release"><i class="fa-solid fa-rotate-left"></i> Release claim</button>
+        <button class="btn bo" data-act="release"><i class="fa-solid fa-rotate-left"></i> Release claim</button>
         <?php endif; ?>
     </div>
 </div>
@@ -103,10 +103,10 @@ acm_chrome_open('queue', (string)($ticket['ticket_no'] ?? 'Ticket'), 'Activation
 <?php endif; ?>
 
 <div class="acm-grid2">
-    <div class="acm-card">
-        <h3><i class="fa-solid fa-id-card"></i> Person evidence</h3>
+    <div class="cd">
+        <div class="ct"><i class="fa-solid fa-id-card"></i> Person evidence</div>
         <dl class="acm-kv">
-            <dt>Name (AM)</dt><dd><span class="eth"><?= e((string)($ticket['full_name_am'] ?? '')) ?></span></dd>
+            <dt>Name (AM)</dt><dd><span class="amharic"><?= e((string)($ticket['full_name_am'] ?? '')) ?></span></dd>
             <dt>Name (EN)</dt><dd><?= e((string)($ticket['full_name_en'] ?? '—')) ?></dd>
             <dt>Father</dt><dd><?= e((string)($ticket['father_name'] ?? '—')) ?></dd>
             <dt>Phone</dt><dd><?= e((string)($ticket['phone'] ?? '—')) ?></dd>
@@ -115,18 +115,18 @@ acm_chrome_open('queue', (string)($ticket['ticket_no'] ?? 'Ticket'), 'Activation
             <dt>Birth date</dt><dd><?= e((string)($ticket['date_of_birth'] ?? '—')) ?></dd>
         </dl>
     </div>
-    <div class="acm-card">
-        <h3><i class="fa-solid fa-link"></i> Linked records</h3>
+    <div class="cd">
+        <div class="ct"><i class="fa-solid fa-link"></i> Linked records</div>
         <?php $member = $ticket['member'] ?? null; $guardian = $ticket['guardian'] ?? null; ?>
         <?php if (is_array($member)): ?>
         <dl class="acm-kv">
-            <dt>Member</dt><dd><span class="eth"><?= e((string)($member['full_name_am'] ?? '')) ?></span> (<?= e((string)($member['student_name'] ?? '')) ?>)</dd>
+            <dt>Member</dt><dd><span class="amharic"><?= e((string)($member['full_name_am'] ?? '')) ?></span> (<?= e((string)($member['student_name'] ?? '')) ?>)</dd>
             <dt>Code</dt><dd><?= e((string)($member['member_code'] ?? '—')) ?> · <?= e((string)($member['registration_type'] ?? '')) ?></dd>
             <dt>Section</dt><dd><?= e((string)($member['current_section'] ?? '—')) ?> · <?= e((string)($member['education_level'] ?? '')) ?></dd>
             <dt>Baptismal</dt><dd><?= e((string)($member['baptismal_name'] ?? '—')) ?></dd>
         </dl>
         <?php else: ?>
-        <div style="font-size:.8rem;color:#7c8aa5">No member record linked.</div>
+        <div style="font-size:.8rem;color:var(--dim)">No member record linked.</div>
         <?php endif; ?>
         <?php if (is_array($guardian)): ?>
         <dl class="acm-kv" style="margin-top:.7rem">
@@ -135,15 +135,15 @@ acm_chrome_open('queue', (string)($ticket['ticket_no'] ?? 'Ticket'), 'Activation
             <dt>Address</dt><dd><?= e(trim((string)($guardian['city'] ?? '') . ' ' . (string)($guardian['sub_city'] ?? '') . ' ' . (string)($guardian['woreda'] ?? '')) ?: '—') ?></dd>
         </dl>
         <?php else: ?>
-        <div style="font-size:.8rem;color:#7c8aa5;margin-top:.5rem">No guardian record linked.</div>
+        <div style="font-size:.8rem;color:var(--dim);margin-top:.5rem">No guardian record linked.</div>
         <?php endif; ?>
     </div>
 </div>
 
 <?php if (!empty($ticket['family_links'])): ?>
-<div class="acm-card">
-    <h3><i class="fa-solid fa-people-roof"></i> Family links (member ↔ guardians)</h3>
-    <table class="acm-table">
+<div class="cd">
+    <div class="ct"><i class="fa-solid fa-people-roof"></i> Family links (member ↔ guardians)</div>
+    <div class="tw"><table>
         <thead><tr><th>Guardian</th><th>Relation</th><th>Primary</th><th>Phone</th><th>Status</th></tr></thead>
         <tbody>
         <?php foreach ($ticket['family_links'] as $link): ?>
@@ -156,35 +156,35 @@ acm_chrome_open('queue', (string)($ticket['ticket_no'] ?? 'Ticket'), 'Activation
             </tr>
         <?php endforeach; ?>
         </tbody>
-    </table>
+    </table></div>
 </div>
 <?php endif; ?>
 
 <?php if ($canNote || $canDecide): ?>
-<div class="acm-card">
-    <h3><i class="fa-solid fa-gavel"></i> Review actions</h3>
-    <div class="acm-field full" style="margin-bottom:.6rem">
-        <label for="acmNote">Note / reason (required to reject or request changes)</label>
-        <textarea id="acmNote" rows="3" maxlength="2000" placeholder="What did you verify?"></textarea>
+<div class="cd">
+    <div class="ct"><i class="fa-solid fa-gavel"></i> Review actions</div>
+    <div class="full" style="margin-bottom:.6rem">
+        <label class="flbl" for="acmNote">Note / reason (required to reject or request changes)</label>
+        <textarea class="inp" id="acmNote" rows="3" maxlength="2000" placeholder="What did you verify?"></textarea>
     </div>
     <?php if ($canDecide && $hasDupWarnings): ?>
     <label class="acm-check" style="margin-bottom:.6rem"><input type="checkbox" id="acmVerified"> I physically verified the parent/member ID against these details and accept the duplicate warnings.</label>
     <?php endif; ?>
     <div class="acm-btn-row">
         <?php if ($canNote): ?>
-        <button class="acm-btn acm-btn-ghost" data-act="note"><i class="fa-solid fa-comment"></i> Add note</button>
+        <button class="btn bo" data-act="note"><i class="fa-solid fa-comment"></i> Add note</button>
         <?php endif; ?>
         <?php if ($canDecide): ?>
-        <button class="acm-btn acm-btn-ok" data-act="approve"><i class="fa-solid fa-check"></i> Approve &amp; provision</button>
-        <button class="acm-btn acm-btn-info" data-act="request_changes"><i class="fa-solid fa-pen"></i> Request changes</button>
-        <button class="acm-btn acm-btn-danger" data-act="reject"><i class="fa-solid fa-xmark"></i> Reject</button>
+        <button class="btn bp" data-act="approve"><i class="fa-solid fa-check"></i> Approve &amp; provision</button>
+        <button class="btn bo" data-act="request_changes"><i class="fa-solid fa-pen"></i> Request changes</button>
+        <button class="btn bd" data-act="reject"><i class="fa-solid fa-xmark"></i> Reject</button>
         <?php endif; ?>
     </div>
 </div>
 <?php endif; ?>
 
-<div class="acm-card">
-    <h3><i class="fa-solid fa-clock-rotate-left"></i> Timeline</h3>
+<div class="cd">
+    <div class="ct"><i class="fa-solid fa-clock-rotate-left"></i> Timeline</div>
     <ul class="acm-timeline">
         <?php foreach (($ticket['events'] ?? []) as $ev): ?>
         <li><strong><?= e(str_replace('_', ' ', (string)($ev['event'] ?? ''))) ?></strong>
