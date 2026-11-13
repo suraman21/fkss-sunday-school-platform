@@ -14,6 +14,7 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         cls.webhook = (ROOT / "api/telegram-webhook.php").read_text(encoding="utf-8")
         cls.service = (ROOT / "admin/backend/services/TelegramRegistrationService.php").read_text(encoding="utf-8")
         cls.duplicate = (ROOT / "admin/backend/services/TelegramDuplicateCandidateService.php").read_text(encoding="utf-8")
+        cls.registry = (ROOT / "admin/backend/services/TelegramFormRegistry.php").read_text(encoding="utf-8")
         cls.migration = (ROOT / "sql/080_telegram_registration_foundation.sql").read_text(encoding="utf-8")
         cls.phase2_migration = (ROOT / "sql/081_telegram_registration_phase2_interview.sql").read_text(encoding="utf-8")
 
@@ -112,6 +113,10 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertNotIn("Credentials are deployment-local", page)
         self.assertNotIn("Development, FKSS and WBSS", page)
         self.assertNotIn("above public_html", page)
+        self.assertIn('id="previewForm"', page)
+        self.assertIn('id="formPreviewDialog"', page)
+        self.assertIn("definition.input==='choice'", page)
+        self.assertIn("'choices'=>['ወንድ / Male','ሴት / Female']", self.registry)
 
     def test_form_builder_versions_and_validates_closed_registry(self):
         service = (ROOT / "admin/backend/services/TelegramFormAdminService.php").read_text(encoding="utf-8")

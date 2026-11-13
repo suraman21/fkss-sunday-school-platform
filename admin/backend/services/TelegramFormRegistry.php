@@ -10,7 +10,7 @@ final class TelegramFormRegistry
     private const FIELDS = [
         'full_name_am' => ['max'=>150, 'skip'=>false, 'label'=>'Full name / ሙሉ ስም'],
         'baptismal_name' => ['max'=>150, 'skip'=>true, 'label'=>'Baptismal name / የክርስትና ስም'],
-        'gender' => ['max'=>10, 'skip'=>false, 'label'=>'Gender / ጾታ'],
+        'gender' => ['max'=>10, 'skip'=>false, 'label'=>'Gender / ጾታ', 'input'=>'choice', 'choices'=>['ወንድ / Male','ሴት / Female']],
         'dob_ec' => ['max'=>10, 'skip'=>true, 'label'=>'Ethiopian date of birth / የትውልድ ቀን'],
         'phone_number' => ['max'=>30, 'skip'=>true, 'label'=>'Phone / ስልክ'],
         'guardian_name' => ['max'=>150, 'skip'=>true, 'label'=>'Guardian name / የአሳዳጊ ስም'],
