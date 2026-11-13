@@ -17,6 +17,7 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         cls.registry = (ROOT / "admin/backend/services/TelegramFormRegistry.php").read_text(encoding="utf-8")
         cls.migration = (ROOT / "sql/080_telegram_registration_foundation.sql").read_text(encoding="utf-8")
         cls.phase2_migration = (ROOT / "sql/081_telegram_registration_phase2_interview.sql").read_text(encoding="utf-8")
+        cls.correction_migration = (ROOT / "sql/082_telegram_registration_corrections.sql").read_text(encoding="utf-8")
 
     def test_feature_is_fail_closed(self):
         school = (ROOT / "school_config.php").read_text(encoding="utf-8")
@@ -62,6 +63,17 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn("private function validateSection", self.service)
         self.assertIn("Choose one of the available options.", self.registry)
         self.assertNotIn("SELECT DISTINCT current_section FROM members", self.service)
+
+    def test_change_requests_reopen_only_selected_answers_with_history(self):
+        api = (ROOT / "admin/api_telegram_registration.php").read_text(encoding="utf-8")
+        page = (ROOT / "admin/telegram_registration.php").read_text(encoding="utf-8")
+        self.assertIn("correction_fields", self.correction_migration)
+        self.assertIn("DROP INDEX uniq_tg_session_decision", self.correction_migration)
+        self.assertIn("revision_number=revision_number+1", api)
+        self.assertIn("correction_fields=NULL", self.service)
+        self.assertIn("Use /resume to correct", api)
+        self.assertIn('id="correctionFieldPicker"', page)
+        self.assertIn("correction_fields',JSON.stringify", page)
 
     def test_submission_never_inserts_member(self):
         submit = self.service[self.service.index("private function submitReview"):]
@@ -254,7 +266,7 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn("strlen($text)>3500", bot_api)
         review = api[api.index("case 'review_decide'"):api.index("case 'audit'")]
         self.assertLess(review.index("$conn->commit()"), review.index("$botApi->sendMessage"))
-        self.assertIn("Use /new to submit a corrected draft", review)
+        self.assertIn("Use /resume to correct the requested answers", review)
         self.assertIn("operator_notified", review)
         self.assertIn("notification_warning", review)
         self.assertIn("Telegram review notification failed", review)
