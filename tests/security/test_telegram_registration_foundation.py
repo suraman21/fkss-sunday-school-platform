@@ -41,6 +41,15 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertNotIn("WHERE tb.username", self.service)
         self.assertNotIn("system_role'], ['super_admin'", self.service)
 
+    def test_phase_two_interview_can_resume_without_destroying_draft(self):
+        self.assertIn("$text === '/resume'", self.service)
+        self.assertIn("private function resume(", self.service)
+        self.assertIn("private function editAnswer(", self.service)
+        self.assertIn("/edit field_key", self.service)
+        begin = self.service[self.service.index("private function begin"):self.service.index("private function profileChoice")]
+        self.assertNotIn("cancelActive", begin)
+        self.assertIn("You already have an unfinished draft", begin)
+
     def test_submission_never_inserts_member(self):
         submit = self.service[self.service.index("private function submitReview"):]
         self.assertIn("status='submitted'", submit)

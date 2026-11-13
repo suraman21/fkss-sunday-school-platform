@@ -48,12 +48,14 @@ final class TelegramRegistrationService
 
         if ($text === '/start' || $text === '/help') return $this->home($chatId, $actor);
         if ($text === '/cancel') { $this->cancelActive((int)$actor['id']); return self::message($chatId, 'Cancelled. / ተሰርዟል።', self::homeKeyboard()); }
+        if ($text === '/resume' || $text === '▶️ ቀጥል / Resume') return $this->resume($chatId, $actor);
         if ($text === '/new' || $text === '➕ አዲስ ምዝገባ' || $text === '➕ New registration') return $this->begin($chatId, $actor);
 
         $session = $this->activeSession((int)$actor['id'], $chatId);
         if (!$session) return $this->home($chatId, $actor);
         if ($text === '/back') return $this->back($session);
         if ($text === '/review') return $this->review($session);
+        if (preg_match('/^\/edit(?:\s+([a-z0-9_]+))?$/i', $text, $edit)) return $this->editAnswer($session, (string)($edit[1] ?? ''));
 
         if ($session['status'] === 'choosing') return $this->chooseProfile($session, $actor, $text);
         if ($session['status'] === 'review') {
@@ -86,22 +88,30 @@ final class TelegramRegistrationService
 
     private function home(int $chatId, array $actor): array
     {
+        $active=$this->activeSession((int)$actor['id'],$chatId);
+        $resume=$active!==null?"\n\nAn unfinished draft is available. Use /resume to continue it.":'';
         return self::message($chatId,
-            "የአባላት ምዝገባ ረዳት\nMember registration assistant\n\nThe bot collects a draft. HR must review it before any member is created.\n\n/new — start\n/cancel — cancel current draft\n/back — previous question\n/review — review answers",
-            self::homeKeyboard()
+            "የአባላት ምዝገባ ረዳት\nMember registration assistant\n\nThe bot collects a draft. HR must review it before any member is created.".$resume."\n\n/new — start\n/resume — continue unfinished draft\n/cancel — cancel current draft\n/back — previous question\n/review — review answers\n/edit field_key — edit one answer",
+            self::homeKeyboard($active!==null)
         );
     }
 
     private function begin(int $chatId, array $actor): array
     {
-        $actorId=(int)$actor['id'];$dailyLimit=max(1,min(200,(int)($actor['daily_registration_limit']??50)));
+        $actorId=(int)$actor['id'];
+        if($this->activeSession($actorId,$chatId)!==null)return self::message($chatId,'You already have an unfinished draft. Use /resume to continue it, or /cancel before starting a new one.',self::homeKeyboard(true));
+        $dailyLimit=max(1,min(200,(int)($actor['daily_registration_limit']??50)));
         $statement=$this->conn->prepare('SELECT COUNT(*) n FROM telegram_registration_sessions WHERE bot_user_id=? AND created_at>=CURRENT_DATE');$statement->bind_param('i',$actorId);$statement->execute();$used=(int)($statement->get_result()->fetch_assoc()['n']??0);$statement->close();
         if($used>=$dailyLimit){$this->audit('telegram',(int)$actor['telegram_user_id'],'daily_limit_reached','bot_user',$actorId,'denied');return self::message($chatId,'Daily registration draft limit reached. Contact an administrator if more capacity is required.');}
-        $this->cancelActive($actorId);
         $publicId=self::publicId(); $expires=date('Y-m-d H:i:s',time()+86400);
         $statement=$this->conn->prepare("INSERT INTO telegram_registration_sessions (public_id,bot_user_id,telegram_chat_id,status,expires_at) VALUES (?,?,?,'choosing',?)");
         $statement->bind_param('siis',$publicId,$actorId,$chatId,$expires); $statement->execute(); $id=(int)$this->conn->insert_id; $statement->close();
         $this->audit('telegram',(int)$actor['telegram_user_id'],'draft_started','session',$id);
+        return $this->profileChoice($chatId,$actor);
+    }
+
+    private function profileChoice(int $chatId,array $actor): array
+    {
         $buttons=[];
         if ((int)$actor['can_waiting']===1) $buttons[]=[['text'=>'⏳ ጊዜያዊ / Temporary']];
         if ((int)$actor['can_direct']===1) $buttons[]=[['text'=>'⚡ ቀጥታ / Direct']];
@@ -177,6 +187,29 @@ final class TelegramRegistrationService
         return self::message((int)$session['telegram_chat_id'],"✅ ለHR ግምገማ ተልኳል።\nSubmitted for HR review. No member has been created.\nDraft: ".(string)$session['public_id'],self::homeKeyboard());
     }
 
+    private function resume(int $chatId,array $actor): array
+    {
+        $session=$this->activeSession((int)$actor['id'],$chatId);
+        if(!$session)return self::message($chatId,'There is no unfinished draft. Use /new to start.',self::homeKeyboard());
+        if($session['status']==='choosing')return $this->profileChoice($chatId,$actor);
+        if($session['status']==='review')return $this->review($session);
+        $field=$this->field((int)$session['form_profile_id'],(string)$session['current_field_key']);
+        return $field?$this->prompt($session,$field):self::message($chatId,'The saved form question is unavailable. Use /cancel and start again.');
+    }
+
+    private function editAnswer(array $session,string $key): array
+    {
+        if($key===''||!TelegramFormRegistry::exists($key))return self::message((int)$session['telegram_chat_id'],'Use /edit followed by a field key shown in the review, for example /edit phone_number.');
+        $field=$this->field((int)($session['form_profile_id']??0),$key);
+        if(!$field)return self::message((int)$session['telegram_chat_id'],'That question is not enabled in this form. Use /review to see available fields.');
+        $id=(int)$session['id'];
+        $statement=$this->conn->prepare("UPDATE telegram_registration_sessions SET status='collecting',current_field_key=?,lock_version=lock_version+1 WHERE id=? AND status IN ('collecting','review')");
+        $statement->bind_param('si',$key,$id);$statement->execute();$changed=$statement->affected_rows;$statement->close();
+        if($changed!==1)return self::message((int)$session['telegram_chat_id'],'This draft can no longer be edited.');
+        $answers=$this->answers($id);$session['status']='collecting';$session['current_field_key']=$key;
+        return $this->prompt($session,$field,isset($answers[$key])?'Current: '.$answers[$key]:null);
+    }
+
     private function back(array $session): array
     {
         $fields=$this->fields((int)($session['form_profile_id']??0)); $answers=$this->answers((int)$session['id']);
@@ -215,7 +248,7 @@ final class TelegramRegistrationService
     private function audit(string $type,int $actor,string $event,string $entity,int $entityId,string $result='success'): void { try{$s=$this->conn->prepare('INSERT INTO telegram_audit_log (actor_type,actor_id,event,entity_type,entity_id,result) VALUES (?,?,?,?,?,?)');$s->bind_param('sissis',$type,$actor,$event,$entity,$entityId,$result);$s->execute();$s->close();}catch(\Throwable $e){error_log('Telegram audit failed: '.$e->getMessage());} }
 
     private static function message(int $chatId,string $text,?array $markup=null): array { $p=['method'=>'sendMessage','chat_id'=>$chatId,'text'=>$text];if($markup!==null)$p['reply_markup']=$markup;return $p; }
-    private static function homeKeyboard(): array { return ['keyboard'=>[[['text'=>'➕ አዲስ ምዝገባ']]],'resize_keyboard'=>true]; }
+    private static function homeKeyboard(bool $hasActive=false): array { $rows=[];if($hasActive)$rows[]=[['text'=>'▶️ ቀጥል / Resume']];$rows[]=[['text'=>'➕ አዲስ ምዝገባ']];return ['keyboard'=>$rows,'resize_keyboard'=>true]; }
     private static function positiveId($value): int { return is_int($value)||is_string($value)?max(0,(int)$value):0; }
     private static function publicId(): string { return substr(strtoupper(bin2hex(random_bytes(13))),0,26); }
 }
