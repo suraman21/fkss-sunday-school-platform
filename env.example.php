@@ -102,6 +102,13 @@ define('TELEMETRY_HASH_SECRET', 'REPLACE_WITH_A_LONG_RANDOM_STRING_5'); // HMAC 
 // Attendance alerting v2 is OFF by default; enable only after sql/071+ are applied.
 // define('FEATURE_ATTENDANCE_V2', true);
 
+// Review-only Telegram registration. Generate unique values independently for
+// development, FKSS and WBSS; never copy credentials or operator records.
+// define('FEATURE_TELEGRAM_REGISTRATION', false);
+// define('TELEGRAM_BOT_TOKEN', '123456789:replace-with-deployment-local-token');
+// define('TELEGRAM_WEBHOOK_SECRET', 'replace-with-32-to-256-url-safe-characters');
+// define('TELEGRAM_WEBHOOK_MAX_BYTES', 262144);
+
 // Test-data loading/deletion is disabled by default. Enable only in a controlled
 // staging environment, never on a live member database.
 // define('ENABLE_TEST_DATA_TOOLS', true);
