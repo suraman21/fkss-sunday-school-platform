@@ -106,7 +106,8 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn("fields_json", api)
         self.assertIn("New waiting draft", page)
         self.assertIn("New direct draft", page)
-        self.assertIn("Publish this immutable version", page)
+        self.assertIn("Publish this form version?", page)
+        self.assertIn("DangerConfirm.ask", page)
 
     def test_review_ui_has_no_approval_or_member_creation_path(self):
         api = (ROOT / "admin/api_telegram_registration.php").read_text(encoding="utf-8")
@@ -122,6 +123,23 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertNotIn('value="approved"', page)
         review_case = api[api.index("case 'review_decide'"):api.index("case 'audit'")]
         self.assertNotRegex(review_case, r"INSERT\s+INTO\s+members")
+
+    def test_runtime_is_serialized_limited_and_retained_in_batches(self):
+        registration = (ROOT / "admin/backend/services/TelegramRegistrationService.php").read_text(encoding="utf-8")
+        retention = (ROOT / "admin/backend/services/TelegramRetentionService.php").read_text(encoding="utf-8")
+        cron = (ROOT / "admin/backend/cron_telegram_retention.php").read_text(encoding="utf-8")
+        self.assertIn("SELECT GET_LOCK(?,1)", registration)
+        self.assertIn("SELECT RELEASE_LOCK(?)", registration)
+        self.assertIn("daily_registration_limit", registration)
+        self.assertIn("created_at>=CURRENT_DATE", registration)
+        self.assertIn("status='expired'", registration)
+        self.assertIn("max(10,min(2000,$batch))", retention)
+        self.assertIn("LIMIT {$batch}", retention)
+        self.assertIn("TELEGRAM_PROCESSED_UPDATE_RETENTION_DAYS", retention)
+        self.assertIn("TELEGRAM_CANCELLED_SESSION_RETENTION_DAYS", retention)
+        self.assertIn("TELEGRAM_AUDIT_RETENTION_DAYS", retention)
+        self.assertIn("PHP_SAPI!=='cli'", cron)
+        self.assertNotIn("TELEGRAM_BOT_TOKEN", retention + cron)
 
     def test_schema_has_review_and_audit_boundaries(self):
         for table in [

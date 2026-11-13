@@ -108,6 +108,9 @@ define('TELEMETRY_HASH_SECRET', 'REPLACE_WITH_A_LONG_RANDOM_STRING_5'); // HMAC 
 // define('TELEGRAM_BOT_TOKEN', '123456789:replace-with-deployment-local-token');
 // define('TELEGRAM_WEBHOOK_SECRET', 'replace-with-32-to-256-url-safe-characters');
 // define('TELEGRAM_WEBHOOK_MAX_BYTES', 262144);
+// define('TELEGRAM_PROCESSED_UPDATE_RETENTION_DAYS', 30);
+// define('TELEGRAM_CANCELLED_SESSION_RETENTION_DAYS', 90);
+// define('TELEGRAM_AUDIT_RETENTION_DAYS', 730);
 
 // Test-data loading/deletion is disabled by default. Enable only in a controlled
 // staging environment, never on a live member database.
