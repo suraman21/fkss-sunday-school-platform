@@ -150,7 +150,7 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         school = (ROOT / "admin/dashboards/school_admin.php").read_text(encoding="utf-8")
         self.assertNotIn('/admin/telegram_registration.php', school)
         api = (ROOT / "admin/api_telegram_registration.php").read_text(encoding="utf-8")
-        self.assertIn("$superActions=['overview','bot_config','bot_config_save','bot_verify','webhook_status','webhook_set','canonical_backfill']", api)
+        self.assertIn("$superActions=['overview','bot_config','bot_config_save','feature_toggle','bot_verify','webhook_status','webhook_set','canonical_backfill']", api)
         self.assertIn("$hrActions=['overview','operators','eligible_users','forms'", api)
 
     def test_bot_token_setup_stays_outside_webroot_and_database(self):
@@ -236,6 +236,27 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn("notify('Telegram operator access was saved.')", page)
         self.assertIn("Webhook active", page)
         self.assertNotIn("Confirm your Super Admin password", page)
+
+    def test_super_admin_feature_toggle_is_managed_and_audited(self):
+        service = (ROOT / "admin/backend/services/TelegramBotConfigService.php").read_text(encoding="utf-8")
+        gate = (ROOT / "admin/backend/services/FeatureGate.php").read_text(encoding="utf-8")
+        api = (ROOT / "admin/api_telegram_registration.php").read_text(encoding="utf-8")
+        page = (ROOT / "admin/telegram_registration.php").read_text(encoding="utf-8")
+        self.assertIn("setFeatureEnabled", service)
+        self.assertIn("TELEGRAM_REGISTRATION_MANAGED_ENABLED", service)
+        self.assertIn("TELEGRAM_REGISTRATION_MANAGED_ENABLED", gate)
+        self.assertIn("case 'feature_toggle'", api)
+        self.assertIn("'feature_enabled':'feature_disabled'", api)
+        self.assertIn('id="featureToggle"', page)
+        self.assertIn("Enable Telegram registration", page)
+        self.assertIn("aria-pressed", page)
+
+    def test_canonical_backfill_has_the_pair_hash_method_it_calls(self):
+        normalizer = (ROOT / "admin/backend/services/AmharicIdentityNormalizer.php").read_text(encoding="utf-8")
+        canonical = (ROOT / "admin/backend/services/MemberCanonicalIdentityService.php").read_text(encoding="utf-8")
+        self.assertIn("public static function pairHash", normalizer)
+        self.assertIn("AmharicIdentityNormalizer::pairHash", canonical)
+        self.assertIn("self::pairHash($student, $father)", normalizer)
 
     def test_schema_has_review_and_audit_boundaries(self):
         for table in [
