@@ -7,8 +7,14 @@ final class TelegramDuplicateCandidateService
     /** @param array<string,string> $answers @return list<array<string,mixed>> */
     public static function find(\mysqli $conn, array $answers, int $displayLimit = 10): array
     {
+        return self::findWithMeta($conn,$answers,$displayLimit)['candidates'];
+    }
+
+    /** @param array<string,string> $answers @return array{candidates:list<array<string,mixed>>,plausible_count:int,capped:bool,candidate_limit:int} */
+    public static function findWithMeta(\mysqli $conn, array $answers, int $displayLimit = 10): array
+    {
         $names = AmharicIdentityNormalizer::splitFullName($answers['full_name_am'] ?? '');
-        if ($names['student'] === '' || $names['father'] === '') return [];
+        if ($names['student'] === '' || $names['father'] === '') return ['candidates'=>[],'plausible_count'=>0,'capped'=>false,'candidate_limit'=>10];
         $displayLimit = max(1, min(10, $displayLimit));
         $candidateLimit = 50;
         $phone = AmharicIdentityNormalizer::phoneSuffix($answers['phone_number'] ?? '');
@@ -78,7 +84,8 @@ final class TelegramDuplicateCandidateService
         }
         $statement->close();
         usort($rows, static fn(array $a,array $b): int => ((int)$b['match_score'] <=> (int)$a['match_score']) ?: ((int)$b['id'] <=> (int)$a['id']));
-        return array_slice($rows, 0, $displayLimit);
+        $plausibleCount=count($rows);
+        return ['candidates'=>array_slice($rows,0,$displayLimit),'plausible_count'=>$plausibleCount,'capped'=>$plausibleCount>$displayLimit,'candidate_limit'=>$displayLimit];
     }
 
     /** @return array{0:int,1:int,2:int} */

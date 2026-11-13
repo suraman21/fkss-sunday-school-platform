@@ -139,7 +139,7 @@ final class TelegramRegistrationService
         $sessionId=(int)$session['id']; $key=(string)$field['field_key']; $display=$value['display']; $normal=$value['normalized'];
         $statement=$this->conn->prepare('INSERT INTO telegram_registration_answers (session_id,field_key,value_text,value_normalized) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE value_text=VALUES(value_text),value_normalized=VALUES(value_normalized),updated_at=CURRENT_TIMESTAMP');
         $statement->bind_param('isss',$sessionId,$key,$display,$normal); $statement->execute(); $statement->close();
-        if ($key==='full_name_am') $this->refreshDuplicates($session);
+        if (in_array($key,['full_name_am','dob_ec','phone_number','baptismal_name','gender'],true)) $this->refreshDuplicates($session);
         $next=$this->nextField((int)$session['form_profile_id'],(int)$field['sort_order'],(int)$field['id']);
         if (!$next) { $statement=$this->conn->prepare("UPDATE telegram_registration_sessions SET status='review',current_field_key=NULL,lock_version=lock_version+1 WHERE id=?"); $statement->bind_param('i',$sessionId); $statement->execute(); $statement->close(); $session['status']='review'; return $this->review($session); }
         $nextKey=(string)$next['field_key'];
@@ -151,7 +151,7 @@ final class TelegramRegistrationService
     private function refreshDuplicates(array $session): void
     {
         $answers=$this->answers((int)$session['id']);
-        try { $matches=TelegramDuplicateCandidateService::find($this->conn,$answers); $state=$matches===[]?'none':(((int)$matches[0]['match_score']>=85)?'likely':'possible'); $summary=json_encode($matches,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE); }
+        try { $meta=TelegramDuplicateCandidateService::findWithMeta($this->conn,$answers); $matches=$meta['candidates']; $state=$matches===[]?'none':(((int)$matches[0]['match_score']>=85)?'likely':'possible'); $summary=json_encode($meta,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE); }
         catch (\Throwable $e) { reportInternalError('Telegram duplicate lookup failed',$e); $state='error'; $summary=null; }
         $id=(int)$session['id']; $statement=$this->conn->prepare('UPDATE telegram_registration_sessions SET duplicate_state=?,duplicate_summary=? WHERE id=?'); $statement->bind_param('ssi',$state,$summary,$id); $statement->execute(); $statement->close();
     }
@@ -165,6 +165,7 @@ final class TelegramRegistrationService
         $state=(string)($fresh['duplicate_state']??'not_checked');
         $lines[]='';
         $lines[]=$state==='none'?'✅ No indexed duplicate candidate found.':($state==='likely'?'🚨 Likely duplicate candidate found — HR must review.':($state==='possible'?'⚠️ Possible duplicate candidate found — HR must review.':'ℹ️ Duplicate check: '.$state));
+        $duplicateMeta=json_decode((string)($fresh['duplicate_summary']??''),true);if(is_array($duplicateMeta)&&!empty($duplicateMeta['capped']))$lines[]='More plausible candidates exist than the safe display limit. Add or verify date of birth and phone so HR can refine the result.';
         $lines[]='No member will be created now. Submit this draft to HR for review.';
         return self::message((int)$session['telegram_chat_id'],implode("\n",$lines),['keyboard'=>[[['text'=>'✅ ላክ'],['text'=>'✏️ አርም']],[['text'=>'❌ Cancel']]],'resize_keyboard'=>true]);
     }
@@ -203,7 +204,7 @@ final class TelegramRegistrationService
         $text=$this->promptText($field); if($prefix)$text=$prefix."\n\n".$text;
         return self::message((int)$session['telegram_chat_id'],$text,$keyboard);
     }
-    private function promptText(array $field): string { return (string)$field['prompt_am']."\n".(string)$field['prompt_en'].((string)($field['help_am']??'')!==''?"\n\nℹ️ ".$field['help_am']." / ".$field['help_en']:''); }
+    private function promptText(array $field): string { $text=(string)$field['prompt_am']."\n".(string)$field['prompt_en'].((string)($field['help_am']??'')!==''?"\n\nℹ️ ".$field['help_am']." / ".$field['help_en']:'');if((int)($field['is_required']??0)!==1)$text.="\n\n/skip — ዝለል / skip this optional question";return $text; }
 
     private function activeSession(int $actorId,int $chatId): ?array { $s=$this->conn->prepare("SELECT * FROM telegram_registration_sessions WHERE bot_user_id=? AND telegram_chat_id=? AND status IN ('choosing','collecting','review') AND expires_at>CURRENT_TIMESTAMP ORDER BY id DESC LIMIT 1");$s->bind_param('ii',$actorId,$chatId);$s->execute();$r=$s->get_result()->fetch_assoc()?:null;$s->close();return $r; }
     private function session(int $id): ?array { $s=$this->conn->prepare('SELECT * FROM telegram_registration_sessions WHERE id=?');$s->bind_param('i',$id);$s->execute();$r=$s->get_result()->fetch_assoc()?:null;$s->close();return $r; }
