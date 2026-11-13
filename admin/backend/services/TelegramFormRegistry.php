@@ -8,21 +8,21 @@ final class TelegramFormRegistry
 {
     /** @var array<string,array<string,mixed>> */
     private const FIELDS = [
-        'full_name_am' => ['max'=>150, 'skip'=>false],
-        'baptismal_name' => ['max'=>150, 'skip'=>true],
-        'gender' => ['max'=>10, 'skip'=>false],
-        'dob_ec' => ['max'=>10, 'skip'=>true],
-        'phone_number' => ['max'=>30, 'skip'=>true],
-        'guardian_name' => ['max'=>150, 'skip'=>true],
-        'guardian_phone1' => ['max'=>30, 'skip'=>true],
-        'city' => ['max'=>60, 'skip'=>true],
-        'sub_city' => ['max'=>60, 'skip'=>true],
-        'woreda' => ['max'=>10, 'skip'=>true],
-        'mender' => ['max'=>10, 'skip'=>true],
-        'house_number' => ['max'=>20, 'skip'=>true],
-        'education_level' => ['max'=>60, 'skip'=>true],
-        'spiritual_education' => ['max'=>100, 'skip'=>true],
-        'current_section' => ['max'=>100, 'skip'=>true],
+        'full_name_am' => ['max'=>150, 'skip'=>false, 'label'=>'Full name / ሙሉ ስም'],
+        'baptismal_name' => ['max'=>150, 'skip'=>true, 'label'=>'Baptismal name / የክርስትና ስም'],
+        'gender' => ['max'=>10, 'skip'=>false, 'label'=>'Gender / ጾታ'],
+        'dob_ec' => ['max'=>10, 'skip'=>true, 'label'=>'Ethiopian date of birth / የትውልድ ቀን'],
+        'phone_number' => ['max'=>30, 'skip'=>true, 'label'=>'Phone / ስልክ'],
+        'guardian_name' => ['max'=>150, 'skip'=>true, 'label'=>'Guardian name / የአሳዳጊ ስም'],
+        'guardian_phone1' => ['max'=>30, 'skip'=>true, 'label'=>'Guardian phone / የአሳዳጊ ስልክ'],
+        'city' => ['max'=>60, 'skip'=>true, 'label'=>'City / ከተማ'],
+        'sub_city' => ['max'=>60, 'skip'=>true, 'label'=>'Sub-city / ክፍለ ከተማ'],
+        'woreda' => ['max'=>10, 'skip'=>true, 'label'=>'Woreda / ወረዳ'],
+        'mender' => ['max'=>10, 'skip'=>true, 'label'=>'Mender / መንደር'],
+        'house_number' => ['max'=>20, 'skip'=>true, 'label'=>'House number / የቤት ቁጥር'],
+        'education_level' => ['max'=>60, 'skip'=>true, 'label'=>'Education level / የትምህርት ደረጃ'],
+        'spiritual_education' => ['max'=>100, 'skip'=>true, 'label'=>'Spiritual education / መንፈሳዊ ትምህርት'],
+        'current_section' => ['max'=>100, 'skip'=>true, 'label'=>'Current section / ክፍል'],
     ];
 
     /** @return list<string> */
@@ -30,6 +30,7 @@ final class TelegramFormRegistry
     /** @return array<string,array<string,mixed>> */
     public static function definitions(): array { return self::FIELDS; }
     public static function exists(string $key): bool { return isset(self::FIELDS[$key]); }
+    public static function label(string $key): string { return (string)(self::FIELDS[$key]['label'] ?? $key); }
 
     /** @return array{display:string,normalized:string} */
     public static function validate(string $key, $raw, bool $required = false): array
