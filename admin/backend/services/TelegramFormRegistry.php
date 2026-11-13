@@ -27,6 +27,8 @@ final class TelegramFormRegistry
 
     /** @return list<string> */
     public static function keys(): array { return array_keys(self::FIELDS); }
+    /** @return array<string,array<string,mixed>> */
+    public static function definitions(): array { return self::FIELDS; }
     public static function exists(string $key): bool { return isset(self::FIELDS[$key]); }
 
     /** @return array{display:string,normalized:string} */

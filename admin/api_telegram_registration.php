@@ -6,8 +6,12 @@ header('Cache-Control: no-store');
 require_once __DIR__.'/config.php';
 require_once __DIR__.'/backend/services/AmharicIdentityNormalizer.php';
 require_once __DIR__.'/backend/services/MemberCanonicalIdentityService.php';
+require_once __DIR__.'/backend/services/TelegramFormRegistry.php';
+require_once __DIR__.'/backend/services/TelegramFormAdminService.php';
 
 use App\Services\MemberCanonicalIdentityService;
+use App\Services\TelegramFormRegistry;
+use App\Services\TelegramFormAdminService;
 
 function tg_admin_error(string $message,int $code=400): never { http_response_code($code);echo json_encode(['status'=>'error','message'=>$message],JSON_UNESCAPED_UNICODE);exit; }
 function tg_admin_ok(array $data=[]): never { echo json_encode(['status'=>'success']+$data,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);exit; }
@@ -41,6 +45,19 @@ case 'operators':
     $rows=[];$r=$conn->query($sql);while($row=$r->fetch_assoc())$rows[]=$row;tg_admin_ok(['operators'=>$rows]);
 case 'forms':
     $rows=[];$r=$conn->query("SELECT p.*,COUNT(f.id) field_count,COALESCE(SUM(f.is_enabled=1),0) enabled_count,COALESCE(SUM(f.is_enabled=1 AND f.is_required=1),0) required_count FROM telegram_form_profiles p LEFT JOIN telegram_form_fields f ON f.profile_id=p.id GROUP BY p.id ORDER BY p.profile_key,p.version DESC");while($row=$r->fetch_assoc())$rows[]=$row;tg_admin_ok(['forms'=>$rows]);
+case 'form_registry':
+    tg_admin_ok(['fields'=>TelegramFormRegistry::definitions()]);
+case 'form_detail':
+    $forms=new TelegramFormAdminService($conn);$form=$forms->detail((int)($input['id']??0));if(!$form)tg_admin_error('Form not found.',404);tg_admin_ok(['form'=>$form]);
+case 'form_create':
+    if($method!=='POST'||!in_array($role,['super_admin','school_admin'],true))tg_admin_error('Only administrators may create form versions.',403);
+    $forms=new TelegramFormAdminService($conn);$form=$forms->createDraft((string)($input['profile_key']??''),$actor);tg_admin_audit($conn,$actor,'form_draft_created','form_profile',(int)$form['id'],['profile_key'=>$form['profile_key'],'version'=>$form['version']]);tg_admin_ok(['form'=>$form]);
+case 'form_save':
+    if($method!=='POST'||!in_array($role,['super_admin','school_admin'],true))tg_admin_error('Only administrators may edit forms.',403);
+    $fields=json_decode((string)($input['fields_json']??''),true);if(!is_array($fields))tg_admin_error('Invalid form fields.');$forms=new TelegramFormAdminService($conn);$form=$forms->saveDraft((int)($input['id']??0),(string)($input['title_am']??''),(string)($input['title_en']??''),$fields);tg_admin_audit($conn,$actor,'form_draft_saved','form_profile',(int)$form['id'],['field_count'=>count($fields)]);tg_admin_ok(['form'=>$form]);
+case 'form_publish':
+    if($method!=='POST'||!in_array($role,['super_admin','school_admin'],true))tg_admin_error('Only administrators may publish forms.',403);
+    $forms=new TelegramFormAdminService($conn);$form=$forms->publish((int)($input['id']??0),$actor);tg_admin_audit($conn,$actor,'form_published','form_profile',(int)$form['id'],['profile_key'=>$form['profile_key'],'version'=>$form['version']]);tg_admin_ok(['form'=>$form]);
 case 'sessions':
     $limit=tg_admin_limit($input['limit']??50);$status=trim((string)($input['status']??''));$allowed=['choosing','collecting','review','submitted','cancelled','expired','failed'];
     if($status!==''&&!in_array($status,$allowed,true))tg_admin_error('Invalid session status.');
