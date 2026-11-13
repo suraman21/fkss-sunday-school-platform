@@ -151,7 +151,7 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertNotIn('/admin/telegram_registration.php', school)
         api = (ROOT / "admin/api_telegram_registration.php").read_text(encoding="utf-8")
         self.assertIn("$superActions=['overview','bot_config','bot_config_save','bot_verify','webhook_status','webhook_set','canonical_backfill']", api)
-        self.assertIn("$hrActions=['overview','operators','forms'", api)
+        self.assertIn("$hrActions=['overview','operators','eligible_users','forms'", api)
 
     def test_bot_token_setup_stays_outside_webroot_and_database(self):
         service = (ROOT / "admin/backend/services/TelegramBotConfigService.php").read_text(encoding="utf-8")
@@ -181,6 +181,18 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
             self.assertIn(f"case '{action}'", api)
         self.assertIn("Activate HTTPS webhook", page)
         self.assertIn("Verify bot token", page)
+
+    def test_hr_operator_management_uses_eligible_account_picker(self):
+        api = (ROOT / "admin/api_telegram_registration.php").read_text(encoding="utf-8")
+        page = (ROOT / "admin/telegram_registration.php").read_text(encoding="utf-8")
+        self.assertIn("case 'eligible_users'", api)
+        self.assertIn("is_active=1 AND role IN ('super_admin','school_admin','hr_dept')", api)
+        self.assertIn("ORDER BY full_name,id LIMIT 100", api)
+        self.assertIn("status='cancelled',lock_version=lock_version+1", api)
+        self.assertIn('id="linkedUserSelect"', page)
+        self.assertIn("loadEligibleUsers", page)
+        self.assertIn("editOperator", page)
+        self.assertNotIn("Active HR/admin web-account ID", page)
 
     def test_schema_has_review_and_audit_boundaries(self):
         for table in [
