@@ -16,6 +16,8 @@
  *   POST action=code_issue&id=                       → issue activation code (plaintext once)
  *   GET  ?action=code_status&id=                     → code state (never secret/grant)
  *   POST action=ticket_cancel&id=&reason=            → cancel + cascade revoke
+ *   GET  ?action=device_list&id=                     → ticket account devices (S4)
+ *   POST action=device_revoke&id=&device_uuid=&reason= → revoke + family cascade (S4)
  *   GET  ?action=office_mode_get                     → mode + staffing + history
  *   POST action=office_mode_set                      → switch mode (super_admin)
  *   GET  ?action=approvers_list | reviewers_list     → active designations
@@ -36,13 +38,17 @@
 header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/backend/services/SecurityAuditService.php';
+require_once __DIR__ . '/backend/services/RefreshTokenService.php';
 require_once __DIR__ . '/../acm/autoload.php';
 
+use SSMS\Acm\Accounts\AccountProvisioner;
 use SSMS\Acm\Accounts\AcmTicketService;
 use SSMS\Acm\Activation\ActivationService;
 use SSMS\Acm\Activation\CodeAlphabet;
 use SSMS\Acm\Contracts\AccountContext;
 use SSMS\Acm\Contracts\CodePurpose;
+use SSMS\Acm\Device\DeviceCrypto;
+use SSMS\Acm\Device\DeviceService;
 use SSMS\Acm\Identity\AcmPersonService;
 use SSMS\Acm\Office\AcmOfficeService;
 use SSMS\Acm\OfficeNetwork\OfficeNetworkSignal;
@@ -84,6 +90,26 @@ $persons = new AcmPersonService($pdo);
 $tickets = new AcmTicketService($pdo, $persons);
 $ceremony = new ActivationService($pdo, $tickets, $persons);
 $office = new AcmOfficeService($pdo);
+$provisioner = new AccountProvisioner($pdo);
+// S4 device registry (revoker mirrors the mobile route: mysqli-backed,
+// fails closed without a live handle).
+$consoleRevoker = null;
+if (isset($conn) && $conn instanceof \mysqli) {
+    $consoleRevoker = static function (int $deviceId) use ($conn): int {
+        static $refreshForRevoke = null;
+        if ($refreshForRevoke === null) {
+            $refreshForRevoke = new \App\Services\RefreshTokenService(
+                $conn,
+                static function (): string {
+                    throw new \RuntimeException('Refresh issuance is unavailable here.');
+                },
+                3600 // Unused on the revoke path (TTL applies to issuance only).
+            );
+        }
+        return $refreshForRevoke->revokeDeviceFamilies($deviceId);
+    };
+}
+$devices = new DeviceService($pdo, $tickets, $consoleRevoker);
 $isSuperAdmin = $role === 'super_admin';
 
 function acm_audit(PDO $pdo, string $action, array $details, ?string $entityType, ?int $entityId): void
@@ -466,10 +492,16 @@ try {
                 && !$signal->allows(OfficeNetworkSignal::resolveClientIp($_SERVER, $signal->trustedProxies()))) {
                 acm_err('Code issuance is not available from this network.', 403);
             }
+            // S4: device_add issuance for add-a-device ceremonies
+            // (strict purpose vocabulary; reset stays closed).
+            $purposeRaw = (string)($_POST['purpose'] ?? 'activation');
+            if ($purposeRaw !== 'activation' && $purposeRaw !== 'device_add') {
+                acm_err('Unknown code purpose.', 400);
+            }
             $issued = $ceremony->issueCode(
                 new AccountContext($actorId, $role),
                 (string)($_POST['id'] ?? ''),
-                CodePurpose::Activation
+                $purposeRaw === 'device_add' ? CodePurpose::DeviceAdd : CodePurpose::Activation
             );
             $ticket = $tickets->get((int)($_POST['id'] ?? 0));
             // Audit carries the public selector only — never the
@@ -514,6 +546,87 @@ try {
                 'person_id' => (int)($ticket['person_id'] ?? 0),
             ], 'acm_ticket', (int)$ticket['id']);
             acm_ok(['ticket' => $ticket]);
+            break;
+        }
+
+        case 'device_list': {
+            if (!AcmPolicy::can($role, AcmPolicy::RES_DEVICE, 'manage')) {
+                acm_err('Access denied.', 403);
+            }
+            $ticket = $tickets->get((int)($_GET['id'] ?? 0));
+            if ($ticket === null) {
+                acm_err('Ticket was not found.', 404);
+            }
+            // Ticket-scoped: officers see only this ticket's account.
+            // Short fingerprints server-side (D4.6 minimalism).
+            $ticketUserId = $provisioner->userIdFor(
+                (int)$ticket['person_id'], (string)$ticket['account_type']
+            );
+            $rows = $ticketUserId === null ? [] : $devices->listForUser($ticketUserId);
+            acm_ok(['devices' => array_map(static function (array $row): array {
+                return [
+                    'device_uuid' => (string)$row['uuid'],
+                    'name' => $row['name'] !== null ? (string)$row['name'] : null,
+                    'fingerprint' => DeviceCrypto::shortFingerprint((string)$row['fingerprint']),
+                    'alg' => (string)$row['alg'],
+                    'status' => (string)$row['status'],
+                    'first_seen' => (string)$row['first_seen'],
+                    'last_seen' => $row['last_seen'] !== null ? (string)$row['last_seen'] : null,
+                    'installation' => substr((string)$row['installation_id'], 0, 8) . '...',
+                ];
+            }, $rows)]);
+            break;
+        }
+
+        case 'device_revoke': {
+            if ($method !== 'POST') {
+                acm_err('Method not allowed.', 405);
+            }
+            if (!AcmPolicy::can($role, AcmPolicy::RES_DEVICE, 'manage')) {
+                acm_err('Access denied.', 403);
+            }
+            $ticket = $tickets->get((int)($_POST['id'] ?? 0));
+            if ($ticket === null) {
+                acm_err('Ticket was not found.', 404);
+            }
+            $ticketUserId = $provisioner->userIdFor(
+                (int)$ticket['person_id'], (string)$ticket['account_type']
+            );
+            // Ticket scope enforced BEFORE the service call (officers
+            // bypass the owner check inside revoke, so the route pins
+            // the device to this ticket's account first).
+            $scopedFp = null;
+            if ($ticketUserId !== null) {
+                foreach ($devices->listForUser($ticketUserId) as $row) {
+                    if (hash_equals((string)$row['uuid'], (string)($_POST['device_uuid'] ?? ''))) {
+                        $scopedFp = (string)$row['fingerprint'];
+                        break;
+                    }
+                }
+            }
+            if ($scopedFp === null) {
+                acm_err('Device was not found for this ticket.', 404);
+            }
+            $report = $devices->revokeWithReport(
+                new AccountContext($actorId, $role),
+                (string)($_POST['device_uuid'] ?? ''),
+                (string)($_POST['reason'] ?? '')
+            );
+            $tickets->recordEvent(
+                (int)$ticket['id'], $actorId, 'device_revoked',
+                (string)($_POST['reason'] ?? ''),
+                [
+                    'device_fp' => DeviceCrypto::shortFingerprint($scopedFp),
+                    'families' => $report['families'],
+                ]
+            );
+            acm_audit($pdo, 'acm.device.revoked', [
+                'ticket_no' => (string)($ticket['ticket_no'] ?? ''),
+                'device_fp' => DeviceCrypto::shortFingerprint($scopedFp),
+                'families' => $report['families'],
+                'already' => $report['already'],
+            ], 'acm_ticket', (int)$ticket['id']);
+            acm_ok(['revoked' => true, 'families' => $report['families']]);
             break;
         }
 

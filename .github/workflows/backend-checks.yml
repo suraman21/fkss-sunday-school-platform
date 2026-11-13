@@ -386,6 +386,8 @@ jobs:
           # composer.json platform pin. Lint on 8.4/8.5 stays in the
           # php-lint jobs, which pick up acm/**/*.php automatically.
           php-version: '8.2'
+          # S4: DeviceCrypto round-trips real ECDSA in PHPUnit.
+          extensions: openssl
           coverage: none
 
       - name: Install PHP dependencies

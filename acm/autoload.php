@@ -32,6 +32,9 @@ if (!defined('SSMS_ACM_AUTOLOAD')) {
     require_once __DIR__ . '/src/Accounts/AcmTicketService.php';
     require_once __DIR__ . '/src/Activation/ActivationService.php';
     require_once __DIR__ . '/src/OfficeNetwork/OfficeNetworkSignal.php';
+    // S4 device registry.
+    require_once __DIR__ . '/src/Device/DeviceCrypto.php';
+    require_once __DIR__ . '/src/Device/DeviceService.php';
     require_once __DIR__ . '/src/Office/AcmOfficeService.php';
     // Contracts: value types first, then interfaces.
     require_once __DIR__ . '/src/Contracts/AccountContext.php';

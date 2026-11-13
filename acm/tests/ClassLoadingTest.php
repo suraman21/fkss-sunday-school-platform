@@ -29,6 +29,9 @@ final class ClassLoadingTest extends TestCase
         $this->assertTrue(class_exists(\SSMS\Acm\Activation\IdempotencyStore::class));
         $this->assertTrue(class_exists(\SSMS\Acm\Accounts\AccountProvisioner::class));
         $this->assertTrue(class_exists(\SSMS\Acm\OfficeNetwork\OfficeNetworkSignal::class));
+        // S4 device registry travels with the same manifest.
+        $this->assertTrue(class_exists(\SSMS\Acm\Device\DeviceCrypto::class));
+        $this->assertTrue(class_exists(\SSMS\Acm\Device\DeviceService::class));
     }
 
     public function testContractsResolve(): void
