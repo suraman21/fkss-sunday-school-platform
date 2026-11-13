@@ -214,6 +214,9 @@ if (!defined('FEATURE_MONITOR')) define('FEATURE_MONITOR', true);
 // department-scoped warnings). Ships OFF; enable per deployment once the
 // Phase 1+ schema (sql/071+) has been applied.
 if (!defined('FEATURE_ATTENDANCE_V2')) define('FEATURE_ATTENDANCE_V2', false);
+// Review-only Telegram registration stays fail-closed until each deployment
+// has its own bot token, webhook secret, allowlist, and sql/080 migration.
+if (!defined('FEATURE_TELEGRAM_REGISTRATION')) define('FEATURE_TELEGRAM_REGISTRATION', false);
 
 // Destructive synthetic-data tooling is off in production unless a deployment
 // explicitly enables it in the out-of-web-root environment file.

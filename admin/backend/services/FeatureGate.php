@@ -23,6 +23,8 @@ final class FeatureGate
         'attendance_v2' => 'FEATURE_ATTENDANCE_V2',
         'export_pdf' => 'FEATURE_EXPORT_PDF',
         'monitor' => 'FEATURE_MONITOR',
+        // Review-only Telegram registration. Default OFF; requires sql/080 and deployment-local secrets.
+        'telegram_registration' => 'FEATURE_TELEGRAM_REGISTRATION',
     ];
 
     /** @return list<string> */
