@@ -26,15 +26,18 @@ class Build24ReleaseGateTest(unittest.TestCase):
         cls.comm = (MOBILE / "lib/services/comm_outbox_service.dart").read_text(encoding="utf-8")
         cls.hymn = (MOBILE / "lib/services/hymn_store.dart").read_text(encoding="utf-8")
 
-    def test_release_version_sources_are_build_41(self):
-        # Build 41: mobile offline class-day attendance gating.
+    def test_release_version_sources_are_build_42(self):
+        # Build 42: Mezmur section selector usable after a submission.
         pubspec = (MOBILE / "pubspec.yaml").read_text(encoding="utf-8")
         config = (MOBILE / "lib/utils/config.dart").read_text(encoding="utf-8")
         notes = (MOBILE / "RELEASE_NOTES.md").read_text(encoding="utf-8")
-        self.assertRegex(pubspec, r"(?m)^version:\s*1\.7\.4\+41\s*$")
-        self.assertIn("appVersion = '1.7.4'", config)
-        self.assertIn("appBuild = 41", config)
-        self.assertIn("## 1.7.4 (build 41)", notes)
+        self.assertRegex(pubspec, r"(?m)^version:\s*1\.7\.5\+42\s*$")
+        self.assertIn("appVersion = '1.7.5'", config)
+        self.assertIn("appBuild = 42", config)
+        self.assertIn("## 1.7.5 (build 42)", notes)
+        # The server offer lags the source pin on purpose: it may only move
+        # once the matching signed APK and its checksums are published, so no
+        # phone is asked to download a build that does not exist yet.
         for source in (self.release, self.release_example):
             self.assertRegex(source, r"'latest_version'\s*=>\s*'1\.7\.4'")
             self.assertRegex(source, r"'latest_build'\s*=>\s*41")

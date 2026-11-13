@@ -45,7 +45,7 @@ class DefaultAbsentSheetContracts(unittest.TestCase):
                 "String _orAbsent(String status) => status.isEmpty ? 'absent' : status;",
                 src)
             # Precedence chain stays: pending edit > server-saved > absent.
-            self.assertIn("_orAbsent(_firstStatus([pendingMap[", src)
+            self.assertRegex(src, r"_orAbsent\(\s*_firstStatus\(\[pendingMap\[")
 
     def test_locked_sheets_display_conservative_absent_too(self):
         # A locked/submitted sheet with a missing row (roster drift)

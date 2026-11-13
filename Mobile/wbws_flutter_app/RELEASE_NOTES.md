@@ -5,6 +5,21 @@ script runs the full test suite (including the version-sync pin) so
 the version below must always match `pubspec.yaml` +
 `AppConfig.appVersion`.
 
+## 1.7.5 (build 42) — Take every section of the same day
+
+- Submitting one section no longer freezes the section picker: a teacher can
+  take the next section of the same day in a row, then come back to the first.
+- The submitted sheet stays view-only — its marks and roster are read-only —
+  and every other section stays editable.
+- A refused save no longer strands the loading skeleton, and a failed submit
+  or a locked sheet can never leave the picker and the date chip inert.
+- Offline and queued submissions behave the same way: the packet stays keyed
+  on its date and section, and its idempotency key is unchanged.
+- Source version only: building and uploading the signed APK is a separate
+  release step. Force-update and minimum-version policy are unchanged.
+- Device checklist: take section A, submit, take section B the same day,
+  submit, then reopen A and confirm it is still view-only.
+
 ## 1.7.4 (build 41) — Class-day-only attendance (pending device acceptance)
 
 - Education attendance uses the server's compact class-day calendar offline.

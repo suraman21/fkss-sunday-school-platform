@@ -47,12 +47,14 @@ def fixture_db(tmp_path):
     _mysql(f'CREATE DATABASE `{db}` CHARACTER SET utf8mb4;')
     try:
         _mysql(f'''USE `{db}`;
-            CREATE TABLE academic_years (id INT PRIMARY KEY, is_current INT NOT NULL, status VARCHAR(20) NOT NULL) ENGINE=InnoDB;
+            CREATE TABLE academic_years (id INT PRIMARY KEY, is_current INT NOT NULL, status VARCHAR(20) NOT NULL, year_name VARCHAR(50) DEFAULT '', ec_year INT NULL, start_date DATE NULL, end_date DATE NULL, s1_weight_pct DECIMAL(5,2) NULL, s2_weight_pct DECIMAL(5,2) NULL) ENGINE=InnoDB;
+            CREATE TABLE academic_terms (id INT PRIMARY KEY, academic_year_id INT NOT NULL, term_number INT NOT NULL, KEY (academic_year_id)) ENGINE=InnoDB;
             CREATE TABLE members (id INT PRIMARY KEY, status VARCHAR(20) NOT NULL) ENGINE=InnoDB;
             CREATE TABLE class_enrollments (member_id INT, class_id INT, academic_year_id INT, enrolled_at DATE, status VARCHAR(20), enrolled_by INT, UNIQUE KEY uq_member_year (member_id, academic_year_id)) ENGINE=InnoDB;
             CREATE TABLE users (id INT PRIMARY KEY) ENGINE=InnoDB;
             CREATE TABLE teacher_assignments (id INT AUTO_INCREMENT PRIMARY KEY, teacher_id INT NOT NULL, class_id INT NOT NULL, subject_id INT NULL, subject_key INT GENERATED ALWAYS AS (IFNULL(subject_id,0)) STORED, academic_year_id INT NULL, is_class_teacher INT NOT NULL, is_primary INT NOT NULL, assignment_role VARCHAR(20) NOT NULL, assigned_by INT NULL, assigned_at DATETIME NULL, is_active INT NOT NULL, UNIQUE KEY uq_assignment (teacher_id, class_id, subject_key, academic_year_id), CONSTRAINT fk_fixture_assigner FOREIGN KEY (assigned_by) REFERENCES users(id)) ENGINE=InnoDB;
-            INSERT INTO academic_years VALUES (1,1,'active'),(2,0,'upcoming');
+            INSERT INTO academic_years (id,is_current,status,year_name,start_date,end_date,s1_weight_pct,s2_weight_pct) VALUES (1,1,'active','Old',DATE_SUB(CURDATE(), INTERVAL 30 DAY),DATE_ADD(CURDATE(), INTERVAL 30 DAY),50,50),(2,0,'upcoming','New',DATE_SUB(CURDATE(), INTERVAL 30 DAY),DATE_ADD(CURDATE(), INTERVAL 30 DAY),50,50);
+            INSERT INTO academic_terms VALUES (11,1,1),(21,2,1);
             INSERT INTO members VALUES (1,'active');
             INSERT INTO class_enrollments VALUES (1,10,1,CURDATE(),'active',1);
             INSERT INTO teacher_assignments (teacher_id,class_id,subject_id,academic_year_id,is_class_teacher,is_primary,assignment_role,assigned_by,assigned_at,is_active) VALUES (7,10,NULL,1,1,1,'homeroom',NULL,NOW(),1);
@@ -62,6 +64,9 @@ def fixture_db(tmp_path):
         (project / 'admin/backend').mkdir(parents=True)
         shutil.copyfile(ROOT / 'admin/tools/year_rollover.php', project / 'admin/tools/year_rollover.php')
         (project / 'admin/backend/ethiopian_date.php').write_text('<?php\n')
+        shutil.copyfile(ROOT / 'admin/backend/academic_year.php', project / 'admin/backend/academic_year.php')
+        (project / 'admin/backend/services').mkdir()
+        shutil.copyfile(ROOT / 'admin/backend/services/AttendancePreparationReadBoundary.php', project / 'admin/backend/services/AttendancePreparationReadBoundary.php')
         (project / 'admin/config.php').write_text(r'''<?php
 if (PHP_SAPI !== 'cli' || getenv('SSMS_AUDIT_TESTING') !== '1') exit(90);
 mysqli_report(getenv('ROLLOVER_STRICT') === '1' ? MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT : MYSQLI_REPORT_OFF);
@@ -85,9 +90,10 @@ $conn = new FixtureConnection($socket ? 'localhost' : '127.0.0.1', 'root', $sock
 if (getenv('ROLLOVER_LIMIT_WARNINGS') === '1') $conn->query('SET SESSION max_error_count = 1');
 $_SESSION = ['admin_logged_in'=>true, 'admin_role'=>getenv('ROLLOVER_ROLE') ?: 'school_admin', 'admin_id'=>1, 'csrf_token'=>'fixture'];
 $_SERVER['REQUEST_METHOD'] = 'POST';
-$_POST = ['action'=>'run','old_year_id'=>(int)(getenv('ROLLOVER_OLD_YEAR') ?: 1),'new_year_id'=>(int)(getenv('ROLLOVER_NEW_YEAR') ?: 2),'mode'=>getenv('ROLLOVER_MODE') ?: 'carry_forward','confirm'=>'ROLLOVER','csrf_token'=>getenv('ROLLOVER_CSRF') ?: 'fixture'];
+$_POST = ['action'=>'run','old_year_id'=>(int)(getenv('ROLLOVER_OLD_YEAR') ?: 1),'new_year_id'=>(int)(getenv('ROLLOVER_NEW_YEAR') ?: 2),'mode'=>getenv('ROLLOVER_MODE') ?: 'carry_forward','confirm'=>'ROLLOVER','csrf_token'=>getenv('ROLLOVER_CSRF') ?: 'fixture','confirm_issues'=>getenv('ROLLOVER_CONFIRM_ISSUES') ?: '', 'issues_fingerprint'=>getenv('ROLLOVER_FINGERPRINT') ?: ''];
 $_REQUEST = $_POST;
 function validateCsrf($value) { return hash_equals($_SESSION['csrf_token'], $value); }
+require __DIR__ . '/backend/academic_year.php';
 ''')
         yield db, project
     finally:
@@ -101,7 +107,7 @@ def test_actual_rollover_copy_is_transactional(fixture_db, strict, case):
     if case != 'foreign_key':
         _mysql(f"INSERT INTO `{db}`.users VALUES (1);")
     if case == 'existing':
-        _mysql(f"INSERT INTO `{db}`.teacher_assignments (teacher_id,class_id,subject_id,academic_year_id,is_class_teacher,is_primary,assignment_role,assigned_by,assigned_at,is_active) VALUES (7,10,NULL,2,1,1,'homeroom',1,NOW(),0);")
+        _mysql(f"INSERT INTO `{db}`.teacher_assignments (teacher_id,class_id,subject_id,academic_year_id,is_class_teacher,is_primary,assignment_role,assigned_by,assigned_at,is_active) VALUES (7,10,NULL,2,1,1,'homeroom',1,NOW(),1);")
     if case == 'missing_column':
         _mysql(f'ALTER TABLE `{db}`.teacher_assignments DROP COLUMN assigned_at;')
     if case == 'other_unique':
@@ -142,7 +148,7 @@ def test_year_validation_rejects_stale_or_invalid_lifecycle(fixture_db, case):
     if case == 'missing_new': env['ROLLOVER_NEW_YEAR'] = '99'
     if case == 'old_not_active': _mysql(f"UPDATE `{db}`.academic_years SET status='closed',is_current=0 WHERE id=1;")
     if case == 'new_closed': _mysql(f"UPDATE `{db}`.academic_years SET status='closed' WHERE id=2;")
-    if case == 'two_active': _mysql(f"INSERT INTO `{db}`.academic_years VALUES(3,1,'active');")
+    if case == 'two_active': _mysql(f"INSERT INTO `{db}`.academic_years (id,is_current,status) VALUES(3,1,'active');")
     if case == 'current_mismatch': _mysql(f"UPDATE `{db}`.academic_years SET is_current=0 WHERE id=1;")
     before = _mysql(f"SELECT id,is_current,status FROM `{db}`.academic_years ORDER BY id; SELECT academic_year_id,status FROM `{db}`.class_enrollments ORDER BY academic_year_id;")
     run = subprocess.run(['php', str(project / 'admin/tools/year_rollover.php')], env=env, text=True, capture_output=True, timeout=20, check=True)

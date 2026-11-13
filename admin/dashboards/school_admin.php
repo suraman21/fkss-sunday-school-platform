@@ -553,7 +553,7 @@ renderProfileTabSection('section-profile', 'cs');
 <div><label class="flbl">New year to OPEN <span style="color:var(--dim);font-weight:400">(becomes the Active year)</span></label><select id="roNew" class="inp" style="width:100%"></select></div>
 <div><label class="flbl">How should students move?</label>
 <label style="display:flex;gap:.45rem;align-items:flex-start;font-size:.76rem;margin:.25rem 0;cursor:pointer"><input type="radio" name="roMode" value="carry_forward" checked style="margin-top:.15rem"><span><b>Carry forward</b> (recommended) — everyone stays in the same class, in the new year. Promote individuals later.</span></label>
-<label style="display:flex;gap:.45rem;align-items:flex-start;font-size:.76rem;cursor:pointer"><input type="radio" name="roMode" value="promote" style="margin-top:.15rem"><span><b>Promote one level</b> — everyone moves up one class level; the top class is marked graduated. Use only if each level has exactly one class.</span></label>
+<label style="display:flex;gap:.45rem;align-items:flex-start;font-size:.76rem;cursor:pointer"><input type="radio" name="roMode" value="promote" style="margin-top:.15rem"><span><b>Promote one level</b> — students move up one level; the top class graduates. If the next level has multiple classes, those students are skipped and need manual placement in the new year.</span></label>
 </div>
 <div id="roPreview" style="font-size:.75rem;color:var(--dim);background:rgba(148,163,184,.08);border-radius:6px;padding:.45rem .6rem">Loading…</div>
 <div style="font-size:.74rem;color:var(--dim)"><i class="fa-solid fa-shield-halved"></i> After you press Run, a 3-step confirmation explains what will happen and asks you to type <code>ROLLOVER</code>.</div>
@@ -1358,22 +1358,29 @@ async function setCurrentYear(id){
     if(!dc)return;
     const fd=new FormData();fd.append('action','set_current_year');fd.append('year_id',id);fd.append('confirm',phrase);fd.append('csrf_token',CSRF);
     try{
-        const r=await fetch('/admin/api_education.php',{method:'POST',body:fd,credentials:'same-origin'});const d=await r.json();
-        if(d.code==='confirm_activate_empty' || d.code==='confirm_activate_invalid'){
+        const r=await fetch('/admin/api_education.php',{method:'POST',body:fd,credentials:'same-origin'});let d=await r.json();
+        // A changed target returns a fresh challenge. Display every current issue
+        // and require a new explicit acknowledgement; cancellation never writes.
+        while(d.code==='confirm_activate_empty' || d.code==='confirm_activate_invalid'){
             const isEmpty = d.code==='confirm_activate_empty';
             const phrase = isEmpty ? 'ACTIVATE EMPTY' : 'ACTIVATE ANYWAY';
-            const dc2=await dcAsk({tier:'high',title:(isEmpty ? 'Activate EMPTY year "'+nm+'"?' : 'Activate year "'+nm+'" with warnings?'),object:nm,summary:d.message||'',intent:(isEmpty ? 'I want to activate an empty year anyway' : 'I want to activate despite warnings'),consequences:(isEmpty ? ['The new active year will be EMPTY — mobile teachers will see no classes and no students.','Attendance preparation will fail until you enrol students.','Use Year Rollover instead to copy students safely.'] : ['Some dates/semesters/weights are missing or wrong — mobile preparation may fail.','Attendance calendar may have no class days, reports may misplace.','You can fix the year after activating but teachers will be affected.']),keeps:(isEmpty ? ['No records are deleted.','You can still run Year Rollover afterward.'] : ['No records are deleted.','Fix the dates/semesters soon after.']),phrase:phrase,confirmLabel:(isEmpty ? 'Activate empty year anyway' : 'Activate anyway')});
+            const issues=Array.isArray(d.details)?d.details.filter(x=>typeof x==='string'):[];
+            if(typeof d.issues_fingerprint!=='string' || !issues.length){toast('Cannot verify year readiness. Refresh and try again.','e');return;}
+            const dc2=await dcAsk({tier:'high',title:(isEmpty ? 'Activate EMPTY year "'+nm+'"?' : 'Activate year "'+nm+'" with warnings?'),object:nm,
+                summary:d.message||'Review every issue before activating.',
+                intent:(isEmpty ? 'I want to activate an empty year anyway' : 'I want to activate despite all listed issues'),
+                consequences:issues,keeps:['No records are deleted.','You can fix the year settings after activation.'],
+                phrase:phrase,confirmLabel:(isEmpty ? 'Activate empty year anyway' : 'Activate anyway')});
             if(!dc2)return;
-            const fd2=new FormData();fd2.append('action','set_current_year');fd2.append('year_id',id);fd2.append('confirm',phrase);fd2.append('csrf_token',CSRF);
-            const r2=await fetch('/admin/api_education.php',{method:'POST',body:fd2,credentials:'same-origin'});const d2=await r2.json();
-            (d2.warnings||[]).forEach(w=>toast(w,'e'));
-            toast(d2.message||(d2.status==='success'?'Active year changed':'Failed'),d2.status==='success'?'s':'e');
-            if(d2.status==='success'){loadYears(); if(window._ayToastUpdate) window._ayToastUpdate();}
-            return;
+            const fd2=new FormData();fd2.append('action','set_current_year');fd2.append('year_id',id);fd2.append('confirm',phrase);
+            fd2.append('issues_fingerprint',d.issues_fingerprint);fd2.append('csrf_token',CSRF);
+            const r2=await fetch('/admin/api_education.php',{method:'POST',body:fd2,credentials:'same-origin'});d=await r2.json();
         }
+        (d.warnings||[]).forEach(w=>toast(w,'e'));
         toast(d.message||(d.status==='success'?'Active year changed':'Failed'),d.status==='success'?'s':'e');
         if(d.status==='success'){loadYears(); if(window._ayToastUpdate) window._ayToastUpdate();}
-    }catch(e){toast('Error','e');}
+    }catch(e){toast('The year switch outcome is unknown. Refresh and check the active year before retrying.','e');}
+
 }
 async function deleteYear(id){
     const y=window._yearData?.[id];const nm=y?y.year_name:'';
@@ -1422,20 +1429,35 @@ async function runRollover(){
     const sel=id=>{const e=document.getElementById(id);return e&&e.selectedIndex>=0?e.options[e.selectedIndex].text.replace(/\s*·\s*(Active|Upcoming|Closed|Current)\s*$/i,''):'';};
     const oldN=sel('roOld'), newN=sel('roNew'), promote=(mode==='promote');
     const dc=await dcAsk({tier:'high',title:'Run Year Rollover from '+oldN+' to '+newN+'?',object:oldN+'  →  '+newN,
-        summary:'Closes the current year and carries every student into the new year in one all-or-nothing step.',intent:'I want to run the year rollover',
+        summary:promote?'Closes the current year and promotes eligible students; some may need manual placement.':'Closes the current year and carries active students into the new year.',intent:'I want to run the year rollover',
         consequences:[oldN+' is CLOSED and becomes read-only history.',newN+' becomes the ACTIVE year for everyone (web and mobile app).',
-            promote?'Every active student is PROMOTED one class level in '+newN+'.':'Every active student keeps the same class in '+newN+'.',
+            promote?'Students with one next-level class are promoted; top-level students graduate. Students with multiple next-level classes are skipped and need manual placement in '+newN+'.':'Eligible active students keep the same class in '+newN+'.',
             'All current enrolments of '+oldN+' are closed.'],
-        keeps:['Grades and attendance of '+oldN+' stay in history.','If any step fails, nothing is changed.'],
+        keeps:['Grades and attendance of '+oldN+' stay in history.','If a failure happens before commit, changes are rolled back. If the outcome cannot be confirmed, do not retry until it is checked.'],
         phrase:'ROLLOVER',confirmLabel:'Run Year Rollover'});
     if(!dc)return;
     const btn=document.getElementById('roRunBtn');btn.disabled=true;btn.style.opacity=.6;
     const fd=new FormData();fd.append('action','run');fd.append('old_year_id',oldId);fd.append('new_year_id',newId);fd.append('mode',mode);fd.append('confirm','ROLLOVER');fd.append('csrf_token',CSRF);
     try{
-        const r=await fetch('/admin/tools/year_rollover.php',{method:'POST',body:fd,credentials:'same-origin'});const d=await r.json();
+        let r=await fetch('/admin/tools/year_rollover.php',{method:'POST',body:fd,credentials:'same-origin'});let d=await r.json();
+        if(d.code==='confirm_rollover_invalid'){
+            if(!Array.isArray(d.details)||!d.details.length||typeof d.issues_fingerprint!=='string'||!/^\w{64}$/.test(d.issues_fingerprint)){
+                toast('Year validation could not be confirmed. Check year settings before retrying.','e');return;
+            }
+            const force=await dcAsk({tier:'high',title:'Activate '+newN+' with year issues?',object:newN,
+                summary:'Fix these issues first when possible. They can affect attendance and grades.',intent:'I want to review these year issues',
+                consequences:d.details,keeps:['Cancel leaves the rollover unchanged.','If settings change, the server will ask for review again.'],
+                phrase:'ACTIVATE ANYWAY',confirmLabel:'Activate Anyway'});
+            if(!force)return;
+            fd.set('confirm_issues','ACTIVATE ANYWAY');fd.set('issues_fingerprint',d.issues_fingerprint);
+            r=await fetch('/admin/tools/year_rollover.php',{method:'POST',body:fd,credentials:'same-origin'});d=await r.json();
+            if(d.code==='confirm_rollover_invalid'){
+                toast('Target year settings changed. Review the year and run rollover again.','e');return;
+            }
+        }
         toast(d.message||(d.status==='success'?'Rollover complete':'Failed'),d.status==='success'?'s':'e');
         if(d.status==='success'){document.getElementById('rolloverModal').classList.remove('show');loadYears();}
-    }catch(e){toast('Network error','e');}
+    }catch(e){toast('Connection lost. The rollover outcome may be unknown. Do not retry until an administrator checks the years and enrollments.','e');}
     finally{btn.disabled=false;btn.style.opacity=1;}
 }
 async function openCopyAssessmentsModal(){
@@ -1469,7 +1491,7 @@ async function runCopyAssessments(){
         const r=await fetch('/admin/api_education.php',{method:'POST',body:fd,credentials:'same-origin'});const d=await r.json();
         toast(d.message||(d.status==='success'?'Copy complete':'Failed'),d.status==='success'?'s':'e');
         if(d.status==='success'){document.getElementById('copyAssessmentsModal').classList.remove('show');}
-    }catch(e){toast('Network error','e');}
+    }catch(e){toast('Connection lost. The copy outcome may be unknown. Do not retry until an administrator checks the target assessments.','e');}
     finally{btn.disabled=false;btn.style.opacity=1;}
 }
 async function viewTerms(yearId){

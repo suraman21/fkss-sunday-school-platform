@@ -111,6 +111,11 @@ switch ($role) {
         require __DIR__ . '/dashboards/content_editor.php';
         break;
 
+    case 'registrar':
+    case 'account_activator':
+        require __DIR__ . '/acm_overview.php';
+        break;
+
     default:
         // Show beautiful error page for unknown roles
         showDashboardNotReady($role, $fullName, $username);

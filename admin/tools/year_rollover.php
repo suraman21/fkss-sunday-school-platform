@@ -27,10 +27,17 @@
 
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../backend/ethiopian_date.php';
+require_once __DIR__ . '/../backend/services/AttendancePreparationReadBoundary.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
 function _rollover_out($arr) { echo json_encode($arr); exit; }
+
+final class RolloverReadinessConfirmation extends DomainException {
+    public function __construct(public array $details, public string $fingerprint) {
+        parent::__construct('The target year has issues that affect attendance or grades. Review them and fix them, or explicitly confirm activation anyway.');
+    }
+}
 
 /** INSERT IGNORE may suppress errors as well as duplicates; accept duplicates only. */
 function _rollover_check_ignore_warnings(mysqli $conn, string $context): void {
@@ -142,8 +149,22 @@ if ($action === 'run' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $transactionStarted = false;
     $commitAttempted = false;
     try {
+        // Next-transaction only: lock the target semester range (including an
+        // empty range) against inserts until the decision commits or rolls back.
+        if ($conn->query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ') !== true) throw new RuntimeException('Could not establish rollover isolation.');
         if (!$conn->begin_transaction()) throw new RuntimeException('Could not start rollover transaction.');
         $transactionStarted = true;
+        // The atomicity promise is valid only when every participating table is
+        // transactional. Hold metadata locks until commit; fail before any writes.
+        try {
+            // Migration 048's teacher-assignment trigger also updates users.
+            $tables = ['academic_terms', 'academic_years', 'class_enrollments', 'members', 'teacher_assignments', 'users'];
+            if ($mode === 'promote') $tables[] = 'classes';
+            sort($tables, SORT_STRING);
+            foreach ($tables as $table) \App\Services\AttendancePreparationReadBoundary::requireTransactionalTable($conn, $table);
+        } catch (Throwable $storageError) {
+            throw new DomainException('Rollover requires real InnoDB tables and readable storage metadata. Ask an administrator to check the database before retrying.', 0, $storageError);
+        }
         // Lock and validate the lifecycle before changing any years or enrolments.
         // A missing target must not close every existing year, and a stale form
         // must not roll over a year that is no longer the active one.
@@ -160,6 +181,30 @@ if ($action === 'run' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             || $oldYear['status'] !== 'active' || (int)$oldYear['is_current'] !== 1
             || $newYear['status'] !== 'upcoming' || (int)$newYear['is_current'] !== 0) {
             throw new DomainException('Choose the current active year and an upcoming year. Refresh the page and check the year settings.');
+        }
+        // Validate locked current data, not a stale preview. Every warning
+        // acknowledgement is bound to the exact target, mode, date and rows.
+        if (!function_exists('ay_validate_target_year_data')) throw new RuntimeException('Year validation is unavailable.');
+        $yearDetails = $conn->prepare('SELECT * FROM academic_years WHERE id=? FOR UPDATE');
+        if (!$yearDetails || !$yearDetails->bind_param('i', $newYearId) || !$yearDetails->execute()) throw new RuntimeException('Year details unavailable.');
+        $yearResult = $yearDetails->get_result();
+        if (!$yearResult || !($targetDetails = $yearResult->fetch_assoc())) throw new RuntimeException('Year details unavailable.');
+        $yearResult->free(); $yearDetails->close();
+        $termStmt = $conn->prepare('SELECT * FROM academic_terms WHERE academic_year_id=? ORDER BY id FOR UPDATE');
+        if (!$termStmt || !$termStmt->bind_param('i', $newYearId) || !$termStmt->execute()) throw new RuntimeException('Semester validation unavailable.');
+        $termResult = $termStmt->get_result();
+        if (!$termResult) throw new RuntimeException('Semester validation unavailable.');
+        $terms = $termResult->fetch_all(MYSQLI_ASSOC);
+        $termResult->free(); $termStmt->close();
+        $validation = ay_validate_target_year_data($targetDetails, count($terms));
+        $issues = array_merge($validation['errors'], $validation['warnings']);
+        if ($issues) {
+            $fingerprint = hash('sha256', json_encode([$oldYearId, $newYearId, $mode, date('Y-m-d'), $targetDetails, $terms, $issues], JSON_THROW_ON_ERROR));
+            $ack = (string)($_POST['issues_fingerprint'] ?? '');
+            $phrase = strtoupper(trim((string)($_POST['confirm_issues'] ?? '')));
+            if ($phrase !== 'ACTIVATE ANYWAY' || !hash_equals($fingerprint, $ack)) {
+                throw new RolloverReadinessConfirmation($issues, $fingerprint);
+            }
         }
         // 1. Make the new year current AND lifecycle-correct (status + is_current
         //    together). Any currently active year is CLOSED; the chosen new year
@@ -194,10 +239,10 @@ if ($action === 'run' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $carried = $st->affected_rows;
             _rollover_check_ignore_warnings($conn, 'Enrollment copy');
             $st->close();
-            $check = $conn->prepare("SELECT COUNT(*) AS missing FROM class_enrollments src JOIN members m ON m.id=src.member_id WHERE src.academic_year_id=? AND src.status='active' AND m.status <> 'archived' AND NOT EXISTS (SELECT 1 FROM class_enrollments dest WHERE dest.member_id=src.member_id AND dest.class_id=src.class_id AND dest.academic_year_id=?)");
+            $check = $conn->prepare("SELECT COUNT(*) AS missing FROM class_enrollments src JOIN members m ON m.id=src.member_id WHERE src.academic_year_id=? AND src.status='active' AND m.status <> 'archived' AND NOT EXISTS (SELECT 1 FROM class_enrollments dest WHERE dest.member_id=src.member_id AND dest.class_id=src.class_id AND dest.academic_year_id=? AND dest.status='active')");
             if (!$check || !$check->bind_param('ii', $oldYearId, $newYearId) || !$check->execute()) throw new RuntimeException('Enrollment verification failed.');
             $checked = $check->get_result();
-            if (!$checked || !($checkRow = $checked->fetch_assoc()) || (int)$checkRow['missing'] !== 0) throw new RuntimeException('Enrollments are missing after copy.');
+            if (!$checked || !($checkRow = $checked->fetch_assoc()) || (int)$checkRow['missing'] !== 0) throw new DomainException('Some destination enrollments are inactive or missing. Review the target year enrollments before retrying.');
             $checked->free(); $check->close();
 
         } else {
@@ -246,10 +291,10 @@ if ($action === 'run' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     $inserted = $insEnr->affected_rows;
                     _rollover_check_ignore_warnings($conn, 'Promotion enrollment');
                     if ($inserted === 0) {
-                        $check = $conn->prepare("SELECT 1 FROM class_enrollments WHERE member_id=? AND class_id=? AND academic_year_id=? LIMIT 1");
+                        $check = $conn->prepare("SELECT 1 FROM class_enrollments WHERE member_id=? AND class_id=? AND academic_year_id=? AND status='active' LIMIT 1");
                         if (!$check || !$check->bind_param('iii', $memberId, $toClass, $newYearId) || !$check->execute()) throw new RuntimeException('Promotion enrollment verification failed.');
                         $checked = $check->get_result();
-                        if (!$checked || !$checked->fetch_assoc()) throw new RuntimeException('Promotion enrollment is missing.');
+                        if (!$checked || !$checked->fetch_assoc()) throw new DomainException('A destination enrollment is inactive or missing. Review the target year enrollments before retrying.');
                         $checked->free(); $check->close();
                     }
                     $updMember->bind_param("ii", $toClass, $memberId);
@@ -291,14 +336,14 @@ if ($action === 'run' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $taStmt->close();
         }
         // A duplicate on an unexpected unique index must not silently omit an
-        // assignment. Existing inactive target rows still count, matching the
-        // previous unique-key/INSERT IGNORE behavior without changing them.
+        // assignment. Inactive target rows cannot grant the access being copied;
+        // do not silently reactivate them or close the old year.
         $taCheck = $conn->prepare(
             "SELECT COUNT(*) AS missing FROM teacher_assignments src
              WHERE src.academic_year_id = ? AND src.is_active = 1
                AND NOT EXISTS (
                    SELECT 1 FROM teacher_assignments dest
-                   WHERE dest.academic_year_id = ? AND dest.teacher_id = src.teacher_id
+                   WHERE dest.academic_year_id = ? AND dest.is_active = 1 AND dest.teacher_id = src.teacher_id
                      AND dest.class_id = src.class_id
                      AND IFNULL(dest.subject_id, 0) = IFNULL(src.subject_id, 0)
                )"
@@ -313,7 +358,7 @@ if ($action === 'run' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $row = $result->fetch_assoc();
             $result->free();
             if (!$row || (int)$row['missing'] !== 0) {
-                throw new RuntimeException('Teacher assignments are missing after copy.');
+                throw new DomainException('Some destination teacher assignments are inactive or missing. Review the target year assignments before retrying.');
             }
         } finally {
             $taCheck->close();
@@ -375,7 +420,14 @@ if ($action === 'run' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $message = 'The rollover failed and NOTHING was changed. The error was logged.';
         }
-        _rollover_out(['status' => 'error', 'message' => $message]);
+        $response = ['status' => 'error', 'message' => $message];
+        if (!$commitAttempted && $rolledBack && $e instanceof RolloverReadinessConfirmation) {
+            $response['code'] = 'confirm_rollover_invalid';
+            $response['needs_confirmation'] = true;
+            $response['details'] = $e->details;
+            $response['issues_fingerprint'] = $e->fingerprint;
+        }
+        _rollover_out($response);
     }
 }
 

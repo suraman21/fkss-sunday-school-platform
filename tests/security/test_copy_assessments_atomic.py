@@ -14,9 +14,7 @@ from test_year_rollover_atomic import ROOT, _mysql, fixture_db
 def assessment_world(fixture_db):
     db, project = fixture_db
     _mysql(f"""USE `{db}`;
-        CREATE TABLE academic_terms (id INT PRIMARY KEY, academic_year_id INT NOT NULL, term_number INT NOT NULL) ENGINE=InnoDB;
         CREATE TABLE assessments (id INT AUTO_INCREMENT PRIMARY KEY, class_id INT NOT NULL, subject_id INT NOT NULL, academic_year_id INT NOT NULL, term_id INT NULL, assessment_name VARCHAR(100), assessment_type VARCHAR(30), weight_percentage DECIMAL(5,2), max_score DECIMAL(6,2), description TEXT, assessment_order INT, created_by INT, created_at DATETIME) ENGINE=InnoDB;
-        INSERT INTO academic_terms VALUES (11,1,1),(21,2,1);
         INSERT INTO assessments (class_id,subject_id,academic_year_id,term_id,assessment_name,assessment_type,weight_percentage,max_score,description,assessment_order,created_by,created_at)
             VALUES (10,3,1,11,'Exam','exam',20.25,79.50,'Synthetic description',1,1,NOW()),(10,3,1,NULL,'Legacy','quiz',10,50,NULL,2,1,NOW());
     """)

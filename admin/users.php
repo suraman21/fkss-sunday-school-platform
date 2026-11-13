@@ -520,6 +520,8 @@ $currentStatus = (int) field_value('is_active', $editUser, $oldForm, 1);
                                 'teacher'       => 'Teacher',
                                 'attendance_taker' => 'Attendance Taker',
                                 'content_editor' => 'Content Editor (Website)',
+                                'registrar' => 'Registrar (ACM)',
+                                'account_activator' => 'Account Activator (ACM)',
                             ];
                             foreach ($roles as $value => $label) {
                                 $selected = $currentRole === $value ? 'selected' : '';

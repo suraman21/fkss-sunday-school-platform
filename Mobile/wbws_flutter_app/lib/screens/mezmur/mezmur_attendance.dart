@@ -37,15 +37,33 @@ class MezmurAttendanceScreen extends StatefulWidget {
   final String? initialDate;
   final String? initialSection;
   const MezmurAttendanceScreen(
-      {super.key, this.initialDate, this.initialSection});
+      {super.key, this.initialDate, this.initialSection})
+      : _apiOverride = null,
+        _dbOverride = null,
+        _syncOverride = null;
+
+  @visibleForTesting
+  const MezmurAttendanceScreen.withCollaborators(
+      {super.key,
+      this.initialDate,
+      this.initialSection,
+      required ApiService api,
+      required LocalDb db,
+      required SyncService sync})
+      : _apiOverride = api,
+        _dbOverride = db,
+        _syncOverride = sync;
+  final ApiService? _apiOverride;
+  final LocalDb? _dbOverride;
+  final SyncService? _syncOverride;
   @override
   State<MezmurAttendanceScreen> createState() => MezmurAttendanceScreenState();
 }
 
 class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
-  final _api = ApiService();
-  final _db = LocalDb();
-  final _sync = SyncService();
+  late final _api = widget._apiOverride ?? ApiService();
+  late final _db = widget._dbOverride ?? LocalDb();
+  late final _sync = widget._syncOverride ?? SyncService();
 
   String _selectedDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
 
@@ -60,7 +78,12 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
   bool _loading = true;
 
   bool _submitting = false;
-  LegacyOperationRef? _submittedUndoRef;
+  bool _switching = false;
+  int _loadEpoch = 0;
+  int _editRevision = 0;
+  int _durableRevision = 0;
+  int _submissionRevision = 0;
+  final _sectionFieldKey = GlobalKey<FormFieldState<String>>();
   bool _rosterReady = false;
   bool _loadFailed = false;
   bool _isOffline = false;
@@ -75,6 +98,7 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
   final Debounce _autoSave = Debounce();
   DateTime _lastSyncPush = DateTime.fromMillisecondsSinceEpoch(0);
   StreamSubscription<bool>? _netSub;
+  StreamSubscription<SyncStatus>? _syncSub;
 
   static const Set<String> _validStatuses = {
     'present',
@@ -128,7 +152,7 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
     });
     _loadSections();
     _updatePendingCount();
-    _sync.syncStream.listen((status) {
+    _syncSub = _sync.syncStream.listen((status) {
       if (mounted) {
         setState(() {
           _pendingCount = status.totalPending;
@@ -140,7 +164,12 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
 
   @override
   void dispose() {
+    if (_durableRevision < _editRevision && !_locked) {
+      unawaited(_autoSaveNow());
+    }
+    _loadEpoch++;
     _netSub?.cancel();
+    _syncSub?.cancel();
     _autoSave.dispose();
     _dirty.dispose();
     super.dispose();
@@ -190,7 +219,8 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
       } else if (_sections.isEmpty) {
         setState(() {
           _loadingSections = false;
-          _error = 'No sections found. Assign sections to members on the website.';
+          _error =
+              'No sections found. Assign sections to members on the website.';
         });
         return;
       }
@@ -203,10 +233,10 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
     }
     if (_selectedSection == null && _sections.isNotEmpty) {
       final wanted = widget.initialSection;
-      final match = wanted != null &&
-              _sections.any((s) => '${s['section']}' == wanted)
-          ? wanted
-          : '${_sections.first['section']}';
+      final match =
+          wanted != null && _sections.any((s) => '${s['section']}' == wanted)
+              ? wanted
+              : '${_sections.first['section']}';
       setState(() => _selectedSection = match);
       _loadSheet();
     }
@@ -214,8 +244,35 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
 
   // ── sheet load (cache → pending → network, teacher order) ────
   Future<void> _loadSheet() async {
+    if (_submitting || _switching) return;
+    final before = _loadEpoch;
+    if (!await _flushPendingEdits() || !mounted || before != _loadEpoch) {
+      // A refused save must not leave the skeleton up: the roster the taker
+      // can already see stays the truth, and the banner says why the sheet
+      // did not move.
+      if (mounted && before == _loadEpoch && _loading) {
+        setState(() {
+          _loading = false;
+          _rosterReady = _members.isNotEmpty;
+        });
+      }
+      return;
+    }
     final section = _selectedSection;
     if (section == null || section.isEmpty) return;
+    final date = _selectedDate;
+    final epoch = ++_loadEpoch;
+    final owner = _api.userId;
+    final authorizationVersion = _api.authorizationVersion;
+    final generation = _api.sessionGenerationProvider?.call() ?? 0;
+    bool current() =>
+        mounted &&
+        epoch == _loadEpoch &&
+        section == _selectedSection &&
+        date == _selectedDate &&
+        owner == _api.userId &&
+        authorizationVersion == _api.authorizationVersion &&
+        generation == (_api.sessionGenerationProvider?.call() ?? 0);
     final keepSheet = _members.isNotEmpty;
     setState(() {
       _error = null;
@@ -226,23 +283,22 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
       }
     });
 
-    // 1. Cached sheet (offline parity)
-    final cached = await _db.getCachedMezmurSheet(_selectedDate, section);
-    final cacheLocked = PacketLock.isLocked(
-      '${cached?['submission_status'] ?? ''}',
-      flagged: cached?['locked'] == true,
-    );
-    if (cacheLocked && mounted) {
-      setState(() {
-        _packetStatus = '${cached?['submission_status']}';
-      });
-      // Keep local operations: a cached lock is not their acceptance receipt.
+    final cached = await _db.getCachedMezmurSheet(date, section);
+    if (!current()) return;
+    final cachePacket = '${cached?['submission_status'] ?? ''}';
+    final cacheLocked =
+        PacketLock.isLocked(cachePacket, flagged: cached?['locked'] == true);
+    if (cacheLocked) {
+      setState(() =>
+          _packetStatus = cachePacket.isEmpty ? 'submitted' : cachePacket);
     }
-
-    // 2. Local pending packet overrides (draft marks on this phone)
-    final pending = cacheLocked
-        ? <Map<String, dynamic>>[]
-        : await _db.getPendingMezmurRecords(_selectedDate, section);
+    // A local queued submission must stay locked even if a stale server
+    // response still says draft. Never discard an operation because of a lock.
+    final pending = await _db.getPendingMezmurRecords(date, section);
+    if (!current()) return;
+    final pendingSubmission = pending.any((p) =>
+        p['packet_kind'] == 'submitted' &&
+        const {'pending', 'retry_wait', 'in_flight'}.contains(p['sync_state']));
     final pendingMap = <int, String>{};
     final pendingNotes = <int, String>{};
     for (final p in pending) {
@@ -254,37 +310,68 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
       if (st.isNotEmpty) pendingMap[mid] = st;
       pendingNotes[mid] = '${p['notes'] ?? ''}';
     }
-    if (pending.isNotEmpty) {
-      final first = pending.first;
-      final kind = '${first['packet_kind'] ?? 'draft'}';
-      if (mounted) setState(() => _packetStatus = kind);
+    if (pendingSubmission) {
+      setState(() => _packetStatus = 'submitted');
+    } else if (!cacheLocked && pending.isNotEmpty) {
+      setState(
+          () => _packetStatus = '${pending.first['packet_kind'] ?? 'draft'}');
     }
-
     if (cached != null && _members.isEmpty) {
-      _applySheet(cached, pendingMap, pendingNotes, cacheLocked);
+      _applySheet(
+          cached, pendingMap, pendingNotes, cacheLocked && !pendingSubmission);
     }
-
-    // 3. Fresh fetch
-    final res = await _api.getMezmurSheet(_selectedDate, section: section);
-    if (!mounted) return;
+    final requestEditRevision = _editRevision;
+    final requestSubmissionRevision = _submissionRevision;
+    final res = await _api.getMezmurSheet(date, section: section);
+    if (!current()) return;
     if (res.success && res.data != null) {
       final data = res.data!;
       final packet = '${data['submission_status'] ?? ''}';
-      final locked =
+      final serverLocked =
           PacketLock.isLocked(packet, flagged: data['locked'] == true);
-      // A server sheet lock also does not acknowledge this phone's exact intent.
-      _applySheet(
-          data,
-          locked ? {} : pendingMap,
-          locked ? {} : pendingNotes,
-          locked);
-      await _db.cacheMezmurSheet(_selectedDate, section, data);
+      if (!serverLocked &&
+          (pendingSubmission ||
+              _submitting ||
+              (_submissionRevision != requestSubmissionRevision &&
+                  PacketLock.isLocked(_packetStatus)))) {
+        // The older server response cannot reopen a local submission. If no
+        // cached roster was available, show the pending marks read-only.
+        if (_members.isEmpty && pendingSubmission) {
+          _applySheet(data, pendingMap, pendingNotes, false);
+          setState(() => _packetStatus = 'submitted');
+        }
+        setState(() {
+          _loading = false;
+          _rosterReady = true;
+        });
+        return;
+      }
+      final live = _editRevision == requestEditRevision
+          ? <int, Map<String, dynamic>>{}
+          : {for (final row in _members) row['member_id'] as int: row};
+      final mergedMarks = {
+        ...pendingMap,
+        for (final e in live.entries) e.key: '${e.value['status'] ?? ''}'
+      };
+      final mergedNotes = {
+        ...pendingNotes,
+        for (final e in live.entries) e.key: '${e.value['notes'] ?? ''}'
+      };
+      _applySheet(data, serverLocked ? {} : mergedMarks,
+          serverLocked ? {} : mergedNotes, serverLocked,
+          preserveDirty: live.isNotEmpty);
+      await _db.cacheMezmurSheet(date, section, data);
+      if (!current()) return;
+      // An awaited cache write must not reopen a submission made meanwhile.
+      if (_submitting || _submissionRevision != requestSubmissionRevision) {
+        return;
+      }
       setState(() {
         _loading = false;
         _rosterReady = true;
         _loadFailed = false;
         _isOffline = !ConnectivityService().hasLink;
-        _packetStatus = locked && packet.isEmpty ? 'submitted' : packet;
+        _packetStatus = serverLocked && packet.isEmpty ? 'submitted' : packet;
         _returnNote = _mezmurReturnNote(data);
       });
     } else if (_members.isEmpty) {
@@ -320,7 +407,8 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
   }
 
   void _applySheet(Map<String, dynamic> data, Map<int, String> pendingMap,
-      Map<int, String> pendingNotes, bool locked) {
+      Map<int, String> pendingNotes, bool locked,
+      {bool preserveDirty = false}) {
     final raw = data['members'];
     if (raw is! List) return;
     final members = <Map<String, dynamic>>[];
@@ -335,7 +423,8 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
       // 'status' — accept both so cached marks survive a reopen.
       row['status'] = locked
           ? _orAbsent(_statusOf(row['mark'] ?? row['status']))
-          : _orAbsent(_firstStatus([pendingMap[mid], row['mark'], row['status']]));
+          : _orAbsent(
+              _firstStatus([pendingMap[mid], row['mark'], row['status']]));
       row['notes'] = locked
           ? '${row['notes'] ?? ''}'
           : (pendingNotes[mid] ?? '${row['notes'] ?? ''}');
@@ -350,7 +439,7 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
       }
     }
     _members = members;
-    _dirty.value = false;
+    if (!preserveDirty) _dirty.value = false;
     if (mounted) setState(() {});
   }
 
@@ -376,7 +465,7 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
     await _db.cacheMezmurSheet(_selectedDate, section, {
       'date': _selectedDate,
       'section': section,
-      'members': _members,
+      'members': _members.map((m) => Map<String, dynamic>.from(m)).toList(),
       'submission_status': _packetStatus.isEmpty ? null : _packetStatus,
       'locked': false,
     });
@@ -384,6 +473,7 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
 
   // ── Phase 8: instant autosave + QR scan ──────────────────────
   void _scheduleAutoSave() {
+    _editRevision++;
     _autoSave.run(const Duration(milliseconds: 700), _autoSaveNow);
   }
 
@@ -391,23 +481,59 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
   /// With default-absent the sheet is complete by construction —
   /// every member carries an explicit status. Dead battery after
   /// this point loses nothing; the outbox delivers when able.
-  Future<void> _autoSaveNow() async {
+  Future<bool> _autoSaveNow() async {
     final section = _selectedSection;
-    if (section == null || _members.isEmpty || _locked) return;
+    if (section == null || _members.isEmpty || _locked) return false;
+    final date = _selectedDate;
+    final epoch = _loadEpoch;
+    final revision = _editRevision;
+    final submissionRevision = _submissionRevision;
     final records = _records();
     try {
-      await _db.saveMezmurLocal(_selectedDate, section, records,
-          packetKind: 'draft');
+      await _db.saveMezmurLocal(date, section, records, packetKind: 'draft');
     } catch (_) {
-      return;
+      return false;
     }
-    if (!mounted) return;
+    if (!mounted ||
+        epoch != _loadEpoch ||
+        _submitting ||
+        submissionRevision != _submissionRevision) {
+      return false;
+    }
+    if (revision > _durableRevision) _durableRevision = revision;
     _dirty.value = true;
     final now = DateTime.now();
     if (now.difference(_lastSyncPush) > const Duration(seconds: 10)) {
       _lastSyncPush = now;
       unawaited(_sync.syncAll(force: false));
     }
+    return true;
+  }
+
+  /// Leaves the open sheet before the taker moves to another section or date.
+  ///
+  /// A locked sheet (submitted, approved, rejected) cannot be written any
+  /// more, so there is nothing to flush: refusing to leave dead-ended the
+  /// section selector, which is what stopped a teacher from taking the other
+  /// sections of the same day. The marks stay on screen and were already
+  /// mirrored into the local packet store when they were made.
+  Future<bool> _flushPendingEdits() async {
+    _autoSave.cancel();
+    if (_locked) {
+      _durableRevision = _editRevision;
+      _dirty.value = false;
+      return true;
+    }
+    while (_durableRevision < _editRevision) {
+      if (!await _autoSaveNow()) {
+        if (mounted) {
+          setState(() => _error =
+              'Phone storage refused the save. Your changes are still on screen; resolve this before switching.');
+        }
+        return false;
+      }
+    }
+    return true;
   }
 
   void _openQrScan() {
@@ -425,8 +551,7 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
     if (_selectedSection == null || _members.isEmpty) {
       return QrFeedback.notFound();
     }
-    final idx =
-        _members.indexWhere((m) => '${m['member_code'] ?? ''}' == code);
+    final idx = _members.indexWhere((m) => '${m['member_code'] ?? ''}' == code);
     if (idx < 0) {
       final known = await _db.findCachedMemberByCode(code);
       if (known == null) return QrFeedback.notFound();
@@ -448,29 +573,46 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
     // The scan is physical presence — it wins.
     setState(() => m['status'] = 'present');
     _dirty.value = true;
-    await _autoSaveNow();
+    final epoch = _loadEpoch;
+    final revision = ++_editRevision;
+    if (!await _autoSaveNow()) {
+      if (mounted && epoch == _loadEpoch && revision == _editRevision) {
+        setState(() => m['status'] = existing);
+        _editRevision--;
+      }
+      return QrFeedback.storageError();
+    }
     return QrFeedback.ok(name: '${m['student_name'] ?? ''}');
   }
 
   // ── Telegram-send model: SQLite write IS the save ─────────────
   Future<void> _save() async {
     final section = _selectedSection;
-    if (section == null || _members.isEmpty || _locked) return;
+    if (section == null || _members.isEmpty || _locked || _switching) return;
     _autoSave.cancel();
+    final epoch = _loadEpoch;
+    final revision = _editRevision;
+    final submissionRevision = _submissionRevision;
     try {
       await _db.saveMezmurLocal(_selectedDate, section, _records(),
           packetKind: 'draft');
     } catch (_) {
-      if (mounted) {
-        setState(() =>
-            _error = 'Phone storage refused the save. Free up space and try again.');
+      if (mounted && epoch == _loadEpoch) {
+        setState(() => _error =
+            'Phone storage refused the save. Free up space and try again.');
       }
       return;
     }
-    if (!mounted) return;
+    if (!mounted ||
+        epoch != _loadEpoch ||
+        _submitting ||
+        submissionRevision != _submissionRevision) {
+      return;
+    }
+    if (revision > _durableRevision) _durableRevision = revision;
     HapticFeedback.selectionClick();
     showQuickConfirm(context, 'Saved');
-    _dirty.value = false;
+    _dirty.value = revision != _editRevision;
     setState(() {
       _packetStatus = 'draft';
       _error = null;
@@ -481,11 +623,13 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
 
   Future<void> _submit() async {
     final section = _selectedSection;
-    if (section == null || _members.isEmpty || _locked) return;
+    if (section == null || _members.isEmpty || _locked || _switching) return;
     _autoSave.cancel();
-    _submitting = true;
+    final epoch = _loadEpoch;
+    setState(() => _submitting = true);
+    late final LegacyOperationRef operation;
     try {
-      _submittedUndoRef = await _db.saveMezmurLocal(
+      operation = await _db.saveMezmurLocal(
         _selectedDate,
         section,
         _records(),
@@ -493,15 +637,24 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
         notBefore: DateTime.now().add(const Duration(seconds: 5)),
       );
     } catch (_) {
-      _submitting = false;
-      if (mounted) {
-        setState(() =>
-            _error = 'Phone storage refused the save. Free up space and try again.');
+      // Both branches clear _submitting before returning, so the section
+      // selector and the date chip come back immediately: a refused
+      // submission must never lock the taker out of the next section.
+      if (mounted && epoch == _loadEpoch) {
+        setState(() {
+          _submitting = false;
+          _error =
+              'Phone storage refused the save. Free up space and try again.';
+        });
+      } else {
+        _submitting = false;
       }
       return;
     }
     _submitting = false;
-    if (!mounted) return;
+    if (!mounted || epoch != _loadEpoch) return;
+    _submissionRevision++;
+    _durableRevision = _editRevision;
     HapticFeedback.mediumImpact();
     _dirty.value = false;
     setState(() {
@@ -509,17 +662,15 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
       _error = null;
     });
     unawaited(_sync.syncAll(force: true));
-    showUndoToast(context, message: 'Submitted', onUndo: _undoSubmit);
+    showUndoToast(context,
+        message: 'Submitted', onUndo: () => _undoSubmit(operation, epoch));
   }
 
-  Future<void> _undoSubmit() async {
-    final operation = _submittedUndoRef;
-    if (operation == null) return;
+  Future<void> _undoSubmit(LegacyOperationRef operation, int epoch) async {
     final result = await _db.undoSubmittedLegacyOperation(operation);
-    if (!mounted) return;
+    if (!mounted || epoch != _loadEpoch) return;
     switch (result) {
       case SubmitUndoResult.applied:
-        _submittedUndoRef = null;
         setState(() => _packetStatus = 'draft');
         _dirty.value = false;
         showQuickConfirm(context, 'Submission undone');
@@ -570,6 +721,8 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
   }
 
   Future<void> _editNote(int index) async {
+    final epoch = _loadEpoch;
+    final memberId = _members[index]['member_id'];
     final ctrl =
         TextEditingController(text: '${_members[index]['notes'] ?? ''}');
     final note = await showDialog<String>(
@@ -585,40 +738,97 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel')),
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           ElevatedButton(
               onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
               child: const Text('Keep')),
         ],
       ),
     );
-    if (note == null) return;
+    if (!mounted ||
+        epoch != _loadEpoch ||
+        _locked ||
+        note == null ||
+        index >= _members.length ||
+        _members[index]['member_id'] != memberId) {
+      return;
+    }
     if (note == '${_members[index]['notes'] ?? ''}') return;
     setState(() => _members[index]['notes'] = note);
     _dirty.value = true;
     _persistLocal();
+    _scheduleAutoSave();
   }
 
   Future<void> _pickDate() async {
+    if (_submitting || _switching) return;
+    final epoch = _loadEpoch;
     final picked = await showEthiopianDatePicker(
       context: context,
       initialGregorianDate: _selectedDate,
       firstDate: DateTime.now().subtract(const Duration(days: 730)),
       lastDate: DateTime.now(),
     );
-    if (picked != null && picked != _selectedDate) {
-      _selectedDate = picked; // Gregorian yyyy-MM-dd for the API
+    if (!mounted ||
+        epoch != _loadEpoch ||
+        picked == null ||
+        picked == _selectedDate ||
+        _submitting ||
+        _switching) {
+      return;
+    }
+    setState(() => _switching = true);
+    var saved = false;
+    try {
+      saved = await _flushPendingEdits();
+    } catch (_) {
+      // A throwing save must not pin _switching true, or the date chip and
+      // the section selector stay inert until the app is restarted.
+      saved = false;
+    }
+    if (!mounted) return;
+    if (!saved || epoch != _loadEpoch || _submitting) {
+      setState(() => _switching = false);
+      return;
+    }
+    setState(() {
+      _selectedDate = picked;
       _members = [];
       _packetStatus = '';
       _returnNote = null;
-      _dirty.value = false;
-      _loadSheet();
-    }
+      _rosterReady = false;
+      _loading = true;
+      _editRevision = _durableRevision = 0;
+      _loadEpoch++;
+      _switching = false;
+    });
+    _dirty.value = false;
+    _loadSheet();
   }
 
-  void _changeSection(String? value) {
-    if (value == null || value == _selectedSection) return;
+  Future<void> _changeSection(String? value) async {
+    if (value == null ||
+        value == _selectedSection ||
+        _submitting ||
+        _switching) {
+      return;
+    }
+    final epoch = _loadEpoch;
+    setState(() => _switching = true);
+    var saved = false;
+    try {
+      saved = await _flushPendingEdits();
+    } catch (_) {
+      saved = false;
+    }
+    if (!mounted) return;
+    if (!saved || epoch != _loadEpoch || _submitting) {
+      // Snap the field back to the section that is really open, and always
+      // release the switch gate so the next attempt is possible.
+      _sectionFieldKey.currentState?.didChange(_selectedSection);
+      setState(() => _switching = false);
+      return;
+    }
     setState(() {
       _selectedSection = value;
       _members = [];
@@ -626,6 +836,9 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
       _returnNote = null;
       _rosterReady = false;
       _loading = true;
+      _editRevision = _durableRevision = 0;
+      _loadEpoch++;
+      _switching = false;
     });
     _dirty.value = false;
     _loadSheet();
@@ -701,14 +914,17 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
                 children: [
                   Row(children: [
                     Flexible(
-                      child: Text('${m['student_name'] ?? ''} ${m['father_name'] ?? ''}',
+                      child: Text(
+                          '${m['student_name'] ?? ''} ${m['father_name'] ?? ''}',
                           style: const TextStyle(
                               fontSize: 13.5, fontWeight: FontWeight.w700),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis),
                     ),
                     // Attendance alerting Phase 2: read-only open-warning marker.
-                    RowWarningMarker(warning: m['warning'] is Map ? m['warning'] as Map : null),
+                    RowWarningMarker(
+                        warning:
+                            m['warning'] is Map ? m['warning'] as Map : null),
                   ]),
                   Text(
                     note.isNotEmpty
@@ -716,8 +932,8 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
                         : ('${m['member_code'] ?? ''}'.isNotEmpty
                             ? '${m['member_code']}'
                             : 'Tap for note'),
-                    style: TextStyle(
-                        fontSize: 10, color: AppTheme.textSecondary),
+                    style:
+                        TextStyle(fontSize: 10, color: AppTheme.textSecondary),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -906,6 +1122,7 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
                   child: _loadingSections
                       ? const LinearProgressIndicator()
                       : DropdownButtonFormField<String>(
+                          key: _sectionFieldKey,
                           value: _selectedSection != null &&
                                   _sections.any((s) =>
                                       '${s['section']}' == _selectedSection)
@@ -930,22 +1147,22 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
                                         overflow: TextOverflow.ellipsis),
                                   ))
                               .toList(),
-                          onChanged: _locked ? null : _changeSection,
+                          onChanged:
+                              _submitting || _switching ? null : _changeSection,
                         ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
                   flex: 2,
                   child: InkWell(
-                    onTap: _locked ? null : _pickDate,
+                    onTap: _submitting || _switching ? null : _pickDate,
                     child: InputDecorator(
                       decoration: InputDecoration(
                         contentPadding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 10),
                         border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10)),
-                        suffixIcon:
-                            const Icon(Icons.calendar_today, size: 16),
+                        suffixIcon: const Icon(Icons.calendar_today, size: 16),
                       ),
                       child: Text(formatGregorianAsEthiopian(_selectedDate),
                           style: const TextStyle(fontSize: 13)),
@@ -1012,8 +1229,7 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
                           )
                         : _members.isEmpty
                             ? ListView(
-                                physics:
-                                    const AlwaysScrollableScrollPhysics(),
+                                physics: const AlwaysScrollableScrollPhysics(),
                                 children: [
                                   const SizedBox(height: 40),
                                   EmptyState(
@@ -1036,8 +1252,7 @@ class MezmurAttendanceScreenState extends State<MezmurAttendanceScreen> {
                                 ],
                               )
                             : ListView.builder(
-                                physics:
-                                    const AlwaysScrollableScrollPhysics(),
+                                physics: const AlwaysScrollableScrollPhysics(),
                                 itemCount: _members.length,
                                 cacheExtent: kListCacheExtent,
                                 padding:

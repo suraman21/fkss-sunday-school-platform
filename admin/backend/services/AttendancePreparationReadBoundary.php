@@ -81,8 +81,12 @@ final class AttendancePreparationReadBoundary
         }
     }
 
-    private static function requireTransactionalTable(\mysqli $conn, string $table): void
+    /** Call only inside an already-owned transaction before its first write. */
+    public static function requireTransactionalTable(\mysqli $conn, string $table): void
     {
+        if (!preg_match('/^[a-z][a-z0-9_]{0,63}$/D', $table)) {
+            throw new \InvalidArgumentException('Invalid storage table identifier.');
+        }
         // A real read acquires a transaction-duration metadata lock before the
         // metadata check; engine/schema replacement cannot race later readers.
         self::query($conn, 'SELECT 1 FROM `' . $table . '` LIMIT 0')->free();

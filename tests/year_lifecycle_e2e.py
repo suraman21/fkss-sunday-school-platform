@@ -42,17 +42,19 @@ except AssertionError as e:
 # 2 — api_education.php guards
 try:
     api = read("admin/api_education.php")
-    assert "confirm_activate_empty" in api, "confirm_activate_empty code missing"
+    activation = read("admin/backend/services/AcademicYearActivation.php")
+    assert "AcademicYearActivation::run" in api, "activation service not called"
+    assert "confirm_activate_empty" in activation, "confirm_activate_empty code missing"
     ok("R1 confirm_activate_empty code present")
-    assert "confirm_activate_invalid" in api, "confirm_activate_invalid missing"
+    assert "confirm_activate_invalid" in activation, "confirm_activate_invalid missing"
     ok("R3 confirm_activate_invalid code present")
-    assert "ACTIVATE EMPTY" in api, "ACTIVATE EMPTY phrase missing"
+    assert "ACTIVATE EMPTY" in activation, "ACTIVATE EMPTY phrase missing"
     ok("ACTIVATE EMPTY phrase present")
-    assert "ACTIVATE ANYWAY" in api, "ACTIVATE ANYWAY phrase missing"
+    assert "ACTIVATE ANYWAY" in activation, "ACTIVATE ANYWAY phrase missing"
     ok("ACTIVATE ANYWAY phrase present")
-    assert "ay_validate_target_year" in api, "validation not called in api_education"
+    assert "ay_validate_target_year_data" in activation, "validation not called in api_education"
     ok("api_education calls ay_validate_target_year (R3)")
-    assert re.search(r"class_enrollments.*academic_year_id.*status.*active", api), "empty enrolment check missing"
+    assert re.search(r"class_enrollments.*academic_year_id.*status.*active", activation), "empty enrolment check missing"
     ok("Empty enrolment check present (R1)")
     # Ensure no hard delete of history
     assert "DELETE FROM academic_years WHERE id" in api, "delete_year exists"
@@ -138,7 +140,7 @@ try:
     assert "has no start/end dates" in ay, "validation error text"
     ok("Mock: missing dates → error")
     # Mock empty year: api should return confirm_activate_empty
-    assert 'The year "' in api, "dynamic message"
+    assert "target['year_name']" in activation and "no students" in activation, "dynamic message"
     ok("Mock: empty year → confirm_activate_empty message")
     # Mock copy: must check source != target
     assert "Source and target year must be different" in api, "same year guard"

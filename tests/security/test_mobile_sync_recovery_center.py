@@ -208,11 +208,11 @@ def test_all_three_submit_flows_keep_exact_ref_and_block_late_autosave() -> None
     }
     for name, path in files.items():
         text = source(path)
-        if name == "attendance":
+        if name in ("attendance", "mezmur"):
             # Capture the exact operation in the toast closure, never a
             # mutable ref that another sheet's submission can replace.
             assert "late final LegacyOperationRef operation;" in text
-            assert "operation = await _db.saveAttendanceLocal(" in text
+            assert f"operation = await _db.save{'Attendance' if name == 'attendance' else 'Mezmur'}Local(" in text
             assert "onUndo: () => _undoSubmit(operation, epoch)" in text
             assert "_submittedUndoRef" not in text
             undo_start = "Future<void> _undoSubmit(LegacyOperationRef operation, int epoch)"
@@ -224,6 +224,8 @@ def test_all_three_submit_flows_keep_exact_ref_and_block_late_autosave() -> None
         undo = between(text, undo_start, "@override\n  Widget build")
         if name == "attendance":
             assert "epoch != _loadEpoch || !_sheetSessionCurrent" in undo
+        elif name == "mezmur":
+            assert "epoch != _loadEpoch" in undo
         assert "undoSubmittedLegacyOperation(operation)" in undo, name
         assert pending_lookup[name] not in undo, name
         assert "SubmitUndoResult.supersededLocal" in undo, name
@@ -235,7 +237,7 @@ def test_all_three_submit_flows_keep_exact_ref_and_block_late_autosave() -> None
     for text in (attendance, mezmur):
         submit = between(text, "Future<void> _submit", "Future<void> _undoSubmit")
         assert "_autoSave.cancel();" in submit
-        assert "_submitting = true;" in submit
+        assert "_submitting = true" in submit
         assert "_submitting || PacketLock.isLocked" in text
     assert "_autosaveTimer?.cancel();" in grades
     assert "await _autosaveTail.catchError" in grades

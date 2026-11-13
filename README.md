@@ -35,7 +35,7 @@ FKSS is the management system of the Felege Kidusan Sunday School. It replaces s
 | PHP libraries | Committed in `vendor/` (PhpSpreadsheet 5.9, OpenSpout, ZipStream). TCPDF and phpqrcode are bundled in `admin/` | `composer.lock` |
 | Web front end | Server-rendered PHP pages with vanilla JavaScript (`admin/js`, `frontend/js`) | — |
 | REST API | `/api/v1`. Custom HMAC-signed bearer tokens (*not* standard JWT) with rotating refresh sessions | [docs/API.md](docs/API.md) |
-| Mobile | Flutter (CI: 3.44.9, stable), Dart ≥ 3.3, `sqflite`, `flutter_secure_storage`, `local_auth`. Source checkpoint: **1.7.4+41**; publication and installed versions are separate facts | `Mobile/wbws_flutter_app/pubspec.yaml` |
+| Mobile | Flutter (CI: 3.44.9, stable), Dart ≥ 3.3, `sqflite`, `flutter_secure_storage`, `local_auth`. Source checkpoint: **1.7.5+42**; publication and installed versions are separate facts | `Mobile/wbws_flutter_app/pubspec.yaml` |
 | Tests | Python `pytest` suites (security, regression, e2e with Python Playwright), PHP harnesses, Flutter unit tests | [docs/DEVELOPMENT_AND_TESTING.md](docs/DEVELOPMENT_AND_TESTING.md) |
 | CI | GitHub Actions: *Backend checks*, *Production integrity*, *Branch guard* | `.github/workflows/` |
 
@@ -117,7 +117,7 @@ Each item is VERIFIED unless marked otherwise. Detail and evidence: [OPERATIONS.
 | Database and migrations | There is no migration ledger and the applied production schema is unverified. `sql/legacy/database_schema.sql` is stale (11 tables). `sql/` cannot be applied linearly to an empty database. Mezmur tables can change at runtime | [DATABASE.md](docs/DATABASE.md) |
 | Runtime versions | CI behavioral tests use PHP 8.4, with an 8.5 lint job. Production PHP 8.5 and MariaDB 11.4 are dated hosting observations, not fresh runtime verification | [DATABASE.md §1](docs/DATABASE.md#1-engine-and-access) |
 | Deployment | Owner acceptance on development precedes separate production authorization. Historical SFTP instructions do not establish today's cron, file or schema state; rollback rehearsal remains unverified | [OPERATIONS.md](docs/OPERATIONS.md) |
-| Release evidence | Baseline CI is green, but signing, published APKs, device installation and hosted acceptance are separate gates. Source is 1.7.4+41 | [DEVELOPMENT_AND_TESTING.md](docs/DEVELOPMENT_AND_TESTING.md), [OPERATIONS.md](docs/OPERATIONS.md) |
+| Release evidence | Baseline CI is green, but signing, published APKs, device installation and hosted acceptance are separate gates. Source is 1.7.5+42 | [DEVELOPMENT_AND_TESTING.md](docs/DEVELOPMENT_AND_TESTING.md), [OPERATIONS.md](docs/OPERATIONS.md) |
 | Backups | The 2026-10-22 record places backups in the hosting account with no restore test. Current off-site/key-custody/restore readiness is unverified | [OPERATIONS.md](docs/OPERATIONS.md) |
 
 ## Documentation

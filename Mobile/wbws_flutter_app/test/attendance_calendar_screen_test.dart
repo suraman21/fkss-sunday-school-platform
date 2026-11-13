@@ -410,6 +410,23 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets('a submitted class does not block a second assigned class on the same day',
+      (tester) async {
+    api.code = 'o';
+    await open(tester);
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Submit'));
+    await tester.pump();
+    expect(db.saved['3:${api.date}']?.single['packet_kind'], 'submitted');
+    expect(find.widgetWithText(OutlinedButton, 'Submit'), findsNothing);
+    await switchTo(tester, 4);
+    expect(find.text('Student 4 Test'), findsOneWidget);
+    expect(submitEnabled(tester), isTrue);
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Submit'));
+    await tester.pump();
+    expect(db.saved['4:${api.date}']?.single['packet_kind'], 'submitted');
+    expect(db.saved['3:${api.date}']?.single['packet_kind'], 'submitted');
+  });
+
   testWidgets('fast class switch flushes marked draft before debounce fires',
       (tester) async {
     api.code = 'o';

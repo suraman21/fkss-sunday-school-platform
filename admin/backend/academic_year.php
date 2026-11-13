@@ -230,10 +230,8 @@ function ay_switch_active($conn, $targetYearId, $reopen = false) {
  * Warnings = no semesters / weights not 100 / today outside range.
  * Caller decides whether to block or require stronger confirmation.
  */
-function ay_validate_target_year($conn, $targetYearId) {
+function ay_validate_target_year_data(array $y, ?int $termCount): array {
     $errors = []; $warnings = [];
-    $y = ay_year_by_id($conn, (int)$targetYearId);
-    if (!$y) return ['ok'=>false, 'errors'=>['That academic year does not exist.'], 'warnings'=>[]];
     $start = $y['start_date'] ?? null;
     $end   = $y['end_date'] ?? null;
     if (empty($start) || empty($end)) {
@@ -246,12 +244,8 @@ function ay_validate_target_year($conn, $targetYearId) {
             $warnings[] = 'Today (' . $today . ') is outside this year\'s date window (' . $start . ' → ' . $end . ') — mobile attendance preparation requires today ∈ [start_date, end_date]; teachers may see "Year not current" until the window is corrected.';
         }
     }
-    // Semester / weight checks
-    try {
-        $tc = 0;
-        $r = $conn->query("SELECT COUNT(*) c FROM academic_terms WHERE academic_year_id=" . (int)$targetYearId);
-        if ($r) { $row=$r->fetch_assoc(); $tc=(int)($row['c']??0); }
-        if ($tc === 0) {
+    if ($termCount !== null) {
+        if ($termCount === 0) {
             $warnings[] = 'This year has no semesters (academic_terms) — create at least Semester 1 & 2, or term-scoped assessments and reports will have nowhere to belong.';
         }
         $s1 = isset($y['s1_weight_pct']) ? (float)$y['s1_weight_pct'] : null;
@@ -260,8 +254,19 @@ function ay_validate_target_year($conn, $targetYearId) {
             $tot = round($s1 + $s2, 2);
             if ($tot != 100.00) $warnings[] = 'Semester weights total ' . $tot . '% (must be 100%) — the annual score weighting will be wrong until corrected.';
         }
-    } catch (Throwable $e) {}
+    }
     return ['ok'=> empty($errors), 'errors'=>$errors, 'warnings'=>$warnings];
+}
+
+function ay_validate_target_year($conn, $targetYearId) {
+    $y = ay_year_by_id($conn, (int)$targetYearId);
+    if (!$y) return ['ok'=>false, 'errors'=>['That academic year does not exist.'], 'warnings'=>[]];
+    $tc = 0;
+    try {
+        $r = $conn->query("SELECT COUNT(*) c FROM academic_terms WHERE academic_year_id=" . (int)$targetYearId);
+        if ($r) { $row=$r->fetch_assoc(); $tc=(int)($row['c']??0); }
+    } catch (Throwable $e) { $tc = null; }
+    return ay_validate_target_year_data($y, $tc);
 }
 
 /** Years for a selector dropdown: [{id, year_name, ec_year, status, is_active}]. */

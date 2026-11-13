@@ -342,9 +342,9 @@ class MezmurPhase5Tests(unittest.TestCase):
 
     def test_mobile_outbox_is_section_scoped(self):
         self.assertIn("saveMezmurLocal(_selectedDate, section, _records()", self.screen)
-        self.assertIn("getPendingMezmurRecords(_selectedDate, section)", self.screen)
+        self.assertIn("getPendingMezmurRecords(date, section)", self.screen)
         self.assertIn("cacheMezmurSheet(_selectedDate, section", self.screen)
-        self.assertIn("getMezmurSheet(_selectedDate, section: section)", self.screen)
+        self.assertIn("getMezmurSheet(date, section: section)", self.screen)
 
     # ── php -l (when a PHP CLI is available) ──────────────────
     def test_php_lint_new_backend_files(self):

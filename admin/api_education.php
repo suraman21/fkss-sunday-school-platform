@@ -1362,117 +1362,18 @@ switch ($action) {
         break;
 
     case 'set_current_year':
-        // STEP 4 — SAFE, ATOMIC active-year switch. Never leaves zero or two
-        // active years. Requires typed confirmation; reopening a CLOSED (past)
-        // year requires the stronger "REOPEN" confirmation.
-        $yid = (int)($_POST['year_id'] ?? 0);
-        if (!$yid) { echo json_encode(['status'=>'error','message'=>'Year ID required']); exit; }
-
-        if (!function_exists('ay_switch_active')) {
-            // Fallback: legacy transactional flip (resolver unavailable).
-            $conn->begin_transaction();
-            try {
-                $conn->query("UPDATE academic_years SET is_current=0");
-                $stmt = $conn->prepare("UPDATE academic_years SET is_current=1 WHERE id = ?");
-                if (!$stmt) { throw new Exception($conn->error); }
-                $stmt->bind_param("i", $yid);
-                $stmt->execute();
-                $stmt->close();
-                $conn->commit();
-                echo json_encode(['status'=>'success','message'=>'Current year updated']);
-            } catch (Exception $e) {
-                $conn->rollback();
-                error_log("set_current_year failed: " . $e->getMessage());
-                echo json_encode(['status'=>'error','message'=>'Could not change the current year. No changes were made.']);
-            }
-            break;
-        }
-
-        $target = ay_year_by_id($conn, $yid);
-        if (!$target) { echo json_encode(['status'=>'error','message'=>'That academic year does not exist.']); break; }
-        $tstatus = $target['status'] ?? ((int)($target['is_current'] ?? 0) === 1 ? 'active' : 'upcoming');
-
-        if ($tstatus === 'active') {
-            echo json_encode(['status'=>'success','message'=>'That year is already the active year.']);
-            break;
-        }
-
-        $reopen  = ($tstatus === 'closed');
-        $confirm = strtoupper(trim((string)($_POST['confirm'] ?? '')));
-        $need    = $reopen ? 'REOPEN' : 'SWITCH';
-        // Allow ACTIVATE EMPTY as a stronger alternative to SWITCH for Upcoming years
-        // that are empty — the empty-year guard below will validate it.
-        $allowed = $reopen ? ['REOPEN'] : ['SWITCH', 'ACTIVATE EMPTY', 'ACTIVATE ANYWAY'];
-        if (!in_array($confirm, $allowed, true)) {
-            echo json_encode([
-                'status'             => 'error',
-                'code'               => $reopen ? 'confirm_reopen' : 'confirm_switch',
-                'needs_confirmation' => true,
-                'reopen'             => $reopen,
-                'target_name'        => $target['year_name'] ?? '',
-                'message'            => $reopen
-                    ? 'This year is CLOSED. Reopening a past year makes it active again and NEW records will be stamped to it. This is unusual — only do it to correct a mistake. Type REOPEN to confirm.'
-                    : 'Switching the active year will CLOSE the current year. New records will then belong to the newly selected year. Type SWITCH to confirm.'
-            ]);
-            break;
-        }
-
-        // R1+R3 — Empty-year + structural validation before activating.
-        // Empty Upcoming year (0 enrolments + 0 teacher assignments) OR missing
-        // dates / inverted dates / no semesters / bad weights almost always means
-        // the admin meant Year Rollover, not a bare switch. We block with a
-        // stronger phrase (ACTIVATE EMPTY / ACTIVATE ANYWAY) but never hard-
-        // block — the admin can still force it with the explicit phrase.
-        if ($tstatus === 'upcoming' && $confirm === 'SWITCH') {
-            // 1) Empty enrolment check (R1)
-            $isEmpty = false;
-            try {
-                $chk = $conn->prepare("SELECT COUNT(*) AS c FROM class_enrollments WHERE academic_year_id = ? AND status = 'active'");
-                if ($chk) { $chk->bind_param('i', $yid); $chk->execute(); $row=$chk->get_result()->fetch_assoc(); $chk->close(); if ($row && (int)$row['c']===0) {
-                    $taCount=0; $chk2=$conn->prepare("SELECT COUNT(*) c FROM teacher_assignments WHERE academic_year_id=? AND is_active=1");
-                    if($chk2){$chk2->bind_param('i',$yid);$chk2->execute();$r2=$chk2->get_result()->fetch_assoc();$chk2->close();$taCount=(int)($r2['c']??0);}
-                    if($taCount===0) $isEmpty=true;
-                } }
-            } catch (Throwable $e) {}
-            if ($isEmpty) {
-                echo json_encode(['status'=>'error','code'=>'confirm_activate_empty','needs_confirmation'=>true,'target_name'=>$target['year_name']??'',
-                    'message'=>'The year "' . ($target['year_name']??'') . '" has no students and no teacher assignments. If you switch now, the mobile app will show an empty year (no classes, no roster) and attendance preparation will fail until you enrol students. In most cases you want "Year Rollover" instead, which copies students into the new year in one safe step. To force an empty active year anyway, type ACTIVATE EMPTY.']);
-                break;
-            }
-            // 2) Structural validation (R3) — dates / semesters / weights
-            if (function_exists('ay_validate_target_year')) {
-                $val = ay_validate_target_year($conn, $yid);
-                if (!$val['ok'] || !empty($val['warnings'])) {
-                    $all = array_merge($val['errors'], $val['warnings']);
-                    if (!empty($all)) {
-                        $msg = 'The year "' . ($target['year_name']??'') . '" has ' . (empty($val['errors'])?'warnings':'issues') . ' that will affect attendance and grades:' . "\n• " . implode("\n• ", array_slice($all,0,5));
-                        $msg .= "\n\nIn most cases you should fix these before activating. To force activation anyway, type ACTIVATE ANYWAY.";
-                        // Distinguish hard errors vs warnings for the phrase
-                        $phrase = empty($val['errors']) ? 'ACTIVATE ANYWAY' : 'ACTIVATE ANYWAY';
-                        echo json_encode(['status'=>'error','code'=>'confirm_activate_invalid','needs_confirmation'=>true,'target_name'=>$target['year_name']??'','message'=>$msg,'details'=>$all]);
-                        break;
-                    }
-                }
-            }
-        }
-        // Explicit overrides: frontend re-sends with stronger phrase
-        if ($confirm === 'ACTIVATE EMPTY' || $confirm === 'ACTIVATE ANYWAY') {
-            $res = ay_switch_active($conn, $yid, false);
-            if (($res['status'] ?? '') === 'success') {
-                $suffix = ($confirm === 'ACTIVATE EMPTY') ? ' — the new year is empty. Enrol students or run Year Rollover to carry them from the prior year.' : ' — activated with warnings. Please fix the dates/semesters soon or mobile preparation may fail.';
-                $res['message'] = 'Active year changed' . $suffix;
-                if (function_exists('ay_validate_target_year')) {
-                    $val = ay_validate_target_year($conn, $yid);
-                    if (!empty($val['warnings']) || !empty($val['errors'])) $res['warnings'] = array_merge($val['errors'], $val['warnings']);
-                }
-            }
-            echo json_encode($res);
-            break;
-        }
-
-        $res = ay_switch_active($conn, $yid, $reopen);
-        echo json_encode($res);
-        break;
+        // Role, POST and CSRF are enforced above. Readiness, confirmation and
+        // the lifecycle change share one owned transaction in the service.
+        $rawYearId = $_POST['year_id'] ?? null;
+        $yid = (is_string($rawYearId) || is_int($rawYearId)) ? (int)$rawYearId : 0;
+        if ($yid <= 0) { echo json_encode(['status'=>'error','message'=>'Year ID required']); break; }
+        $confirm = is_string($_POST['confirm'] ?? null) ? strtoupper(trim($_POST['confirm'])) : '';
+        $ack = is_string($_POST['issues_fingerprint'] ?? null) ? $_POST['issues_fingerprint'] : '';
+        require_once __DIR__ . '/backend/services/AcademicYearActivation.php';
+        echo json_encode(\App\Services\AcademicYearActivation::run($conn, $yid, $confirm, $ack));
+        // The service may have discarded an uncertain connection; request exit
+        // closes any healthy connection without attempting a second close.
+        exit;
 
     case 'delete_year':
         // STEP 6 — deletion protection. Only an EMPTY 'upcoming' year may be
@@ -1539,6 +1440,15 @@ switch ($action) {
         try {
             if (!$conn->begin_transaction()) throw new RuntimeException('Could not start assessment copy.');
             $transactionStarted = true;
+            // Refuse before writes unless rollback and row locks are meaningful.
+            require_once __DIR__ . '/backend/services/AttendancePreparationReadBoundary.php';
+            try {
+                foreach (['academic_terms', 'academic_years', 'assessments'] as $table) {
+                    \App\Services\AttendancePreparationReadBoundary::requireTransactionalTable($conn, $table);
+                }
+            } catch (Throwable $storageError) {
+                throw new DomainException('Assessment copy requires real InnoDB tables and readable storage metadata. Ask an administrator to check the database before retrying.', 0, $storageError);
+            }
             // Serialize copies involving the same years, in deterministic order.
             // This also rechecks that both years still exist after validation.
             $lock = $conn->prepare("SELECT id, status FROM academic_years WHERE id IN (?,?) ORDER BY id FOR UPDATE");
