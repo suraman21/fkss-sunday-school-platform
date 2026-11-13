@@ -84,7 +84,7 @@ if ($action === 'login' && $method === 'POST') {
     // S4 (D3.8): optional device assertion links the new refresh
     // family to a registered device. Best-effort by design: absent
     // or unusable assertions yield a legacy unlinked family (login
-    // still succeeds -- S4 links, S5 enforces). Only a MISSING 083
+    // still succeeds -- S4 links, S5 enforces). Only a MISSING 084
     // table reads as absent (pre-migration probe); every other
     // failure propagates loudly (fail closed, never silently
     // unlinked on a migrated database).

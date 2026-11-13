@@ -1,5 +1,5 @@
 -- ============================================================
--- 083_acm_device_registry.sql   (IDEMPOTENT / RE-RUNNABLE)
+-- 084_acm_device_registry.sql   (IDEMPOTENT / RE-RUNNABLE)
 -- ACM S4: challenge-signature device registry. Registered devices
 -- hold a verified Keystore public key (SPKI DER, fingerprint
 -- lookup); registration challenges are hash-only, single-use,
@@ -16,7 +16,12 @@
 -- rows are written only by new actions, which need these tables
 -- anyway; the login link and revoke cascade probe the column.
 -- Numbering verified 2026-11-13: 080 telegram, 081 ACM office
--- (+081 telegram phase2 interview), 082 ACM ceremony.
+-- (+081 telegram phase2 interview), 082 ACM ceremony (+082 telegram
+-- corrections), 083 telegram approval, 084 ACM registry. (Renumbered
+-- 083->084: telegram landed 083 first; ACM yields per the 080
+-- precedent. 081/082 pairs are telegram-vs-ACM collisions owned by
+-- the telegram stream -- migration-hygiene stays red until those
+-- are resolved.)
 -- ============================================================
 
 -- Registered devices. One row per (account, installation) keypair:
@@ -83,7 +88,7 @@ CREATE TABLE IF NOT EXISTS `acm_device_challenges` (
 -- families keep current behavior; revocation touches only families
 -- with an explicit link. Single ALTER so column + index land
 -- together under one idempotency guard.
-SET @ssms_083_link_sql = (
+SET @ssms_084_link_sql = (
     SELECT IF(
         NOT EXISTS(
             SELECT 1 FROM information_schema.COLUMNS
@@ -95,9 +100,9 @@ SET @ssms_083_link_sql = (
         'SELECT 1'
     )
 );
-PREPARE ssms_083_link_stmt FROM @ssms_083_link_sql;
-EXECUTE ssms_083_link_stmt;
-DEALLOCATE PREPARE ssms_083_link_stmt;
+PREPARE ssms_084_link_stmt FROM @ssms_084_link_sql;
+EXECUTE ssms_084_link_stmt;
+DEALLOCATE PREPARE ssms_084_link_stmt;
 
 -- Device challenge TTL (minutes): short-lived proof window.
 INSERT INTO `system_settings` (`setting_key`, `setting_value`)
@@ -116,7 +121,7 @@ SELECT 'acm.max_devices_per_account', '5' FROM DUAL
 WHERE NOT EXISTS (SELECT 1 FROM `system_settings` WHERE `setting_key` = 'acm.max_devices_per_account');
 
 -- Ticket event vocabulary (append-only widen).
-SET @ssms_083_ev_sql = (
+SET @ssms_084_ev_sql = (
     SELECT IF(
         EXISTS(
             SELECT 1 FROM information_schema.COLUMNS
@@ -129,6 +134,6 @@ SET @ssms_083_ev_sql = (
         'SELECT 1'
     )
 );
-PREPARE ssms_083_ev_stmt FROM @ssms_083_ev_sql;
-EXECUTE ssms_083_ev_stmt;
-DEALLOCATE PREPARE ssms_083_ev_stmt;
+PREPARE ssms_084_ev_stmt FROM @ssms_084_ev_sql;
+EXECUTE ssms_084_ev_stmt;
+DEALLOCATE PREPARE ssms_084_ev_stmt;

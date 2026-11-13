@@ -151,7 +151,7 @@ final class RefreshTokenService
      * failures PROPAGATE: the device row must not flip to revoked
      * while sessions stay live (fail closed).
      *
-     * @return int Distinct families revoked (0 if none / pre-083).
+     * @return int Distinct families revoked (0 if none / pre-084).
      */
     public function revokeDeviceFamilies(int $deviceId): int
     {
@@ -186,7 +186,7 @@ final class RefreshTokenService
     }
 
     /**
-     * S4: memoized pre-083 probe. Only consulted when a link was
+     * S4: memoized pre-084 probe. Only consulted when a link was
      * actually requested (or during rotation); unlinked logins pay
      * zero extra queries.
      */
@@ -226,8 +226,8 @@ final class RefreshTokenService
 
         try {
             $this->database->begin_transaction();
-            // S4: select the device link when the 083 column exists
-            // (rotation inherits it below; pre-083 keeps the legacy
+            // S4: select the device link when the 084 column exists
+            // (rotation inherits it below; pre-084 keeps the legacy
             // shape so refresh never breaks on schema skew).
             $linkSelect = $this->deviceLinkAvailable() ? ', acm_device_id' : '';
             $statement = $this->database->prepare(
@@ -403,7 +403,7 @@ final class RefreshTokenService
         $agentHash = hash('sha256', $userAgent);
         $userId = (int)$user['id'];
         // S4: record the link only when one was requested AND the
-        // 083 column exists (pre-083 databases take the legacy shape
+        // 084 column exists (pre-084 databases take the legacy shape
         // so S4 code keeps working before the migration -- login must
         // never break on schema skew; the INSERT itself stays the
         // loud gate for genuine database failures).

@@ -1,6 +1,6 @@
 """ACM S4 device pins: registry, ceremony link, refresh link, wire, console.
 
-Static pins (no PHP runtime in CI sandbox): 083 schema shape,
+Static pins (no PHP runtime in CI sandbox): 084 schema shape,
 fail-closed guards, fixed lock order, families-first revoke order,
 strict endpoint bodies, wire allowlist, login default-null, policy
 matrix, and no-secret handling including challenge solutions.
@@ -9,7 +9,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-SQL83 = ROOT / "sql" / "083_acm_device_registry.sql"
+SQL83 = ROOT / "sql" / "084_acm_device_registry.sql"
 ACMSRC = ROOT / "acm" / "src"
 CRYPTO = ACMSRC / "Device" / "DeviceCrypto.php"
 DEVICES = ACMSRC / "Device" / "DeviceService.php"
@@ -29,7 +29,7 @@ def read(p: Path) -> str:
     return p.read_text(encoding="utf-8")
 
 
-# ---- 083 schema ----
+# ---- 084 schema ----
 
 def test_s4_migration_is_idempotent_and_fk_free():
     s = read(SQL83)
@@ -37,7 +37,7 @@ def test_s4_migration_is_idempotent_and_fk_free():
     assert "FOREIGN KEY" not in code
     for table in ("acm_devices", "acm_device_challenges"):
         assert f"CREATE TABLE IF NOT EXISTS `{table}`" in s, table
-    # Refresh link is information_schema-guarded (re-runnable, pre-083 safe).
+    # Refresh link is information_schema-guarded (re-runnable, pre-084 safe).
     assert "information_schema" in s
     assert "acm_device_id" in s
     # Device identity: one row per (user, key); challenges keyed by uuid
@@ -194,7 +194,7 @@ def test_s4_login_assertion_is_optional_and_never_blocks():
     s = read(AUTH)
     assert "findActiveForAssertion(" in s
     assert "touchLastSeen($acmDeviceId)" in s
-    # Pre-083 safety: only the missing-table code is caught (fail-closed).
+    # Pre-084 safety: only the missing-table code is caught (fail-closed).
     assert "42S02" in s
 
 

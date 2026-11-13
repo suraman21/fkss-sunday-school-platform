@@ -15,7 +15,7 @@
  * them again. Disposable database only (destructive_guard
  * interlock), never production.
  *
- * Usage (dev machine, migrations through 083 applied):
+ * Usage (dev machine, migrations through 084 applied):
  *   SSMS_AUDIT_TESTING=1 php tests/e2e/acm_devices_walkthrough.php
  *
  * NOT run in CI (no database in the sandbox); the sandbox pins the
@@ -74,7 +74,7 @@ try {
     $pdo->query('SELECT 1 FROM acm_devices LIMIT 1');
     $pdo->query('SELECT 1 FROM acm_activation_codes LIMIT 1');
 } catch (PDOException $e) {
-    fwrite(STDERR, "migrations 082/083 are not applied to {$dbName}\n");
+    fwrite(STDERR, "migrations 082/084 are not applied to {$dbName}\n");
     exit(3);
 }
 
