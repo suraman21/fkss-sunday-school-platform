@@ -8,10 +8,12 @@ require_once __DIR__.'/backend/services/AmharicIdentityNormalizer.php';
 require_once __DIR__.'/backend/services/MemberCanonicalIdentityService.php';
 require_once __DIR__.'/backend/services/TelegramFormRegistry.php';
 require_once __DIR__.'/backend/services/TelegramFormAdminService.php';
+require_once __DIR__.'/backend/services/TelegramBotConfigService.php';
 
 use App\Services\MemberCanonicalIdentityService;
 use App\Services\TelegramFormRegistry;
 use App\Services\TelegramFormAdminService;
+use App\Services\TelegramBotConfigService;
 
 function tg_admin_error(string $message,int $code=400): never { http_response_code($code);echo json_encode(['status'=>'error','message'=>$message],JSON_UNESCAPED_UNICODE);exit; }
 function tg_admin_ok(array $data=[]): never { echo json_encode(['status'=>'success']+$data,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);exit; }
@@ -21,10 +23,13 @@ function tg_admin_audit(\mysqli $conn,int $actor,string $event,string $entity,in
 
 if (!function_exists('isLoggedIn') || !isLoggedIn()) tg_admin_error('Not authenticated.',401);
 $actor=(int)($_SESSION['admin_id']??0);$role=(string)($_SESSION['admin_role']??'');
-if($actor<=0||!in_array($role,['super_admin','school_admin','hr_dept'],true))tg_admin_error('Access denied.',403);
+if($actor<=0||!in_array($role,['super_admin','hr_dept'],true))tg_admin_error('Access denied.',403);
 $method=strtoupper((string)($_SERVER['REQUEST_METHOD']??'GET'));
 $input=$method==='POST'?$_POST:$_GET;
 $action=trim((string)($input['action']??'overview'));
+$superActions=['overview','bot_config','bot_config_save','canonical_backfill'];
+$hrActions=['overview','operators','forms','form_registry','form_detail','form_create','form_save','form_publish','sessions','session_detail','review_decide','audit','operator_save'];
+if(($role==='super_admin'&&!in_array($action,$superActions,true))||($role==='hr_dept'&&!in_array($action,$hrActions,true)))tg_admin_error('This function belongs to the other administration area.',403);
 if($method==='POST'&&!validateCsrf($input['csrf_token']??($_SERVER['HTTP_X_CSRF_TOKEN']??null)))tg_admin_error('Invalid session token.',403);
 $schema=tg_admin_tables($conn);
 if(!$schema&&$action!=='overview')tg_admin_error('Telegram migration 080 is not installed.',503);
@@ -39,6 +44,10 @@ case 'overview':
         $r=$conn->query("SELECT COUNT(*) failed_updates_24h FROM telegram_processed_updates WHERE status='failed' AND received_at>=DATE_SUB(NOW(),INTERVAL 1 DAY)");$stats=array_merge($stats,$r->fetch_assoc());
     }
     tg_admin_ok(['available'=>$schema,'feature_enabled'=>feature_enabled('telegram_registration'),'secrets'=>['bot_token'=>defined('TELEGRAM_BOT_TOKEN'),'webhook_secret'=>defined('TELEGRAM_WEBHOOK_SECRET')],'canonical_columns'=>MemberCanonicalIdentityService::available($conn),'stats'=>$stats]);
+case 'bot_config':
+    if($role!=='super_admin')tg_admin_error('Super Admin access required.',403);$botConfig=new TelegramBotConfigService($conn,dirname(__DIR__));tg_admin_ok(['bot'=>$botConfig->status()]);
+case 'bot_config_save':
+    if($method!=='POST'||$role!=='super_admin')tg_admin_error('Super Admin access required.',403);$botConfig=new TelegramBotConfigService($conn,dirname(__DIR__));$bot=$botConfig->save($actor,(string)($input['current_password']??''),(string)($input['bot_token']??''),(string)($input['bot_username']??''));tg_admin_audit($conn,$actor,'bot_configuration_saved','deployment',0,['username'=>$bot['username'],'token_changed'=>true]);tg_admin_ok(['bot'=>$bot,'reload_required'=>true]);
 case 'operators':
     $limit=tg_admin_limit($input['limit']??50);$offset=max(0,(int)($input['offset']??0));
     $sql="SELECT tb.id,tb.telegram_user_id,tb.display_name,tb.username_snapshot,tb.status,tb.can_waiting,tb.can_direct,tb.daily_registration_limit,tb.expires_at,tb.last_seen_at,tb.created_at,tb.linked_user_id,u.full_name linked_user_name,u.username linked_username,u.role linked_role,u.is_active linked_user_active FROM telegram_bot_users tb LEFT JOIN users u ON u.id=tb.linked_user_id ORDER BY tb.id DESC LIMIT {$limit} OFFSET {$offset}";
@@ -50,13 +59,13 @@ case 'form_registry':
 case 'form_detail':
     $forms=new TelegramFormAdminService($conn);$form=$forms->detail((int)($input['id']??0));if(!$form)tg_admin_error('Form not found.',404);tg_admin_ok(['form'=>$form]);
 case 'form_create':
-    if($method!=='POST'||!in_array($role,['super_admin','school_admin'],true))tg_admin_error('Only administrators may create form versions.',403);
+    if($method!=='POST'||$role!=='hr_dept')tg_admin_error('Only HR may create form versions.',403);
     $forms=new TelegramFormAdminService($conn);$form=$forms->createDraft((string)($input['profile_key']??''),$actor);tg_admin_audit($conn,$actor,'form_draft_created','form_profile',(int)$form['id'],['profile_key'=>$form['profile_key'],'version'=>$form['version']]);tg_admin_ok(['form'=>$form]);
 case 'form_save':
-    if($method!=='POST'||!in_array($role,['super_admin','school_admin'],true))tg_admin_error('Only administrators may edit forms.',403);
+    if($method!=='POST'||$role!=='hr_dept')tg_admin_error('Only HR may edit forms.',403);
     $fields=json_decode((string)($input['fields_json']??''),true);if(!is_array($fields))tg_admin_error('Invalid form fields.');$forms=new TelegramFormAdminService($conn);$form=$forms->saveDraft((int)($input['id']??0),(string)($input['title_am']??''),(string)($input['title_en']??''),$fields);tg_admin_audit($conn,$actor,'form_draft_saved','form_profile',(int)$form['id'],['field_count'=>count($fields)]);tg_admin_ok(['form'=>$form]);
 case 'form_publish':
-    if($method!=='POST'||!in_array($role,['super_admin','school_admin'],true))tg_admin_error('Only administrators may publish forms.',403);
+    if($method!=='POST'||$role!=='hr_dept')tg_admin_error('Only HR may publish forms.',403);
     $forms=new TelegramFormAdminService($conn);$form=$forms->publish((int)($input['id']??0),$actor);tg_admin_audit($conn,$actor,'form_published','form_profile',(int)$form['id'],['profile_key'=>$form['profile_key'],'version'=>$form['version']]);tg_admin_ok(['form'=>$form]);
 case 'sessions':
     $limit=tg_admin_limit($input['limit']??50);$status=trim((string)($input['status']??''));$allowed=['choosing','collecting','review','submitted','cancelled','expired','failed'];
@@ -69,7 +78,7 @@ case 'review_decide':
 case 'audit':
     $limit=tg_admin_limit($input['limit']??100,100);$rows=[];$r=$conn->query("SELECT id,actor_type,actor_id,event,entity_type,entity_id,result,created_at FROM telegram_audit_log ORDER BY id DESC LIMIT {$limit}");while($row=$r->fetch_assoc())$rows[]=$row;tg_admin_ok(['audit'=>$rows]);
 case 'operator_save':
-    if($method!=='POST'||!in_array($role,['super_admin','school_admin'],true))tg_admin_error('Only administrators may manage operators.',403);
+    if($method!=='POST'||$role!=='hr_dept')tg_admin_error('Only HR may manage operators.',403);
     $id=max(0,(int)($input['id']??0));$telegramId=filter_var($input['telegram_user_id']??null,FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]);$userId=max(1,(int)($input['linked_user_id']??0));$status=(string)($input['operator_status']??'active');
     if(!$telegramId||!in_array($status,['active','suspended','revoked'],true))tg_admin_error('Valid numeric Telegram ID and status are required.');
     $u=$conn->prepare("SELECT id FROM users WHERE id=? AND is_active=1 AND role IN ('super_admin','school_admin','hr_dept')");$u->bind_param('i',$userId);$u->execute();$valid=$u->get_result()->fetch_assoc();$u->close();if(!$valid)tg_admin_error('Linked user must be an active HR/admin account.');

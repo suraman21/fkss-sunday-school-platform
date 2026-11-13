@@ -57,6 +57,13 @@ foreach ($_envPaths as $_envPath) {
         break;
     }
 }
+// Telegram bot credentials may be managed separately by the Super Admin UI.
+// The file is deployment-local, permission 0600, and always outside public_html.
+$_telegramEnvPath = dirname(__DIR__) . '/.telegram_env.php';
+if (is_file($_telegramEnvPath)) {
+    require_once $_telegramEnvPath;
+}
+
 if (!$_envLoaded) {
     // FAIL CLOSED. We must NOT run with guessable/placeholder secrets:
     // a fixed fallback JWT_SECRET would let anyone forge login tokens, and a

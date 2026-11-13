@@ -70,9 +70,10 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
 
     def test_admin_api_is_role_and_csrf_protected(self):
         api = (ROOT / "admin/api_telegram_registration.php").read_text(encoding="utf-8")
-        self.assertIn("['super_admin','school_admin','hr_dept']", api)
+        self.assertIn("['super_admin','hr_dept']", api)
         self.assertIn("validateCsrf", api)
-        self.assertIn("Only administrators may manage operators.", api)
+        self.assertIn("Only HR may manage operators.", api)
+        self.assertIn("Super Admin access required.", api)
         self.assertIn("Only super administrators may run this operation.", api)
         self.assertIn("role IN ('super_admin','school_admin','hr_dept')", api)
         self.assertNotIn("TELEGRAM_BOT_TOKEN]", api)
@@ -82,7 +83,7 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
 
     def test_admin_console_exposes_safe_phase_one_surfaces(self):
         page = (ROOT / "admin/telegram_registration.php").read_text(encoding="utf-8")
-        self.assertIn("['super_admin','school_admin','hr_dept']", page)
+        self.assertIn("['super_admin','hr_dept']", page)
         self.assertIn("generateCsrfToken()", page)
         self.assertIn("credentials:'same-origin'", page)
         for label in ["Overview", "Operators", "Forms", "Sessions & reviews", "Audit"]:
@@ -141,11 +142,29 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn("PHP_SAPI!=='cli'", cron)
         self.assertNotIn("TELEGRAM_BOT_TOKEN", retention + cron)
 
-    def test_authorized_dashboards_link_the_console(self):
-        for path in ["admin/dashboards/super-admin.php", "admin/dashboards/school_admin.php", "admin/dashboards/hr-dept.php"]:
+    def test_role_split_and_authorized_dashboards(self):
+        for path in ["admin/dashboards/super-admin.php", "admin/dashboards/hr-dept.php"]:
             page = (ROOT / path).read_text(encoding="utf-8")
             self.assertIn('/admin/telegram_registration.php', page, path)
             self.assertIn('Telegram Registration', page, path)
+        school = (ROOT / "admin/dashboards/school_admin.php").read_text(encoding="utf-8")
+        self.assertNotIn('/admin/telegram_registration.php', school)
+        api = (ROOT / "admin/api_telegram_registration.php").read_text(encoding="utf-8")
+        self.assertIn("$superActions=['overview','bot_config','bot_config_save','canonical_backfill']", api)
+        self.assertIn("$hrActions=['overview','operators','forms'", api)
+
+    def test_bot_token_setup_stays_outside_webroot_and_database(self):
+        service = (ROOT / "admin/backend/services/TelegramBotConfigService.php").read_text(encoding="utf-8")
+        config = (ROOT / "config.php").read_text(encoding="utf-8")
+        api = (ROOT / "admin/api_telegram_registration.php").read_text(encoding="utf-8")
+        self.assertIn("dirname($this->publicRoot).'/.telegram_env.php'", service)
+        self.assertIn("@chmod($temp,0600)", service)
+        self.assertIn("password_verify", service)
+        self.assertIn("random_bytes(48)", service)
+        self.assertNotRegex(service, r"INSERT\s+INTO")
+        self.assertIn("dirname(__DIR__) . '/.telegram_env.php'", config)
+        self.assertIn("case 'bot_config_save'", api)
+        self.assertNotIn("'token'=>$token", service)
 
     def test_schema_has_review_and_audit_boundaries(self):
         for table in [
