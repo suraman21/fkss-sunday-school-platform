@@ -81,25 +81,25 @@ acm_chrome_open('persons', 'Persons & accounts', 'One human, independently manag
 
 <?php if ($mode === 'search'): ?>
 <form method="get" class="acm-filterbar">
-    <input type="search" name="q" value="<?= e($q) ?>" placeholder="Name, phone, ID ref…" aria-label="Search persons" style="min-width:260px">
-    <button class="acm-btn acm-btn-ghost" type="submit"><i class="fa-solid fa-magnifying-glass"></i> Search</button>
+    <input class="inp" type="search" name="q" value="<?= e($q) ?>" placeholder="Name, phone, ID ref…" aria-label="Search persons" style="min-width:260px">
+    <button class="btn bo" type="submit"><i class="fa-solid fa-magnifying-glass"></i> Search</button>
     <?php if ($canCreate): ?>
-    <a class="acm-btn acm-btn-ok" href="/admin/acm_person.php?new=1"><i class="fa-solid fa-user-plus"></i> Register person</a>
+    <a class="btn bp" href="/admin/acm_person.php?new=1"><i class="fa-solid fa-user-plus"></i> Register person</a>
     <?php endif; ?>
 </form>
-<div class="acm-card">
-    <h3><i class="fa-solid fa-users"></i> Results</h3>
+<div class="cd">
+    <div class="ct"><i class="fa-solid fa-users"></i> Results</div>
     <?php if ($q === ''): ?>
     <div class="acm-empty"><i class="fa-solid fa-magnifying-glass"></i> Search by name, phone or ID reference to begin.</div>
     <?php elseif (empty($results)): ?>
     <div class="acm-empty"><i class="fa-solid fa-user-xmark"></i> No persons match. <?= $canCreate ? 'Register one with the button above.' : '' ?></div>
     <?php else: ?>
-    <table class="acm-table">
+    <div class="tw"><table>
         <thead><tr><th>Name</th><th>Father</th><th>Phone</th><th>Member</th><th>Guardian</th><th></th></tr></thead>
         <tbody>
         <?php foreach ($results as $row): ?>
             <tr>
-                <td><span class="eth"><?= e((string)($row['full_name_am'] ?? '')) ?></span></td>
+                <td><span class="amharic"><?= e((string)($row['full_name_am'] ?? '')) ?></span></td>
                 <td><?= e((string)($row['father_name'] ?? '—')) ?></td>
                 <td><?= e((string)($row['phone'] ?? '—')) ?></td>
                 <td><?= !empty($row['member_id']) ? '#' . (int)$row['member_id'] : '—' ?></td>
@@ -108,32 +108,32 @@ acm_chrome_open('persons', 'Persons & accounts', 'One human, independently manag
             </tr>
         <?php endforeach; ?>
         </tbody>
-    </table>
+    </table></div>
     <?php endif; ?>
 </div>
 <?php endif; ?>
 
 <?php if ($mode === 'new'): ?>
-<div class="acm-card">
-    <h3><i class="fa-solid fa-user-plus"></i> Register person</h3>
+<div class="cd">
+    <div class="ct"><i class="fa-solid fa-user-plus"></i> Register person</div>
     <?php if (!$canCreate): ?>
     <div class="acm-alert warn">Only registrars can register persons.</div>
     <?php else: ?>
     <form id="acmPersonForm" class="acm-form" onsubmit="return false">
-        <div class="acm-field"><label for="f_am">Full name — Amharic *</label><input id="f_am" name="full_name_am" required maxlength="150"></div>
-        <div class="acm-field"><label for="f_en">Full name — English</label><input id="f_en" name="full_name_en" maxlength="150"></div>
-        <div class="acm-field"><label for="f_bap">Baptismal name</label><input id="f_bap" name="baptismal_name" maxlength="150"></div>
-        <div class="acm-field"><label for="f_father">Father name</label><input id="f_father" name="father_name" maxlength="150"></div>
-        <div class="acm-field"><label for="f_gender">Gender</label><select id="f_gender" name="gender"><option value="">—</option><option value="male">Male</option><option value="female">Female</option></select></div>
-        <div class="acm-field"><label for="f_dob">Birth date (GC)</label><input id="f_dob" name="date_of_birth" type="date"></div>
-        <div class="acm-field"><label for="f_phone">Phone</label><input id="f_phone" name="phone" maxlength="30" placeholder="09XXXXXXXX"></div>
-        <div class="acm-field"><label for="f_email">Email</label><input id="f_email" name="email" type="email" maxlength="100"></div>
-        <div class="acm-field"><label for="f_doctype">ID document type</label><input id="f_doctype" name="id_doc_type" maxlength="40" placeholder="Kebele ID / Passport / …"></div>
-        <div class="acm-field"><label for="f_docref">ID document ref</label><input id="f_docref" name="id_doc_ref" maxlength="100"></div>
-        <div class="acm-field"><label for="f_member">Linked member ID (members.id)</label><input id="f_member" name="member_id" inputmode="numeric" placeholder="optional"></div>
-        <div class="acm-field"><label for="f_guardian">Linked guardian ID (guardians.id)</label><input id="f_guardian" name="guardian_id" inputmode="numeric" placeholder="optional"></div>
-        <div class="acm-field full"><label for="f_notes">Notes</label><textarea id="f_notes" name="notes" rows="2" maxlength="2000"></textarea></div>
-        <div class="acm-btn-row full"><button class="acm-btn acm-btn-ok" id="acmPersonSave"><i class="fa-solid fa-floppy-disk"></i> Save person</button></div>
+        <div><label class="flbl" for="f_am">Full name — Amharic *</label><input class="inp" id="f_am" name="full_name_am" required maxlength="150"></div>
+        <div><label class="flbl" for="f_en">Full name — English</label><input class="inp" id="f_en" name="full_name_en" maxlength="150"></div>
+        <div><label class="flbl" for="f_bap">Baptismal name</label><input class="inp" id="f_bap" name="baptismal_name" maxlength="150"></div>
+        <div><label class="flbl" for="f_father">Father name</label><input class="inp" id="f_father" name="father_name" maxlength="150"></div>
+        <div><label class="flbl" for="f_gender">Gender</label><select class="inp" id="f_gender" name="gender"><option value="">—</option><option value="male">Male</option><option value="female">Female</option></select></div>
+        <div><label class="flbl" for="f_dob">Birth date (GC)</label><input class="inp" id="f_dob" name="date_of_birth" type="date"></div>
+        <div><label class="flbl" for="f_phone">Phone</label><input class="inp" id="f_phone" name="phone" maxlength="30" placeholder="09XXXXXXXX"></div>
+        <div><label class="flbl" for="f_email">Email</label><input class="inp" id="f_email" name="email" type="email" maxlength="100"></div>
+        <div><label class="flbl" for="f_doctype">ID document type</label><input class="inp" id="f_doctype" name="id_doc_type" maxlength="40" placeholder="Kebele ID / Passport / …"></div>
+        <div><label class="flbl" for="f_docref">ID document ref</label><input class="inp" id="f_docref" name="id_doc_ref" maxlength="100"></div>
+        <div><label class="flbl" for="f_member">Linked member ID (members.id)</label><input class="inp" id="f_member" name="member_id" inputmode="numeric" placeholder="optional"></div>
+        <div><label class="flbl" for="f_guardian">Linked guardian ID (guardians.id)</label><input class="inp" id="f_guardian" name="guardian_id" inputmode="numeric" placeholder="optional"></div>
+        <div class="full"><label class="flbl" for="f_notes">Notes</label><textarea class="inp" id="f_notes" name="notes" rows="2" maxlength="2000"></textarea></div>
+        <div class="acm-btn-row full"><button class="btn bp" id="acmPersonSave"><i class="fa-solid fa-floppy-disk"></i> Save person</button></div>
     </form>
     <?php endif; ?>
 </div>
@@ -141,8 +141,8 @@ acm_chrome_open('persons', 'Persons & accounts', 'One human, independently manag
 
 <?php if ($mode === 'view' && is_array($person)): ?>
 <div class="acm-grid2">
-    <div class="acm-card">
-        <h3><i class="fa-solid fa-id-card"></i> <span class="eth"><?= e((string)($person['full_name_am'] ?? '')) ?></span></h3>
+    <div class="cd">
+        <div class="ct"><i class="fa-solid fa-id-card"></i> <span class="amharic"><?= e((string)($person['full_name_am'] ?? '')) ?></span></div>
         <dl class="acm-kv">
             <dt>Name (EN)</dt><dd><?= e((string)($person['full_name_en'] ?? '—')) ?></dd>
             <dt>Baptismal</dt><dd><?= e((string)($person['baptismal_name'] ?? '—')) ?></dd>
@@ -161,12 +161,12 @@ acm_chrome_open('persons', 'Persons & accounts', 'One human, independently manag
         </div>
         <?php endif; ?>
     </div>
-    <div class="acm-card">
-        <h3><i class="fa-solid fa-key"></i> Accounts</h3>
+    <div class="cd">
+        <div class="ct"><i class="fa-solid fa-key"></i> Accounts</div>
         <?php if (empty($accounts)): ?>
-        <div style="font-size:.8rem;color:#7c8aa5">No accounts yet — submit an activation ticket below.</div>
+        <div style="font-size:.8rem;color:var(--dim)">No accounts yet — submit an activation ticket below.</div>
         <?php else: ?>
-        <table class="acm-table">
+        <div class="tw"><table>
             <thead><tr><th>Username</th><th>Type</th><th>Status</th><th>Last login</th></tr></thead>
             <tbody>
             <?php foreach ($accounts as $acc): ?>
@@ -178,38 +178,38 @@ acm_chrome_open('persons', 'Persons & accounts', 'One human, independently manag
                 </tr>
             <?php endforeach; ?>
             </tbody>
-        </table>
+        </table></div>
         <?php endif; ?>
-        <h3 style="margin-top:1rem"><i class="fa-solid fa-ticket"></i> Tickets</h3>
+        <div class="ct" style="margin-top:1rem"><i class="fa-solid fa-ticket"></i> Tickets</div>
         <?php if (empty($personTickets)): ?>
-        <div style="font-size:.8rem;color:#7c8aa5">No tickets.</div>
+        <div style="font-size:.8rem;color:var(--dim)">No tickets.</div>
         <?php else: ?>
-        <table class="acm-table">
+        <div class="tw"><table>
             <thead><tr><th>Ticket</th><th>Type</th><th>Status</th></tr></thead>
             <tbody>
             <?php foreach ($personTickets as $pt): ?>
                 <tr>
                     <td><a href="/admin/acm_ticket.php?id=<?= (int)$pt['id'] ?>"><?= e((string)($pt['ticket_no'] ?? '')) ?></a></td>
                     <td><?= e((string)($pt['account_type'] ?? '')) ?></td>
-                    <td><span class="acm-pill acm-st-<?= e((string)($pt['status'] ?? '')) ?>"><?= e(str_replace('_', ' ', (string)($pt['status'] ?? ''))) ?></span></td>
+                    <td><span class="bg <?= acm_status_bg((string)($pt['status'] ?? '')) ?>"><?= e(str_replace('_', ' ', (string)($pt['status'] ?? ''))) ?></span></td>
                 </tr>
             <?php endforeach; ?>
             </tbody>
-        </table>
+        </table></div>
         <?php endif; ?>
     </div>
 </div>
 
 <?php if ($canTicket): ?>
-<div class="acm-card">
-    <h3><i class="fa-solid fa-paper-plane"></i> Submit activation ticket</h3>
+<div class="cd">
+    <div class="ct"><i class="fa-solid fa-paper-plane"></i> Submit activation ticket</div>
     <form id="acmTicketForm" class="acm-form" onsubmit="return false">
-        <div class="acm-field"><label for="t_type">Account type *</label>
-            <select id="t_type" name="account_type"><option value="member">Member</option><option value="parent">Parent</option></select></div>
-        <div class="acm-field"><label for="t_note">Submitter note</label><input id="t_note" name="note" maxlength="500" placeholder="optional context for the reviewer"></div>
-        <div class="acm-btn-row full"><button class="acm-btn acm-btn-ok" id="acmTicketSubmit"><i class="fa-solid fa-paper-plane"></i> Submit for review</button></div>
+        <div><label class="flbl" for="t_type">Account type *</label>
+            <select class="inp" id="t_type" name="account_type"><option value="member">Member</option><option value="parent">Parent</option></select></div>
+        <div><label class="flbl" for="t_note">Submitter note</label><input class="inp" id="t_note" name="note" maxlength="500" placeholder="optional context for the reviewer"></div>
+        <div class="acm-btn-row full"><button class="btn bp" id="acmTicketSubmit"><i class="fa-solid fa-paper-plane"></i> Submit for review</button></div>
     </form>
-    <div style="font-size:.75rem;color:#7c8aa5">Member accounts need a linked member record; parent accounts need a linked guardian record (see links above).</div>
+    <div style="font-size:.75rem;color:var(--dim)">Member accounts need a linked member record; parent accounts need a linked guardian record (see links above).</div>
 </div>
 <?php endif; ?>
 <?php endif; ?>
