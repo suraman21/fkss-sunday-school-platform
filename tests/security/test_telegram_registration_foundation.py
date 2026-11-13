@@ -72,6 +72,8 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn("revision_number=revision_number+1", api)
         self.assertIn("correction_fields=NULL", self.service)
         self.assertIn("Use /resume to correct", api)
+        self.assertIn("expires_at=DATE_ADD(NOW(),INTERVAL 24 HOUR)", api)
+        self.assertIn("['/cancel','❌ Cancel','❌ ሰርዝ']", self.service)
         self.assertIn('id="correctionFieldPicker"', page)
         self.assertIn("correction_fields',JSON.stringify", page)
         self.assertIn("TelegramFormRegistry::label", api)

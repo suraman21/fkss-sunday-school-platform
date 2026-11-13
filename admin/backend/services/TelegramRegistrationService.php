@@ -47,7 +47,7 @@ final class TelegramRegistrationService
         $this->expireStale((int)$actor['id']);
 
         if ($text === '/start' || $text === '/help') return $this->home($chatId, $actor);
-        if ($text === '/cancel') { $this->cancelActive((int)$actor['id']); return self::message($chatId, 'Cancelled. / ተሰርዟል።', self::homeKeyboard()); }
+        if (in_array($text, ['/cancel','❌ Cancel','❌ ሰርዝ'], true)) { $this->cancelActive((int)$actor['id']); return self::message($chatId, 'Cancelled. / ተሰርዟል።', self::homeKeyboard()); }
         if ($text === '/resume' || $text === '▶️ ቀጥል / Resume') return $this->resume($chatId, $actor);
         if ($text === '/new' || $text === '➕ አዲስ ምዝገባ' || $text === '➕ New registration') return $this->begin($chatId, $actor);
 
