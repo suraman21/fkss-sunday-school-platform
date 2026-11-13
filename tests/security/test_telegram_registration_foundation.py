@@ -92,7 +92,22 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertNotRegex(readiness, r"INSERT\s+INTO\s+members")
         self.assertIn("approval_readiness", api)
         self.assertIn('id="approvalReadiness"', page)
-        self.assertIn("approval remains unavailable", page)
+        self.assertIn("Approval is enabled only when all blocking preflight checks pass.", page)
+
+    def test_hr_approval_is_transactional_idempotent_and_duplicate_locked(self):
+        approval = (ROOT / "admin/backend/services/TelegramMemberApprovalService.php").read_text(encoding="utf-8")
+        migration = (ROOT / "sql/083_telegram_registration_approval.sql").read_text(encoding="utf-8")
+        api = (ROOT / "admin/api_telegram_registration.php").read_text(encoding="utf-8")
+        self.assertIn("FOR UPDATE", approval)
+        self.assertIn("acquireStrongIdentityLock", approval)
+        self.assertIn("findStrongMatch", approval)
+        self.assertIn("INSERT INTO members", approval)
+        self.assertIn("MemberCanonicalIdentityService::refresh", approval)
+        self.assertIn("created_member_id", approval)
+        self.assertIn("already_approved'=>true", approval)
+        self.assertIn("UNIQUE INDEX uniq_tg_created_member", migration)
+        self.assertIn("case 'review_approve'", api)
+        self.assertIn("Only HR may approve", api)
 
     def test_submission_never_inserts_member(self):
         submit = self.service[self.service.index("private function submitReview"):]
@@ -137,17 +152,16 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         for action in ["overview", "operators", "forms", "sessions", "audit", "operator_save", "canonical_backfill"]:
             self.assertIn(f"case '{action}'", api)
 
-    def test_admin_console_exposes_safe_phase_one_surfaces(self):
+    def test_admin_console_exposes_role_safe_registration_surfaces(self):
         page = (ROOT / "admin/telegram_registration.php").read_text(encoding="utf-8")
         self.assertIn("['super_admin','hr_dept']", page)
         self.assertIn("generateCsrfToken()", page)
         self.assertIn("credentials:'same-origin'", page)
         for label in ["Overview", "Operators", "Forms", "Sessions & reviews", "Audit"]:
             self.assertIn(label, page)
-        self.assertIn("Phase 1 does not create members", page)
+        self.assertIn("Approve and create record", page)
         self.assertNotIn("TELEGRAM_BOT_TOKEN", page)
         self.assertNotIn("TELEGRAM_WEBHOOK_SECRET", page)
-        self.assertNotIn("approve member", page.lower())
         self.assertNotIn("Credentials are deployment-local", page)
         self.assertNotIn("Development, FKSS and WBSS", page)
         self.assertNotIn("above public_html", page)
@@ -182,7 +196,7 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn("case 'session_detail'", api)
         self.assertIn("case 'review_decide'", api)
         self.assertIn("['rejected','changes_requested','duplicate']", api)
-        self.assertIn("Approval is unavailable in review-only phase.", api)
+        self.assertIn("Use the protected approval action to approve a draft.", api)
         self.assertIn("FOR UPDATE", api)
         self.assertIn("candidate_cap'=>10", api)
         self.assertIn("Request changes", page)
