@@ -194,6 +194,20 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn("editOperator", page)
         self.assertNotIn("Active HR/admin web-account ID", page)
 
+    def test_duplicate_refinement_is_live_and_cap_is_explicit(self):
+        duplicate = (ROOT / "admin/backend/services/TelegramDuplicateCandidateService.php").read_text(encoding="utf-8")
+        registration = (ROOT / "admin/backend/services/TelegramRegistrationService.php").read_text(encoding="utf-8")
+        api = (ROOT / "admin/api_telegram_registration.php").read_text(encoding="utf-8")
+        page = (ROOT / "admin/telegram_registration.php").read_text(encoding="utf-8")
+        self.assertIn("findWithMeta", duplicate)
+        self.assertIn("'capped'=>$plausibleCount>$displayLimit", duplicate)
+        for key in ["full_name_am", "dob_ec", "phone_number", "baptismal_name", "gender"]:
+            self.assertIn(key, registration)
+        self.assertIn("More plausible candidates exist than the safe display limit", registration)
+        self.assertIn("/skip — ዝለል", registration)
+        self.assertIn("candidate_cap_reached", api)
+        self.assertIn("results are never silently expanded", page)
+
     def test_schema_has_review_and_audit_boundaries(self):
         for table in [
             "telegram_bot_users", "telegram_form_profiles", "telegram_form_fields",
