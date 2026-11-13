@@ -68,6 +68,18 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn("phone_number", canonical)
         self.assertNotIn("UPDATE members SET student_name=", canonical)
 
+    def test_admin_api_is_role_and_csrf_protected(self):
+        api = (ROOT / "admin/api_telegram_registration.php").read_text(encoding="utf-8")
+        self.assertIn("['super_admin','school_admin','hr_dept']", api)
+        self.assertIn("validateCsrf", api)
+        self.assertIn("Only administrators may manage operators.", api)
+        self.assertIn("Only super administrators may run this operation.", api)
+        self.assertIn("role IN ('super_admin','school_admin','hr_dept')", api)
+        self.assertNotIn("TELEGRAM_BOT_TOKEN]", api)
+        self.assertNotIn("TELEGRAM_WEBHOOK_SECRET]", api)
+        for action in ["overview", "operators", "forms", "sessions", "audit", "operator_save", "canonical_backfill"]:
+            self.assertIn(f"case '{action}'", api)
+
     def test_schema_has_review_and_audit_boundaries(self):
         for table in [
             "telegram_bot_users", "telegram_form_profiles", "telegram_form_fields",
