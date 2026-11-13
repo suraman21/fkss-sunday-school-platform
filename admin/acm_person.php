@@ -1,7 +1,7 @@
 <?php
 /**
- * ACM P0 — Persons & accounts. Search, register, 360° view, submit ticket.
- * Roles: super_admin, registrar, account_activator (activator is view-only here).
+ * ACM S1 — Persons & accounts. Search, register, 360° view, submit ticket.
+ * Roles: super_admin, accounts_office.
  */
 define('ACM_BOOT', true);
 require_once __DIR__ . '/config.php';
@@ -117,7 +117,7 @@ acm_chrome_open('persons', 'Persons & accounts', 'One human, independently manag
 <div class="cd">
     <div class="ct"><i class="fa-solid fa-user-plus"></i> Register person</div>
     <?php if (!$canCreate): ?>
-    <div class="acm-alert warn">Only registrars can register persons.</div>
+    <div class="acm-alert warn">Only the Accounts Office can register persons.</div>
     <?php else: ?>
     <form id="acmPersonForm" class="acm-form" onsubmit="return false">
         <div><label class="flbl" for="f_am">Full name — Amharic *</label><input class="inp" id="f_am" name="full_name_am" required maxlength="150"></div>

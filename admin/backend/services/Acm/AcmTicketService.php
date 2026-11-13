@@ -5,7 +5,12 @@
  * submitted -> in_review -> approved -> provisioned
  *                     \-> changes_requested -> (resubmit path is P3)
  *                     \-> rejected
- * Maker-checker: decided_by must differ from submitter_id (all roles).
+ * Maker-checker is mode-aware (S1 office model, AcmOfficeService):
+ * separated mode keeps the P0 rule (decider must differ from
+ * submitter, no override) and additionally requires at least two
+ * active officers; solo mode allows a designated approver to decide,
+ * with submitter self-decision permitted only with a recorded reason
+ * and an immutable self_approved flag.
  * Approve provisions the users row + person link in ONE transaction.
  * P0 credentials: random unusable hash; first credential is issued by
  * helpdesk until the P3 invite flow ships (documented limitation).
@@ -270,17 +275,25 @@ class AcmTicketService
 
     /**
      * Decide + (on approve) provision. One transaction, row-locked.
-     * Maker-checker: decider must differ from submitter — no override in P0.
+     * $office: ['mode' => 'separated'|'solo', 'is_designee' => bool,
+     * 'active_officers' => int] from AcmOfficeService (api_acm builds
+     * it; default = separated P0 behavior when the office tables are
+     * not migrated yet).
      */
     public function decide(
         int $id,
         int $userId,
         string $decision,
         string $note,
-        bool $verifiedParentId
+        bool $verifiedParentId,
+        array $office = []
     ): array {
         if ($decision !== 'approve' && $decision !== 'reject' && $decision !== 'request_changes') {
             throw new InvalidArgumentException('Unknown decision.');
+        }
+        $mode = (string)($office['mode'] ?? 'separated');
+        if ($mode !== 'separated' && $mode !== 'solo') {
+            throw new InvalidArgumentException('Unknown office mode.');
         }
         $note = trim($note);
         if (($decision === 'reject' || $decision === 'request_changes')
@@ -293,8 +306,32 @@ class AcmTicketService
             if (!in_array($ticket['status'], self::DECIDABLE_STATUSES, true)) {
                 throw new InvalidArgumentException('Ticket is already decided.');
             }
-            if ((int)$ticket['submitter_id'] === $userId) {
-                throw new InvalidArgumentException('Maker-checker: the submitter cannot decide this ticket.');
+            $isSelf = (int)$ticket['submitter_id'] === $userId;
+            $selfApproved = false;
+            if ($mode === 'separated') {
+                // Fail closed: a caller that forgets the staffing count
+                // blocks decisions instead of bypassing the floor.
+                $officers = (int)($office['active_officers'] ?? 0);
+                if ($officers < 2) {
+                    throw new InvalidArgumentException(
+                        'Only one active officer remains: switch the office to solo mode before deciding.'
+                    );
+                }
+                if ($isSelf) {
+                    throw new InvalidArgumentException('Maker-checker: the submitter cannot decide this ticket.');
+                }
+            } else {
+                if (empty($office['is_designee'])) {
+                    throw new InvalidArgumentException('Solo mode: only a designated approver can decide.');
+                }
+                if ($isSelf) {
+                    if (mb_strlen($note) < 3 || mb_strlen($note) > 2000) {
+                        throw new InvalidArgumentException(
+                            'Solo self-approval needs a recorded reason (3-2000 chars). It will be flagged in the monthly audit.'
+                        );
+                    }
+                    $selfApproved = true;
+                }
             }
             $person = $this->persons->find((int)$ticket['person_id']);
             if ($person === null) {
@@ -309,22 +346,31 @@ class AcmTicketService
                     );
                 }
                 $newUserId = $this->provision($ticket, $person, $userId);
+                // self_approved is referenced only on the solo self-decision
+                // path (unreachable before migration 080), so separated-mode
+                // decisions keep working on a pre-migration database.
+                $selfSql = $selfApproved ? ', self_approved = 1' : '';
                 $stmt = $this->pdo->prepare(
                     'UPDATE acm_activation_tickets SET status = \'provisioned\', decided_by = :u,'
-                    . ' decision_note = :note, decided_at = NOW() WHERE id = :id'
+                    . ' decision_note = :note, decided_at = NOW()' . $selfSql . ' WHERE id = :id'
                 );
                 $stmt->execute([':u' => $userId, ':note' => ($note === '' ? null : $note), ':id' => $id]);
-                $this->addEvent($id, $userId, 'approved', $note, ['provisioned_user_id' => $newUserId]);
-                $this->addEvent($id, $userId, 'provisioned', '', ['provisioned_user_id' => $newUserId]);
+                $meta = ['provisioned_user_id' => $newUserId];
+                if ($selfApproved) {
+                    $meta['self_approved'] = 1;
+                }
+                $this->addEvent($id, $userId, 'approved', $note, $meta);
+                $this->addEvent($id, $userId, 'provisioned', '', $meta);
             } else {
                 $status = $decision === 'reject' ? 'rejected' : 'changes_requested';
                 $event = $decision === 'reject' ? 'rejected' : 'changes_requested';
+                $selfSql = $selfApproved ? ', self_approved = 1' : '';
                 $stmt = $this->pdo->prepare(
                     'UPDATE acm_activation_tickets SET status = :st, decided_by = :u,'
-                    . ' decision_note = :note, decided_at = NOW() WHERE id = :id'
+                    . ' decision_note = :note, decided_at = NOW()' . $selfSql . ' WHERE id = :id'
                 );
                 $stmt->execute([':st' => $status, ':u' => $userId, ':note' => $note, ':id' => $id]);
-                $this->addEvent($id, $userId, $event, $note, null);
+                $this->addEvent($id, $userId, $event, $note, $selfApproved ? ['self_approved' => 1] : null);
             }
             $this->pdo->commit();
         } catch (\Throwable $e) {

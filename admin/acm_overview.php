@@ -1,7 +1,7 @@
 <?php
 /**
- * ACM P0 — Overview. KPI cards + open-ticket spotlight.
- * Roles: super_admin, registrar, account_activator.
+ * ACM S1 — Overview. KPI cards + open-ticket spotlight.
+ * Roles: super_admin, accounts_office.
  */
 define('ACM_BOOT', true);
 require_once __DIR__ . '/config.php';
@@ -9,7 +9,9 @@ require_once __DIR__ . '/acm_layout.php';
 require_once __DIR__ . '/backend/services/Acm/AcmPolicy.php';
 require_once __DIR__ . '/backend/services/Acm/AcmPersonService.php';
 require_once __DIR__ . '/backend/services/Acm/AcmTicketService.php';
+require_once __DIR__ . '/backend/services/Acm/AcmOfficeService.php';
 
+use App\Services\Acm\AcmOfficeService;
 use App\Services\Acm\AcmPersonService;
 use App\Services\Acm\AcmPolicy;
 use App\Services\Acm\AcmTicketService;
@@ -38,11 +40,25 @@ try {
     $pageError = 'Statistics are temporarily unavailable.';
 }
 
+$officeMode = 'separated';
+$lastMonth = date('Y-m', strtotime('first day of last month'));
+$lastMonthAttested = true;
+try {
+    $officeSvc = new AcmOfficeService($pdo);
+    $officeMode = $officeSvc->mode();
+    $lastMonthAttested = $officeSvc->monthAttested($lastMonth);
+} catch (\Throwable $e) {
+    $officeMode = 'separated';
+}
+
 acm_head('Overview');
 acm_chrome_open('overview', 'Access Control — Overview', 'Activation workload at a glance', (int)($stats['open'] ?? 0));
 ?>
 <?php if ($pageError !== ''): ?>
 <div class="acm-alert err"><i class="fa-solid fa-triangle-exclamation"></i> <?= e($pageError) ?></div>
+<?php endif; ?>
+<?php if (!$lastMonthAttested): ?>
+<div class="acm-alert warn"><i class="fa-solid fa-file-circle-exclamation"></i> <?= e($lastMonth) ?> is not attested yet. <a href="/admin/acm_audit.php?month=<?= e($lastMonth) ?>">Open the monthly audit</a>.</div>
 <?php endif; ?>
 <div class="sg">
     <div class="sc"><div class="ico" style="background:rgba(245,158,11,.1);color:var(--warn)"><i class="fa-solid fa-inbox"></i></div><div class="val"><?= (int)($stats['open'] ?? 0) ?></div><div class="lbl">Open tickets</div></div>
@@ -79,10 +95,13 @@ acm_chrome_open('overview', 'Access Control — Overview', 'Activation workload 
 <div class="cd">
     <div class="ct"><i class="fa-solid fa-circle-info"></i> Your seat</div>
     <div style="font-size:.82rem;color:var(--text)">
-    <?php if ($role === 'registrar'): ?>
-        Registrar: create persons, link family, submit activation tickets. Approval is done by an Account Activator (maker–checker).
-    <?php elseif ($role === 'account_activator'): ?>
-        Account Activator: review the queue, verify member/parent identity evidence, approve or reject with a note. You cannot decide tickets you submitted.
+    <?php if ($role === 'accounts_office'): ?>
+        Accounts Office (<?= e($officeMode) ?> mode): register persons, link family, submit and review activation tickets.
+        <?php if ($officeMode === 'solo'): ?>
+        Solo mode is active: only designated approvers can decide, and self-approvals need a recorded reason.
+        <?php else: ?>
+        Maker–checker applies: you cannot decide tickets you submitted.
+        <?php endif; ?>
     <?php else: ?>
         Super Admin: full ACM access. Every decision, grant and provisioning is audit-trailed.
     <?php endif; ?>
