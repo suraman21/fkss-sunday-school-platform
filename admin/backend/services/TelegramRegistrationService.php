@@ -141,7 +141,7 @@ final class TelegramRegistrationService
     {
         $field=$this->field((int)$session['form_profile_id'],(string)$session['current_field_key']);
         if (!$field) return self::message((int)$session['telegram_chat_id'],'Form configuration changed. Use /cancel and start again.');
-        try { $value=TelegramFormRegistry::validate((string)$field['field_key'],$text,(int)$field['is_required']===1); }
+        try { $value=$field['field_key']==='current_section'?$this->validateSection($text,(int)$field['is_required']===1):TelegramFormRegistry::validate((string)$field['field_key'],$text,(int)$field['is_required']===1); }
         catch (InvalidArgumentException $e) { return self::message((int)$session['telegram_chat_id'],"⚠️ {$e->getMessage()}\n\n".$this->promptText($field)); }
         $sessionId=(int)$session['id']; $key=(string)$field['field_key']; $display=$value['display']; $normal=$value['normalized'];
         $statement=$this->conn->prepare('INSERT INTO telegram_registration_answers (session_id,field_key,value_text,value_normalized) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE value_text=VALUES(value_text),value_normalized=VALUES(value_normalized),updated_at=CURRENT_TIMESTAMP');
@@ -236,11 +236,28 @@ final class TelegramRegistrationService
     private function prompt(array $session,array $field,?string $prefix=null): array
     {
         $keyboard=['remove_keyboard'=>true];
-        if ($field['field_key']==='gender') $keyboard=['keyboard'=>[[['text'=>'ወንድ'],['text'=>'ሴት']]],'resize_keyboard'=>true,'one_time_keyboard'=>true];
+        $choices=$field['field_key']==='current_section'?$this->sectionOptions():TelegramFormRegistry::choices((string)$field['field_key']);
+        if($choices!==[]){$buttons=[];foreach(array_values($choices) as $index=>$label)$buttons[intdiv($index,2)][]=['text'=>$label];if((int)($field['is_required']??0)!==1)$buttons[]=[['text'=>'/skip']];$keyboard=['keyboard'=>$buttons,'resize_keyboard'=>true,'one_time_keyboard'=>true];}
         $text=$this->promptText($field); if($prefix)$text=$prefix."\n\n".$text;
         return self::message((int)$session['telegram_chat_id'],$text,$keyboard);
     }
     private function promptText(array $field): string { $text=(string)$field['prompt_am']."\n".(string)$field['prompt_en'].((string)($field['help_am']??'')!==''?"\n\nℹ️ ".$field['help_am']." / ".$field['help_en']:'');if((int)($field['is_required']??0)!==1)$text.="\n\n/skip — ዝለል / skip this optional question";return $text; }
+
+    /** @return array<string,string> */
+    private function sectionOptions(): array
+    {
+        $options=[];$result=$this->conn->query("SELECT class_name,class_name_en FROM classes WHERE is_active=1 ORDER BY level_order,class_name,id LIMIT 50");
+        if($result)while($row=$result->fetch_assoc()){$value=trim((string)$row['class_name']);if($value==='')continue;$english=trim((string)($row['class_name_en']??''));$options[$value]=$english!==''&&$english!==$value?$value.' / '.$english:$value;}
+        return $options;
+    }
+
+    /** @return array{display:string,normalized:string} */
+    private function validateSection(string $raw,bool $required): array
+    {
+        $value=trim($raw);if(in_array(strtolower($value),['/skip','skip','ዝለል'],true)){if($required)throw new InvalidArgumentException('This answer is required.');return ['display'=>'','normalized'=>''];}
+        $options=$this->sectionOptions();foreach($options as $stored=>$label)if($value===$stored||$value===$label)return ['display'=>$label,'normalized'=>$stored];
+        throw new InvalidArgumentException($options===[]?'No active school sections are configured. Contact HR.':'Choose one of the available school sections.');
+    }
 
     private function activeSession(int $actorId,int $chatId): ?array { $s=$this->conn->prepare("SELECT * FROM telegram_registration_sessions WHERE bot_user_id=? AND telegram_chat_id=? AND status IN ('choosing','collecting','review') AND expires_at>CURRENT_TIMESTAMP ORDER BY id DESC LIMIT 1");$s->bind_param('ii',$actorId,$chatId);$s->execute();$r=$s->get_result()->fetch_assoc()?:null;$s->close();return $r; }
     private function session(int $id): ?array { $s=$this->conn->prepare('SELECT * FROM telegram_registration_sessions WHERE id=?');$s->bind_param('i',$id);$s->execute();$r=$s->get_result()->fetch_assoc()?:null;$s->close();return $r; }

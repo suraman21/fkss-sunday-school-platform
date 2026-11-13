@@ -56,6 +56,13 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn("edit_return_to_review", self.phase2_migration)
         self.assertIn("information_schema.columns", self.phase2_migration)
 
+    def test_controlled_fields_use_allowlists_and_bounded_active_sections(self):
+        self.assertIn("TelegramFormRegistry::choices", self.service)
+        self.assertIn("WHERE is_active=1 ORDER BY level_order,class_name,id LIMIT 50", self.service)
+        self.assertIn("private function validateSection", self.service)
+        self.assertIn("Choose one of the available options.", self.registry)
+        self.assertNotIn("SELECT DISTINCT current_section FROM members", self.service)
+
     def test_submission_never_inserts_member(self):
         submit = self.service[self.service.index("private function submitReview"):]
         self.assertIn("status='submitted'", submit)
@@ -115,8 +122,11 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertNotIn("above public_html", page)
         self.assertIn('id="previewForm"', page)
         self.assertIn('id="formPreviewDialog"', page)
-        self.assertIn("definition.input==='choice'", page)
-        self.assertIn("'choices'=>['ወንድ / Male','ሴት / Female']", self.registry)
+        self.assertIn("['choice','dynamic_choice'].includes(definition.input)", page)
+        self.assertIn("'male'=>'ወንድ / Male'", self.registry)
+        self.assertIn("'education_level' => ['max'=>60", self.registry)
+        self.assertIn("'spiritual_education' => ['max'=>100", self.registry)
+        self.assertIn("'current_section' => ['max'=>100", self.registry)
 
     def test_form_builder_versions_and_validates_closed_registry(self):
         service = (ROOT / "admin/backend/services/TelegramFormAdminService.php").read_text(encoding="utf-8")

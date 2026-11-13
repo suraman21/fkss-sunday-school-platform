@@ -22,6 +22,7 @@ function tg_admin_ok(array $data=[]): never { echo json_encode(['status'=>'succe
 function tg_admin_tables(\mysqli $conn): bool { $r=$conn->query("SELECT COUNT(*) n FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('telegram_bot_users','telegram_form_profiles','telegram_form_fields','telegram_registration_sessions','telegram_registration_answers','telegram_processed_updates','telegram_registration_reviews','telegram_audit_log')");$row=$r?$r->fetch_assoc():null;return (int)($row['n']??0)===8; }
 function tg_admin_limit($value,int $default=50): int { $n=(int)$value;return $n>0?min(200,$n):$default; }
 function tg_admin_audit(\mysqli $conn,int $actor,string $event,string $entity,int $entityId,array $meta=[]): void { $json=json_encode($meta,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);$s=$conn->prepare("INSERT INTO telegram_audit_log(actor_type,actor_id,event,entity_type,entity_id,result,meta) VALUES('admin',?,?,?,?, 'success',?)");$s->bind_param('issis',$actor,$event,$entity,$entityId,$json);$s->execute();$s->close(); }
+function tg_form_registry(\mysqli $conn): array { $fields=TelegramFormRegistry::definitions();$choices=[];$r=$conn->query("SELECT class_name,class_name_en FROM classes WHERE is_active=1 ORDER BY level_order,class_name,id LIMIT 50");if($r)while($row=$r->fetch_assoc()){$value=trim((string)$row['class_name']);if($value==='')continue;$en=trim((string)($row['class_name_en']??''));$choices[$value]=$en!==''&&$en!==$value?$value.' / '.$en:$value;}$fields['current_section']['choices']=$choices;return $fields; }
 
 if (!function_exists('isLoggedIn') || !isLoggedIn()) tg_admin_error('Not authenticated.',401);
 $actor=(int)($_SESSION['admin_id']??0);$role=(string)($_SESSION['admin_role']??'');
@@ -67,7 +68,7 @@ case 'eligible_users':
 case 'forms':
     $rows=[];$r=$conn->query("SELECT p.*,COUNT(f.id) field_count,COALESCE(SUM(f.is_enabled=1),0) enabled_count,COALESCE(SUM(f.is_enabled=1 AND f.is_required=1),0) required_count FROM telegram_form_profiles p LEFT JOIN telegram_form_fields f ON f.profile_id=p.id GROUP BY p.id ORDER BY p.profile_key,p.version DESC");while($row=$r->fetch_assoc())$rows[]=$row;tg_admin_ok(['forms'=>$rows]);
 case 'form_registry':
-    tg_admin_ok(['fields'=>TelegramFormRegistry::definitions()]);
+    tg_admin_ok(['fields'=>tg_form_registry($conn)]);
 case 'form_detail':
     $forms=new TelegramFormAdminService($conn);$form=$forms->detail((int)($input['id']??0));if(!$form)tg_admin_error('Form not found.',404);tg_admin_ok(['form'=>$form]);
 case 'form_create':

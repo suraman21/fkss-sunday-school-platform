@@ -10,7 +10,7 @@ final class TelegramFormRegistry
     private const FIELDS = [
         'full_name_am' => ['max'=>150, 'skip'=>false, 'label'=>'Full name / ሙሉ ስም'],
         'baptismal_name' => ['max'=>150, 'skip'=>true, 'label'=>'Baptismal name / የክርስትና ስም'],
-        'gender' => ['max'=>10, 'skip'=>false, 'label'=>'Gender / ጾታ', 'input'=>'choice', 'choices'=>['ወንድ / Male','ሴት / Female']],
+        'gender' => ['max'=>10, 'skip'=>false, 'label'=>'Gender / ጾታ', 'input'=>'choice', 'choices'=>['male'=>'ወንድ / Male','female'=>'ሴት / Female']],
         'dob_ec' => ['max'=>10, 'skip'=>true, 'label'=>'Ethiopian date of birth / የትውልድ ቀን'],
         'phone_number' => ['max'=>30, 'skip'=>true, 'label'=>'Phone / ስልክ'],
         'guardian_name' => ['max'=>150, 'skip'=>true, 'label'=>'Guardian name / የአሳዳጊ ስም'],
@@ -20,9 +20,9 @@ final class TelegramFormRegistry
         'woreda' => ['max'=>10, 'skip'=>true, 'label'=>'Woreda / ወረዳ'],
         'mender' => ['max'=>10, 'skip'=>true, 'label'=>'Mender / መንደር'],
         'house_number' => ['max'=>20, 'skip'=>true, 'label'=>'House number / የቤት ቁጥር'],
-        'education_level' => ['max'=>60, 'skip'=>true, 'label'=>'Education level / የትምህርት ደረጃ'],
-        'spiritual_education' => ['max'=>100, 'skip'=>true, 'label'=>'Spiritual education / መንፈሳዊ ትምህርት'],
-        'current_section' => ['max'=>100, 'skip'=>true, 'label'=>'Current section / ክፍል'],
+        'education_level' => ['max'=>60, 'skip'=>true, 'label'=>'Education level / የትምህርት ደረጃ', 'input'=>'choice', 'choices'=>['kg'=>'KG','elementary'=>'Elementary (1–8)','high'=>'High School (9–12)','tvet_level1'=>'TVET Level I','tvet_level2'=>'TVET Level II','tvet_level3'=>'TVET Level III','diploma'=>'Diploma','advanced_diploma'=>'Advanced Diploma','degree'=>'Degree','masters'=>'Masters','phd'=>'PhD','other'=>'ሌላ / Other']],
+        'spiritual_education' => ['max'=>100, 'skip'=>true, 'label'=>'Spiritual education / መንፈሳዊ ትምህርት', 'input'=>'choice', 'choices'=>['grade_1'=>'1ኛ ክፍል / Grade 1','grade_2'=>'2ኛ ክፍል / Grade 2','grade_3'=>'3ኛ ክፍል / Grade 3','grade_4'=>'4ኛ ክፍል / Grade 4','grade_5'=>'5ኛ ክፍል / Grade 5','grade_6'=>'6ኛ ክፍል / Grade 6','grade_7'=>'7ኛ ክፍል / Grade 7','grade_8'=>'8ኛ ክፍል / Grade 8','grade_9'=>'9ኛ ክፍል / Grade 9','grade_10'=>'10ኛ ክፍል / Grade 10','grade_11'=>'11ኛ ክፍል / Grade 11','grade_12'=>'12ኛ ክፍል / Grade 12','diploma'=>'ዲፕሎማ / Diploma','degree'=>'ዲግሪ / Degree']],
+        'current_section' => ['max'=>100, 'skip'=>true, 'label'=>'Current section / ክፍል', 'input'=>'dynamic_choice'],
     ];
 
     /** @return list<string> */
@@ -31,6 +31,7 @@ final class TelegramFormRegistry
     public static function definitions(): array { return self::FIELDS; }
     public static function exists(string $key): bool { return isset(self::FIELDS[$key]); }
     public static function label(string $key): string { return (string)(self::FIELDS[$key]['label'] ?? $key); }
+    /** @return array<string,string> */ public static function choices(string $key): array { $choices=self::FIELDS[$key]['choices']??[];return is_array($choices)?$choices:[]; }
 
     /** @return array{display:string,normalized:string} */
     public static function validate(string $key, $raw, bool $required = false): array
@@ -64,11 +65,13 @@ final class TelegramFormRegistry
             if (count($parts) < 2) throw new InvalidArgumentException('Enter at least first and father name.');
             return ['display'=>$value, 'normalized'=>AmharicIdentityNormalizer::normalize($value)];
         }
-        if ($key === 'gender') {
-            $map = ['male'=>'male','female'=>'female','ወንድ'=>'male','ሴት'=>'female'];
-            $normalized = $map[function_exists('mb_strtolower') ? mb_strtolower($value, 'UTF-8') : strtolower($value)] ?? null;
-            if ($normalized === null) throw new InvalidArgumentException('Choose Male or Female.');
-            return ['display'=>$normalized === 'male' ? 'ወንድ / Male' : 'ሴት / Female', 'normalized'=>$normalized];
+        $choices=self::choices($key);
+        if($choices!==[]){
+            $normalized=null;
+            foreach($choices as $choiceValue=>$label)if($value===(string)$choiceValue||$value===(string)$label){$normalized=(string)$choiceValue;break;}
+            if($key==='gender'&&$normalized===null){$legacy=['ወንድ'=>'male','ሴት'=>'female'];$normalized=$legacy[$value]??null;}
+            if($normalized===null)throw new InvalidArgumentException('Choose one of the available options.');
+            return ['display'=>(string)$choices[$normalized], 'normalized'=>$normalized];
         }
         if ($key === 'dob_ec') {
             if (!preg_match('/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/', $value, $m)) {
