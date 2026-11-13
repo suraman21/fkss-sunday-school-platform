@@ -50,15 +50,18 @@ final class ClassLoadingTest extends TestCase
 
     public function testLegacyShimsAliasTheSameImplementation(): void
     {
-        $root = dirname(__DIR__, 2);
+        // Static requires (folder safety net forbids variable links).
+        require_once dirname(__DIR__, 2) . '/admin/backend/services/Acm/AcmPolicy.php';
+        require_once dirname(__DIR__, 2) . '/admin/backend/services/Acm/AcmPersonService.php';
+        require_once dirname(__DIR__, 2) . '/admin/backend/services/Acm/AcmTicketService.php';
+        require_once dirname(__DIR__, 2) . '/admin/backend/services/Acm/AcmOfficeService.php';
         $pairs = [
-            ['SSMS\Acm\Policy\AcmPolicy', 'App\Services\Acm\AcmPolicy', 'AcmPolicy.php'],
-            ['SSMS\Acm\Identity\AcmPersonService', 'App\Services\Acm\AcmPersonService', 'AcmPersonService.php'],
-            ['SSMS\Acm\Accounts\AcmTicketService', 'App\Services\Acm\AcmTicketService', 'AcmTicketService.php'],
-            ['SSMS\Acm\Office\AcmOfficeService', 'App\Services\Acm\AcmOfficeService', 'AcmOfficeService.php'],
+            ['SSMS\Acm\Policy\AcmPolicy', 'App\Services\Acm\AcmPolicy'],
+            ['SSMS\Acm\Identity\AcmPersonService', 'App\Services\Acm\AcmPersonService'],
+            ['SSMS\Acm\Accounts\AcmTicketService', 'App\Services\Acm\AcmTicketService'],
+            ['SSMS\Acm\Office\AcmOfficeService', 'App\Services\Acm\AcmOfficeService'],
         ];
-        foreach ($pairs as [$new, $old, $file]) {
-            require_once $root . '/admin/backend/services/Acm/' . $file;
+        foreach ($pairs as [$new, $old]) {
             $this->assertTrue(class_exists($old), $old);
             // Alias, not a copy: same file, same methods, same behavior.
             $this->assertSame(
