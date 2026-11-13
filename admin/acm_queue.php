@@ -6,13 +6,11 @@
 define('ACM_BOOT', true);
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/acm_layout.php';
-require_once __DIR__ . '/backend/services/Acm/AcmPolicy.php';
-require_once __DIR__ . '/backend/services/Acm/AcmPersonService.php';
-require_once __DIR__ . '/backend/services/Acm/AcmTicketService.php';
+require_once __DIR__ . '/../acm/autoload.php';
 
-use App\Services\Acm\AcmPersonService;
-use App\Services\Acm\AcmPolicy;
-use App\Services\Acm\AcmTicketService;
+use SSMS\Acm\Accounts\AcmTicketService;
+use SSMS\Acm\Identity\AcmPersonService;
+use SSMS\Acm\Policy\AcmPolicy;
 
 if (!function_exists('isLoggedIn') || !isLoggedIn()) {
     header('Location: index.php');
