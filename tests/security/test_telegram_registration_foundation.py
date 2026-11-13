@@ -150,7 +150,7 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         school = (ROOT / "admin/dashboards/school_admin.php").read_text(encoding="utf-8")
         self.assertNotIn('/admin/telegram_registration.php', school)
         api = (ROOT / "admin/api_telegram_registration.php").read_text(encoding="utf-8")
-        self.assertIn("$superActions=['overview','bot_config','bot_config_save','canonical_backfill']", api)
+        self.assertIn("$superActions=['overview','bot_config','bot_config_save','bot_verify','webhook_status','webhook_set','canonical_backfill']", api)
         self.assertIn("$hrActions=['overview','operators','forms'", api)
 
     def test_bot_token_setup_stays_outside_webroot_and_database(self):
@@ -165,6 +165,22 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn("dirname(__DIR__) . '/.telegram_env.php'", config)
         self.assertIn("case 'bot_config_save'", api)
         self.assertNotIn("'token'=>$token", service)
+
+    def test_super_admin_can_verify_and_activate_bounded_webhook(self):
+        service = (ROOT / "admin/backend/services/TelegramBotApiService.php").read_text(encoding="utf-8")
+        api = (ROOT / "admin/api_telegram_registration.php").read_text(encoding="utf-8")
+        page = (ROOT / "admin/telegram_registration.php").read_text(encoding="utf-8")
+        self.assertIn("CURLOPT_CONNECTTIMEOUT=>5", service)
+        self.assertIn("CURLOPT_TIMEOUT=>12", service)
+        self.assertIn("CURLOPT_PROTOCOLS=>CURLPROTO_HTTPS", service)
+        self.assertIn("'allowed_updates'=>json_encode(['message'])", service)
+        self.assertIn("'max_connections'=>'10'", service)
+        self.assertIn("secret_token", service)
+        self.assertNotIn("error_log", service)
+        for action in ["bot_verify", "webhook_status", "webhook_set"]:
+            self.assertIn(f"case '{action}'", api)
+        self.assertIn("Activate HTTPS webhook", page)
+        self.assertIn("Verify bot token", page)
 
     def test_schema_has_review_and_audit_boundaries(self):
         for table in [
