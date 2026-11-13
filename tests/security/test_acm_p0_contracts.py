@@ -161,3 +161,14 @@ def test_dashboard_routes_new_roles_to_acm():
     assert "case 'registrar':" in s
     assert "case 'account_activator':" in s
     assert "acm_overview.php" in s
+
+
+def test_seats_creatable_via_ui_but_member_parent_are_not():
+    save = read(ROOT / "admin" / "backend" / "user-save.php")
+    block = save.split("$validRoles = [")[1].split("];")[0]
+    assert "'registrar'" in block
+    assert "'account_activator'" in block
+    assert "'member'" not in block and "'parent'" not in block
+    users = read(ROOT / "admin" / "users.php")
+    assert "'registrar' => 'Registrar (ACM)'" in users
+    assert "'account_activator' => 'Account Activator (ACM)'" in users

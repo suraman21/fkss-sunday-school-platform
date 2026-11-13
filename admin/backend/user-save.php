@@ -105,6 +105,11 @@ $validRoles = [
     // through api_dept_takers.php; admins may also create them here.
     'mezmur_attendance_taker',
     'hr_attendance_taker',
+    // ACM console seats (P0): super_admin creates these here; member and
+    // parent login roles are deliberately NOT listed — they are
+    // provisioned only by approved activation tickets.
+    'registrar',
+    'account_activator',
 ];
 
 // Role-based permissions for creating users
