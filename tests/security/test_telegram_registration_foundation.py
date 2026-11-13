@@ -79,6 +79,19 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn('id="reviewHistory"', page)
         self.assertIn("j.reviews.map", page)
 
+    def test_approval_preflight_is_fail_closed_without_creating_members(self):
+        readiness = (ROOT / "admin/backend/services/TelegramApprovalReadinessService.php").read_text(encoding="utf-8")
+        api = (ROOT / "admin/api_telegram_registration.php").read_text(encoding="utf-8")
+        page = (ROOT / "admin/telegram_registration.php").read_text(encoding="utf-8")
+        self.assertIn("status']??'')!=='submitted'", readiness)
+        self.assertIn("is_enabled=1 AND is_required=1", readiness)
+        self.assertIn("duplicate==='likely'", readiness)
+        self.assertIn("class_name=? AND is_active=1 LIMIT 1", readiness)
+        self.assertNotRegex(readiness, r"INSERT\s+INTO\s+members")
+        self.assertIn("approval_readiness", api)
+        self.assertIn('id="approvalReadiness"', page)
+        self.assertIn("approval remains unavailable", page)
+
     def test_submission_never_inserts_member(self):
         submit = self.service[self.service.index("private function submitReview"):]
         self.assertIn("status='submitted'", submit)
