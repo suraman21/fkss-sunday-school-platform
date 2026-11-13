@@ -74,6 +74,10 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn("Use /resume to correct", api)
         self.assertIn('id="correctionFieldPicker"', page)
         self.assertIn("correction_fields',JSON.stringify", page)
+        self.assertIn("TelegramFormRegistry::label", api)
+        self.assertIn("ORDER BY r.id DESC LIMIT 50", api)
+        self.assertIn('id="reviewHistory"', page)
+        self.assertIn("j.reviews.map", page)
 
     def test_submission_never_inserts_member(self):
         submit = self.service[self.service.index("private function submitReview"):]
