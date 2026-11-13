@@ -8,8 +8,25 @@ final class TelegramRegistrationService
 {
     public function __construct(private \mysqli $conn) {}
 
-    /** @param array<string,mixed> $message @return array<string,mixed> Telegram sendMessage payload */
+    /**
+     * Serialize one operator's conversation so concurrent Telegram deliveries
+     * cannot advance the same draft twice. The short advisory lock is released
+     * on every return/exception and never spans an outbound HTTP request.
+     * @param array<string,mixed> $message @return array<string,mixed>
+     */
     public function handleMessage(array $message): array
+    {
+        $from=is_array($message['from']??null)?$message['from']:[];
+        $telegramId=self::positiveId($from['id']??null);
+        if($telegramId===0)return $this->handleLocked($message);
+        $lockName='tg-reg-'.hash('sha256',(string)$telegramId);
+        $q=$this->conn->prepare('SELECT GET_LOCK(?,1) acquired');$q->bind_param('s',$lockName);$q->execute();$row=$q->get_result()->fetch_assoc();$q->close();
+        if((int)($row['acquired']??0)!==1){$chat=is_array($message['chat']??null)?(int)($message['chat']['id']??0):0;return self::message($chat,'Your previous message is still processing. Please retry in a moment.');}
+        try{return $this->handleLocked($message);}finally{$q=$this->conn->prepare('SELECT RELEASE_LOCK(?)');$q->bind_param('s',$lockName);$q->execute();$q->close();}
+    }
+
+    /** @param array<string,mixed> $message @return array<string,mixed> */
+    private function handleLocked(array $message): array
     {
         $from = is_array($message['from'] ?? null) ? $message['from'] : [];
         $chat = is_array($message['chat'] ?? null) ? $message['chat'] : [];
@@ -30,6 +47,7 @@ final class TelegramRegistrationService
         if (!in_array((string)$actor['system_role'], ['super_admin','school_admin','hr_dept'], true)) {
             return self::message($chatId, 'Your linked system role is not allowed to register members.');
         }
+        $this->expireStale((int)$actor['id']);
 
         if ($text === '/start' || $text === '/help') return $this->home($chatId, $actor);
         if ($text === '/cancel') { $this->cancelActive((int)$actor['id']); return self::message($chatId, 'Cancelled. / ተሰርዟል።', self::homeKeyboard()); }
@@ -79,8 +97,11 @@ final class TelegramRegistrationService
 
     private function begin(int $chatId, array $actor): array
     {
-        $this->cancelActive((int)$actor['id']);
-        $publicId=self::publicId(); $actorId=(int)$actor['id']; $expires=date('Y-m-d H:i:s',time()+86400);
+        $actorId=(int)$actor['id'];$dailyLimit=max(1,min(200,(int)($actor['daily_registration_limit']??50)));
+        $statement=$this->conn->prepare('SELECT COUNT(*) n FROM telegram_registration_sessions WHERE bot_user_id=? AND created_at>=CURRENT_DATE');$statement->bind_param('i',$actorId);$statement->execute();$used=(int)($statement->get_result()->fetch_assoc()['n']??0);$statement->close();
+        if($used>=$dailyLimit){$this->audit('telegram',(int)$actor['telegram_user_id'],'daily_limit_reached','bot_user',$actorId,'denied');return self::message($chatId,'Daily registration draft limit reached. Contact an administrator if more capacity is required.');}
+        $this->cancelActive($actorId);
+        $publicId=self::publicId(); $expires=date('Y-m-d H:i:s',time()+86400);
         $statement=$this->conn->prepare("INSERT INTO telegram_registration_sessions (public_id,bot_user_id,telegram_chat_id,status,expires_at) VALUES (?,?,?,'choosing',?)");
         $statement->bind_param('siis',$publicId,$actorId,$chatId,$expires); $statement->execute(); $id=(int)$this->conn->insert_id; $statement->close();
         $this->audit('telegram',(int)$actor['telegram_user_id'],'draft_started','session',$id);
@@ -186,7 +207,8 @@ final class TelegramRegistrationService
 
     private function activeSession(int $actorId,int $chatId): ?array { $s=$this->conn->prepare("SELECT * FROM telegram_registration_sessions WHERE bot_user_id=? AND telegram_chat_id=? AND status IN ('choosing','collecting','review') AND expires_at>CURRENT_TIMESTAMP ORDER BY id DESC LIMIT 1");$s->bind_param('ii',$actorId,$chatId);$s->execute();$r=$s->get_result()->fetch_assoc()?:null;$s->close();return $r; }
     private function session(int $id): ?array { $s=$this->conn->prepare('SELECT * FROM telegram_registration_sessions WHERE id=?');$s->bind_param('i',$id);$s->execute();$r=$s->get_result()->fetch_assoc()?:null;$s->close();return $r; }
-    private function cancelActive(int $actorId): void { $s=$this->conn->prepare("UPDATE telegram_registration_sessions SET status='cancelled' WHERE bot_user_id=? AND status IN ('choosing','collecting','review')");$s->bind_param('i',$actorId);$s->execute();$s->close(); }
+    private function cancelActive(int $actorId): void { $s=$this->conn->prepare("UPDATE telegram_registration_sessions SET status='cancelled',lock_version=lock_version+1 WHERE bot_user_id=? AND status IN ('choosing','collecting','review')");$s->bind_param('i',$actorId);$s->execute();$s->close(); }
+    private function expireStale(int $actorId): void { $s=$this->conn->prepare("UPDATE telegram_registration_sessions SET status='expired',lock_version=lock_version+1 WHERE bot_user_id=? AND status IN ('choosing','collecting','review') AND expires_at<=CURRENT_TIMESTAMP");$s->bind_param('i',$actorId);$s->execute();$s->close(); }
     private function fields(int $profileId): array { $s=$this->conn->prepare('SELECT * FROM telegram_form_fields WHERE profile_id=? AND is_enabled=1 ORDER BY sort_order,id');$s->bind_param('i',$profileId);$s->execute();$r=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();return $r; }
     private function firstField(int $profileId): ?array { $a=$this->fields($profileId);return $a[0]??null; }
     private function field(int $profileId,string $key): ?array { $s=$this->conn->prepare('SELECT * FROM telegram_form_fields WHERE profile_id=? AND field_key=? AND is_enabled=1');$s->bind_param('is',$profileId,$key);$s->execute();$r=$s->get_result()->fetch_assoc()?:null;$s->close();return $r; }
