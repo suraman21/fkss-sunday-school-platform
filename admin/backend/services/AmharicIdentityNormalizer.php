@@ -68,9 +68,15 @@ final class AmharicIdentityNormalizer
             'grandfather' => $grandfather,
             'full' => $full,
             'pair_hash' => ($student !== '' && $father !== '')
-                ? md5($student . "\0" . $father, true)
+                ? self::pairHash($student, $father)
                 : '',
         ];
+    }
+
+    /** Binary 128-bit blocking key for the canonical first/father pair. */
+    public static function pairHash(string $student,string $father): string
+    {
+        return ($student!==''&&$father!=='')?md5($student."\0".$father,true):'';
     }
 
     public static function phoneSuffix($value): string

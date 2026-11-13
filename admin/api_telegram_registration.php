@@ -29,7 +29,7 @@ if($actor<=0||!in_array($role,['super_admin','hr_dept'],true))tg_admin_error('Ac
 $method=strtoupper((string)($_SERVER['REQUEST_METHOD']??'GET'));
 $input=$method==='POST'?$_POST:$_GET;
 $action=trim((string)($input['action']??'overview'));
-$superActions=['overview','bot_config','bot_config_save','bot_verify','webhook_status','webhook_set','canonical_backfill'];
+$superActions=['overview','bot_config','bot_config_save','feature_toggle','bot_verify','webhook_status','webhook_set','canonical_backfill'];
 $hrActions=['overview','operators','eligible_users','forms','form_registry','form_detail','form_create','form_save','form_publish','sessions','session_detail','review_decide','audit','operator_save'];
 if(($role==='super_admin'&&!in_array($action,$superActions,true))||($role==='hr_dept'&&!in_array($action,$hrActions,true)))tg_admin_error('This function belongs to the other administration area.',403);
 if($method==='POST'&&!validateCsrf($input['csrf_token']??($_SERVER['HTTP_X_CSRF_TOKEN']??null)))tg_admin_error('Invalid session token.',403);
@@ -50,6 +50,8 @@ case 'bot_config':
     if($role!=='super_admin')tg_admin_error('Super Admin access required.',403);$botConfig=new TelegramBotConfigService(dirname(__DIR__));tg_admin_ok(['bot'=>$botConfig->status()]);
 case 'bot_config_save':
     if($method!=='POST'||$role!=='super_admin')tg_admin_error('Super Admin access required.',403);$botConfig=new TelegramBotConfigService(dirname(__DIR__));$bot=$botConfig->save((string)($input['bot_token']??''),(string)($input['bot_username']??''));tg_admin_audit($conn,$actor,'bot_configuration_saved','deployment',0,['username'=>$bot['username'],'token_changed'=>true]);tg_admin_ok(['bot'=>$bot,'reload_required'=>true]);
+case 'feature_toggle':
+    if($method!=='POST'||$role!=='super_admin')tg_admin_error('Super Admin access required.',403);$raw=(string)($input['enabled']??'');if(!in_array($raw,['0','1'],true))tg_admin_error('Invalid feature state.');$botConfig=new TelegramBotConfigService(dirname(__DIR__));$feature=$botConfig->setFeatureEnabled($raw==='1');tg_admin_audit($conn,$actor,$raw==='1'?'feature_enabled':'feature_disabled','deployment',0,[]);tg_admin_ok(['feature'=>$feature]);
 case 'bot_verify':
     if($method!=='POST'||$role!=='super_admin')tg_admin_error('Super Admin access required.',403);$botApi=new TelegramBotApiService();$identity=$botApi->verifyIdentity();tg_admin_audit($conn,$actor,'bot_identity_verified','deployment',0,['username'=>$identity['username'],'bot_id'=>$identity['id']]);tg_admin_ok(['identity'=>$identity]);
 case 'webhook_status':

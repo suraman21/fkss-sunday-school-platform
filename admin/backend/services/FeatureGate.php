@@ -35,6 +35,9 @@ final class FeatureGate
 
     public static function isEnabled(string $feature): bool
     {
+        if ($feature === 'telegram_registration' && defined('TELEGRAM_REGISTRATION_MANAGED_ENABLED')) {
+            return TELEGRAM_REGISTRATION_MANAGED_ENABLED === true;
+        }
         $constant = self::CONSTANTS[$feature] ?? null;
         if ($constant === null || !defined($constant)) {
             return false;
