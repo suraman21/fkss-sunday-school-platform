@@ -242,6 +242,18 @@ if (!defined('ACCESS_CONTROL_LOADED')) {
             'user-delete.php' => ['super_admin'],
             'user-toggle.php' => ['super_admin'],
 
+            // ---- ACM console P0: registrar + activator seats ----
+            // Actions are restricted further inside api_acm.php via
+            // AcmPolicy (maker-checker: registrar submits, activator
+            // decides). Member/parent login roles are NOT listed here
+            // on purpose: they must never open the admin console.
+            'api_acm.php'      => ['super_admin', 'registrar', 'account_activator'],
+            'acm_overview.php' => ['super_admin', 'registrar', 'account_activator'],
+            'acm_queue.php'    => ['super_admin', 'registrar', 'account_activator'],
+            'acm_ticket.php'   => ['super_admin', 'registrar', 'account_activator'],
+            'acm_person.php'   => ['super_admin', 'registrar', 'account_activator'],
+            'acm_layout.php'   => ['super_admin', 'registrar', 'account_activator'],
+
             // ---- Department-owned attendance takers ----
             // Each department manages ONLY its own taker type; the
             // service layer re-enforces the attribution server-side.
