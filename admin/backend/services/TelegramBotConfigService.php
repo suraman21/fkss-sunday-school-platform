@@ -7,7 +7,7 @@ use RuntimeException;
 
 final class TelegramBotConfigService
 {
-    public function __construct(private \mysqli $conn, private string $publicRoot) {}
+    public function __construct(private string $publicRoot) {}
 
     /** @return array{configured:bool,username:string,webhook_secret_configured:bool,managed_file_exists:bool,writable:bool} */
     public function status(): array
@@ -17,9 +17,8 @@ final class TelegramBotConfigService
     }
 
     /** Never returns or logs the token. */
-    public function save(int $actorId,string $currentPassword,string $token,string $username): array
+    public function save(string $token,string $username): array
     {
-        $this->verifyPassword($actorId,$currentPassword);
         $token=trim($token);$username=ltrim(trim($username),'@');
         if(!preg_match('/^[1-9][0-9]{5,15}:[A-Za-z0-9_-]{30,80}$/D',$token))throw new InvalidArgumentException('Enter a valid Telegram Bot API token.');
         if(!preg_match('/^[A-Za-z][A-Za-z0-9_]{1,28}bot$/iD',$username))throw new InvalidArgumentException('Enter the bot username without @; it must end in bot.');
@@ -30,10 +29,6 @@ final class TelegramBotConfigService
         return ['configured'=>true,'username'=>$username,'webhook_secret_configured'=>true,'managed_file_exists'=>true,'writable'=>is_writable($path)];
     }
 
-    private function verifyPassword(int $actorId,string $password): void
-    {
-        if($actorId<=0||$password==='')throw new InvalidArgumentException('Current password is required.');$q=$this->conn->prepare('SELECT password_hash FROM users WHERE id=? AND role=\'super_admin\' AND is_active=1 LIMIT 1');$q->bind_param('i',$actorId);$q->execute();$row=$q->get_result()->fetch_assoc();$q->close();if(!$row||!password_verify($password,(string)$row['password_hash']))throw new InvalidArgumentException('Current password is incorrect.');
-    }
     private function path(): string { return dirname($this->publicRoot).'/.telegram_env.php'; }
     private static function secret(): string { return rtrim(strtr(base64_encode(random_bytes(48)),'+/','-_'),'='); }
 }

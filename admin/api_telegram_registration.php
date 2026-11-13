@@ -47,9 +47,9 @@ case 'overview':
     }
     tg_admin_ok(['available'=>$schema,'feature_enabled'=>feature_enabled('telegram_registration'),'secrets'=>['bot_token'=>defined('TELEGRAM_BOT_TOKEN'),'webhook_secret'=>defined('TELEGRAM_WEBHOOK_SECRET')],'canonical_columns'=>MemberCanonicalIdentityService::available($conn),'stats'=>$stats]);
 case 'bot_config':
-    if($role!=='super_admin')tg_admin_error('Super Admin access required.',403);$botConfig=new TelegramBotConfigService($conn,dirname(__DIR__));tg_admin_ok(['bot'=>$botConfig->status()]);
+    if($role!=='super_admin')tg_admin_error('Super Admin access required.',403);$botConfig=new TelegramBotConfigService(dirname(__DIR__));tg_admin_ok(['bot'=>$botConfig->status()]);
 case 'bot_config_save':
-    if($method!=='POST'||$role!=='super_admin')tg_admin_error('Super Admin access required.',403);$botConfig=new TelegramBotConfigService($conn,dirname(__DIR__));$bot=$botConfig->save($actor,(string)($input['current_password']??''),(string)($input['bot_token']??''),(string)($input['bot_username']??''));tg_admin_audit($conn,$actor,'bot_configuration_saved','deployment',0,['username'=>$bot['username'],'token_changed'=>true]);tg_admin_ok(['bot'=>$bot,'reload_required'=>true]);
+    if($method!=='POST'||$role!=='super_admin')tg_admin_error('Super Admin access required.',403);$botConfig=new TelegramBotConfigService(dirname(__DIR__));$bot=$botConfig->save((string)($input['bot_token']??''),(string)($input['bot_username']??''));tg_admin_audit($conn,$actor,'bot_configuration_saved','deployment',0,['username'=>$bot['username'],'token_changed'=>true]);tg_admin_ok(['bot'=>$bot,'reload_required'=>true]);
 case 'bot_verify':
     if($method!=='POST'||$role!=='super_admin')tg_admin_error('Super Admin access required.',403);$botApi=new TelegramBotApiService();$identity=$botApi->verifyIdentity();tg_admin_audit($conn,$actor,'bot_identity_verified','deployment',0,['username'=>$identity['username'],'bot_id'=>$identity['id']]);tg_admin_ok(['identity'=>$identity]);
 case 'webhook_status':
