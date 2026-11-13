@@ -31,7 +31,7 @@ The [Finance/Materials column reference](database/LEDGER_COLUMNS.md), source-rev
 | Runtime DDL | `MezmurSchemaReconciler::apply`, called from `admin/api_mezmur.php`, can create or alter Mezmur tables at request time | Production can drift from `sql/` |
 | `tests/e2e/provision_env.sh` | Encodes the apply order that produces a working test database | The best available **executable** description of the schema; test-only |
 
-At `7e28157` (2026-10-28) plus migrations 079 (ACM P0), 080 (Telegram registration) and 081 (ACM S1 office model), the **79 numbered migration files** (`001`–`081`, with gaps) contain **118 distinct `CREATE TABLE` target names**, excluding block/line comments and including archive/quarantine definitions. This is a lexical source inventory, not the number of active business tables or proof that every conditional statement ran. Legacy PHP/snapshot definitions are outside this count. The former count of 103 incorrectly treated the word `only` in migration 026's comment as a table.
+At `7e28157` (2026-10-28) plus migrations 079 (ACM P0), 080 (Telegram registration), 081 (ACM S1 office model) and 082 (ACM S3 activation ceremony), the **80 numbered migration files** (`001`–`082`, with gaps) contain **123 distinct `CREATE TABLE` target names**, excluding block/line comments and including archive/quarantine definitions. This is a lexical source inventory, not the number of active business tables or proof that every conditional statement ran. Legacy PHP/snapshot definitions are outside this count. The former count of 103 incorrectly treated the word `only` in migration 026's comment as a table.
 
 ## 3. Migration rules in force
 

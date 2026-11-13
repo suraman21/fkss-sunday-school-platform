@@ -51,6 +51,10 @@ try {
 
 $statuses = ['' => 'Open (all)', 'submitted' => 'Submitted', 'in_review' => 'In review',
     'changes_requested' => 'Changes requested', 'approved' => 'Approved',
+    'code_issued' => 'Code issued', 'grant_verified' => 'Grant verified',
+    'account_pending_device' => 'Pending device (S4)', 'active' => 'Active',
+    'expired' => 'Expired', 'activation_failed' => 'Failed (review)',
+    'canceled' => 'Canceled', 'revoked' => 'Revoked',
     'rejected' => 'Rejected', 'provisioned' => 'Provisioned', 'archived' => 'Archived'];
 
 acm_head('Activation queue');

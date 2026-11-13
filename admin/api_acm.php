@@ -13,6 +13,9 @@
  *   POST action=ticket_create                       → submit ticket (office)
  *   POST action=claim | release | note               → queue ops
  *   POST action=decide&decision=approve|reject|request_changes
+ *   POST action=code_issue&id=                       → issue activation code (plaintext once)
+ *   GET  ?action=code_status&id=                     → code state (never secret/grant)
+ *   POST action=ticket_cancel&id=&reason=            → cancel + cascade revoke
  *   GET  ?action=office_mode_get                     → mode + staffing + history
  *   POST action=office_mode_set                      → switch mode (super_admin)
  *   GET  ?action=approvers_list | reviewers_list     → active designations
@@ -36,8 +39,13 @@ require_once __DIR__ . '/backend/services/SecurityAuditService.php';
 require_once __DIR__ . '/../acm/autoload.php';
 
 use SSMS\Acm\Accounts\AcmTicketService;
+use SSMS\Acm\Activation\ActivationService;
+use SSMS\Acm\Activation\CodeAlphabet;
+use SSMS\Acm\Contracts\AccountContext;
+use SSMS\Acm\Contracts\CodePurpose;
 use SSMS\Acm\Identity\AcmPersonService;
 use SSMS\Acm\Office\AcmOfficeService;
+use SSMS\Acm\OfficeNetwork\OfficeNetworkSignal;
 use SSMS\Acm\Policy\AcmPolicy;
 use App\Services\SecurityAuditService;
 
@@ -74,6 +82,7 @@ if ($method === 'POST' && !validateCsrf($_POST['csrf_token'] ?? null)) {
 
 $persons = new AcmPersonService($pdo);
 $tickets = new AcmTicketService($pdo, $persons);
+$ceremony = new ActivationService($pdo, $tickets, $persons);
 $office = new AcmOfficeService($pdo);
 $isSuperAdmin = $role === 'super_admin';
 
@@ -439,6 +448,72 @@ try {
                 'attestation_id' => (int)($row['id'] ?? 0),
             ], 'acm_office', (int)($row['id'] ?? 0));
             acm_ok(['attestation' => $row]);
+            break;
+        }
+
+        case 'code_issue': {
+            if ($method !== 'POST') {
+                acm_err('Method not allowed.', 405);
+            }
+            if (!AcmPolicy::can($role, AcmPolicy::RES_CODE, 'issue')) {
+                acm_err('Access denied.', 403);
+            }
+            // Deploy-time policy (D3.7): issuance stays ungated by
+            // default; when acm.office_network_issue is '1' the
+            // issuing browser must also sit on an office network.
+            $signal = $ceremony->networkSignal();
+            if ($signal->gatesIssuance()
+                && !$signal->allows(OfficeNetworkSignal::resolveClientIp($_SERVER, $signal->trustedProxies()))) {
+                acm_err('Code issuance is not available from this network.', 403);
+            }
+            $issued = $ceremony->issueCode(
+                new AccountContext($actorId, $role),
+                (string)($_POST['id'] ?? ''),
+                CodePurpose::Activation
+            );
+            $ticket = $tickets->get((int)($_POST['id'] ?? 0));
+            // Audit carries the public selector only — never the
+            // secret (pin-enforced, test_no_token_or_password_keys).
+            acm_audit($pdo, 'acm.code.issued', [
+                'ticket_no' => (string)($ticket['ticket_no'] ?? ''),
+                'selector' => $issued->selector,
+                'purpose' => $issued->purpose->value,
+                'expires_at' => $issued->expiresAt,
+            ], 'acm_ticket', (int)($ticket['id'] ?? 0));
+            // Plaintext travels ONLY in this response: the page shows
+            // it once, then masks it (D3.2). Never logged, never stored.
+            acm_ok(['code' => [
+                'display' => $issued->display(CodeAlphabet::prefixFor($issued->purpose)),
+                'selector' => $issued->selector,
+                'expires_at' => $issued->expiresAt,
+            ], 'ticket' => $ticket]);
+            break;
+        }
+
+        case 'code_status': {
+            if (!AcmPolicy::can($role, AcmPolicy::RES_CODE, 'view')) {
+                acm_err('Access denied.', 403);
+            }
+            acm_ok(['status' => $ceremony->codeStatus((int)($_GET['id'] ?? 0))]);
+            break;
+        }
+
+        case 'ticket_cancel': {
+            if ($method !== 'POST') {
+                acm_err('Method not allowed.', 405);
+            }
+            if (!AcmPolicy::can($role, AcmPolicy::RES_TICKET, 'cancel')) {
+                acm_err('Access denied.', 403);
+            }
+            $ticket = $tickets->cancel(
+                (int)($_POST['id'] ?? 0), $actorId, (string)($_POST['reason'] ?? '')
+            );
+            acm_audit($pdo, 'acm.ticket.canceled', [
+                'ticket_no' => (string)($ticket['ticket_no'] ?? ''),
+                'account_type' => (string)($ticket['account_type'] ?? ''),
+                'person_id' => (int)($ticket['person_id'] ?? 0),
+            ], 'acm_ticket', (int)$ticket['id']);
+            acm_ok(['ticket' => $ticket]);
             break;
         }
 

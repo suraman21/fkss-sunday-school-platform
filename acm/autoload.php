@@ -24,7 +24,14 @@ if (!defined('SSMS_ACM_AUTOLOAD')) {
     require_once __DIR__ . '/src/Policy/AcmPolicy.php';
     require_once __DIR__ . '/src/Policy/PolicyAuthorizer.php';
     require_once __DIR__ . '/src/Identity/AcmPersonService.php';
+    // S3 activation ceremony.
+    require_once __DIR__ . '/src/Activation/CodeAlphabet.php';
+    require_once __DIR__ . '/src/Activation/ActivationException.php';
+    require_once __DIR__ . '/src/Activation/IdempotencyStore.php';
+    require_once __DIR__ . '/src/Accounts/AccountProvisioner.php';
     require_once __DIR__ . '/src/Accounts/AcmTicketService.php';
+    require_once __DIR__ . '/src/Activation/ActivationService.php';
+    require_once __DIR__ . '/src/OfficeNetwork/OfficeNetworkSignal.php';
     require_once __DIR__ . '/src/Office/AcmOfficeService.php';
     // Contracts: value types first, then interfaces.
     require_once __DIR__ . '/src/Contracts/AccountContext.php';

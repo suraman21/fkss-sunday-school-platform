@@ -81,8 +81,17 @@ def test_ticket_state_machine_pins():
     assert "beginTransaction" in s and "rollBack" in s
     assert "Maker-checker" in s or "maker-checker" in s
     assert "submitter_id'] === $userId" in s or 'submitter_id"] === $userId' in s
-    assert "password_hash(bin2hex(random_bytes(32))" in s  # unusable P0 credential
-    assert "acm_person_accounts" in s  # provision links person<->user
+    # S3 cutover: approve authorizes issuance, it no longer provisions.
+    assert "status = 'approved'" in s or "status = \\'approved\\'" in s
+    assert "addEvent($id, $userId, 'provisioned'" not in s
+    # S3: provisioning (users row + person link) moved to
+    # AccountProvisioner, called from grant-backed
+    # establishCredentials with the user's own password.
+    p = read(ACMSRC / "Accounts" / "AccountProvisioner.php")
+    assert "INSERT INTO users" in p
+    assert "acm_person_accounts" in p  # provision links person<->user
+    assert "is_active" in p and ", 0," in p  # created INACTIVE until S4
+    assert "23000" in p  # unique-constraint username retry (D3.4)
 
 
 def test_no_token_or_password_keys_in_audit_details():

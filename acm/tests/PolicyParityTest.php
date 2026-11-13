@@ -19,8 +19,9 @@ final class PolicyParityTest extends TestCase
     public static function matrixCases(): iterable
     {
         $roles = ['super_admin', 'accounts_office', 'member', 'parent', 'school_admin', 'nope'];
-        $resources = ['ticket', 'person', 'account', 'audit', 'office', 'approver', 'reviewer', 'attest', 'bogus'];
-        $actions = ['create', 'view', 'edit', 'claim', 'note', 'approve', 'reject', 'request_changes', 'delete', ''];
+        // S3 adds the 'code' resource + 'issue' action to the sweep.
+        $resources = ['ticket', 'person', 'account', 'audit', 'code', 'office', 'approver', 'reviewer', 'attest', 'bogus'];
+        $actions = ['create', 'view', 'edit', 'claim', 'note', 'approve', 'reject', 'request_changes', 'cancel', 'issue', 'delete', ''];
         foreach ($roles as $role) {
             foreach ($resources as $resource) {
                 foreach ($actions as $action) {
@@ -64,5 +65,19 @@ final class PolicyParityTest extends TestCase
         $this->assertFalse($auth->can(new AccountContext(1, 'accounts_office'), 'approve', new ResourceRef('office')));
         $this->assertFalse($auth->can(new AccountContext(1, 'accounts_office'), 'attest', new ResourceRef('attest')));
         $this->assertTrue($auth->can(new AccountContext(1, 'super_admin'), 'anything', new ResourceRef('anything')));
+    }
+
+    /** S3: officers run the ceremony (issue/view/cancel) — nothing else new. */
+    public function testCeremonyRights(): void
+    {
+        $auth = new PolicyAuthorizer();
+        $office = new AccountContext(1, 'accounts_office');
+        $this->assertTrue($auth->can($office, 'issue', new ResourceRef('code')));
+        $this->assertTrue($auth->can($office, 'view', new ResourceRef('code')));
+        $this->assertTrue($auth->can($office, 'cancel', new ResourceRef('ticket')));
+        $this->assertFalse($auth->can($office, 'delete', new ResourceRef('code')));
+        $member = new AccountContext(2, 'member');
+        $this->assertFalse($auth->can($member, 'issue', new ResourceRef('code')));
+        $this->assertFalse($auth->can($member, 'view', new ResourceRef('code')));
     }
 }
