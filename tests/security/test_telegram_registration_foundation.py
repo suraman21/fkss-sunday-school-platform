@@ -141,6 +141,12 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn("PHP_SAPI!=='cli'", cron)
         self.assertNotIn("TELEGRAM_BOT_TOKEN", retention + cron)
 
+    def test_authorized_dashboards_link_the_console(self):
+        for path in ["admin/dashboards/super-admin.php", "admin/dashboards/school_admin.php", "admin/dashboards/hr-dept.php"]:
+            page = (ROOT / path).read_text(encoding="utf-8")
+            self.assertIn('/admin/telegram_registration.php', page, path)
+            self.assertIn('Telegram Registration', page, path)
+
     def test_schema_has_review_and_audit_boundaries(self):
         for table in [
             "telegram_bot_users", "telegram_form_profiles", "telegram_form_fields",

@@ -772,6 +772,14 @@ if (isset($conn) && $conn instanceof mysqli && !$conn->connect_error) {
                 <span class="font-semibold">Data Sync (Excel)</span>
             </button>
 
+            <a href="/admin/telegram_registration.php"
+                    class="mobile-touch-target flex items-center gap-3 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 transition">
+                <span class="w-8 h-8 rounded-xl bg-sky-500/30 flex items-center justify-center">
+                    <i class="fa-brands fa-telegram text-sm"></i>
+                </span>
+                <span class="font-semibold">Telegram Registration</span>
+            </a>
+
             <button data-section="reports"
                     class="mobile-touch-target flex items-center gap-3 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 transition">
                 <span class="w-8 h-8 rounded-xl bg-white/15 flex items-center justify-center">
