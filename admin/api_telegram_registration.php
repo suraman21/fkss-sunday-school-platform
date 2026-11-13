@@ -9,11 +9,13 @@ require_once __DIR__.'/backend/services/MemberCanonicalIdentityService.php';
 require_once __DIR__.'/backend/services/TelegramFormRegistry.php';
 require_once __DIR__.'/backend/services/TelegramFormAdminService.php';
 require_once __DIR__.'/backend/services/TelegramBotConfigService.php';
+require_once __DIR__.'/backend/services/TelegramBotApiService.php';
 
 use App\Services\MemberCanonicalIdentityService;
 use App\Services\TelegramFormRegistry;
 use App\Services\TelegramFormAdminService;
 use App\Services\TelegramBotConfigService;
+use App\Services\TelegramBotApiService;
 
 function tg_admin_error(string $message,int $code=400): never { http_response_code($code);echo json_encode(['status'=>'error','message'=>$message],JSON_UNESCAPED_UNICODE);exit; }
 function tg_admin_ok(array $data=[]): never { echo json_encode(['status'=>'success']+$data,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);exit; }
@@ -27,7 +29,7 @@ if($actor<=0||!in_array($role,['super_admin','hr_dept'],true))tg_admin_error('Ac
 $method=strtoupper((string)($_SERVER['REQUEST_METHOD']??'GET'));
 $input=$method==='POST'?$_POST:$_GET;
 $action=trim((string)($input['action']??'overview'));
-$superActions=['overview','bot_config','bot_config_save','canonical_backfill'];
+$superActions=['overview','bot_config','bot_config_save','bot_verify','webhook_status','webhook_set','canonical_backfill'];
 $hrActions=['overview','operators','forms','form_registry','form_detail','form_create','form_save','form_publish','sessions','session_detail','review_decide','audit','operator_save'];
 if(($role==='super_admin'&&!in_array($action,$superActions,true))||($role==='hr_dept'&&!in_array($action,$hrActions,true)))tg_admin_error('This function belongs to the other administration area.',403);
 if($method==='POST'&&!validateCsrf($input['csrf_token']??($_SERVER['HTTP_X_CSRF_TOKEN']??null)))tg_admin_error('Invalid session token.',403);
@@ -48,6 +50,12 @@ case 'bot_config':
     if($role!=='super_admin')tg_admin_error('Super Admin access required.',403);$botConfig=new TelegramBotConfigService($conn,dirname(__DIR__));tg_admin_ok(['bot'=>$botConfig->status()]);
 case 'bot_config_save':
     if($method!=='POST'||$role!=='super_admin')tg_admin_error('Super Admin access required.',403);$botConfig=new TelegramBotConfigService($conn,dirname(__DIR__));$bot=$botConfig->save($actor,(string)($input['current_password']??''),(string)($input['bot_token']??''),(string)($input['bot_username']??''));tg_admin_audit($conn,$actor,'bot_configuration_saved','deployment',0,['username'=>$bot['username'],'token_changed'=>true]);tg_admin_ok(['bot'=>$bot,'reload_required'=>true]);
+case 'bot_verify':
+    if($method!=='POST'||$role!=='super_admin')tg_admin_error('Super Admin access required.',403);$botApi=new TelegramBotApiService();$identity=$botApi->verifyIdentity();tg_admin_audit($conn,$actor,'bot_identity_verified','deployment',0,['username'=>$identity['username'],'bot_id'=>$identity['id']]);tg_admin_ok(['identity'=>$identity]);
+case 'webhook_status':
+    if($role!=='super_admin')tg_admin_error('Super Admin access required.',403);$botApi=new TelegramBotApiService();tg_admin_ok(['webhook'=>$botApi->webhookInfo(),'expected_url'=>rtrim((string)SITE_URL,'/').'/api/telegram-webhook.php']);
+case 'webhook_set':
+    if($method!=='POST'||$role!=='super_admin')tg_admin_error('Super Admin access required.',403);$url=rtrim((string)SITE_URL,'/').'/api/telegram-webhook.php';$botApi=new TelegramBotApiService();$webhook=$botApi->configureWebhook($url);tg_admin_audit($conn,$actor,'webhook_configured','deployment',0,['url'=>$url,'allowed_updates'=>['message'],'max_connections'=>10]);tg_admin_ok(['webhook'=>$webhook,'expected_url'=>$url]);
 case 'operators':
     $limit=tg_admin_limit($input['limit']??50);$offset=max(0,(int)($input['offset']??0));
     $sql="SELECT tb.id,tb.telegram_user_id,tb.display_name,tb.username_snapshot,tb.status,tb.can_waiting,tb.can_direct,tb.daily_registration_limit,tb.expires_at,tb.last_seen_at,tb.created_at,tb.linked_user_id,u.full_name linked_user_name,u.username linked_username,u.role linked_role,u.is_active linked_user_active FROM telegram_bot_users tb LEFT JOIN users u ON u.id=tb.linked_user_id ORDER BY tb.id DESC LIMIT {$limit} OFFSET {$offset}";
