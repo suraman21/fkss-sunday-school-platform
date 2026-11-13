@@ -36,6 +36,10 @@ function acm_status_bg(string $status): string
     $map = [
         'submitted' => 'bg-w', 'in_review' => 'bg-info',
         'changes_requested' => 'bg-p', 'approved' => 'bg-ok',
+        'code_issued' => 'bg-info', 'grant_verified' => 'bg-info',
+        'account_pending_device' => 'bg-p', 'active' => 'bg-ok',
+        'expired' => 'bg-w', 'activation_failed' => 'bg-bad',
+        'canceled' => 'bg-n', 'revoked' => 'bg-bad',
         'provisioned' => 'bg-ok', 'rejected' => 'bg-bad',
     ];
     return $map[$status] ?? 'bg-n';

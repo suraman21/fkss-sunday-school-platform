@@ -28,6 +28,7 @@ class AcmPolicy
     public const RES_APPROVER = 'approver';
     public const RES_REVIEWER = 'reviewer';
     public const RES_ATTEST   = 'attest';
+    public const RES_CODE     = 'code';
 
     /**
      * role => resource => actions. accounts_office holds the union of
@@ -36,10 +37,13 @@ class AcmPolicy
      */
     private const MATRIX = [
         'accounts_office' => [
-            'ticket'   => ['create', 'view', 'claim', 'note', 'approve', 'reject', 'request_changes'],
+            // S3: 'cancel' aborts the ceremony (reason + cascade);
+            // 'code' issue/view runs the D3.2 issuance panel.
+            'ticket'   => ['create', 'view', 'claim', 'note', 'approve', 'reject', 'request_changes', 'cancel'],
             'person'   => ['create', 'view', 'edit'],
             'account'  => ['view'],
             'audit'    => ['view'],
+            'code'     => ['issue', 'view'],
             'office'   => [],
             'approver' => [],
             'reviewer' => [],

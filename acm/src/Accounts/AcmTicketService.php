@@ -1,19 +1,26 @@
 <?php
 /**
- * ACM P0 — activation ticket service (state machine + provisioning).
+ * ACM ticket service — review state machine + ceremony transitions.
  * ------------------------------------------------------------
- * submitted -> in_review -> approved -> provisioned
- *                     \-> changes_requested -> (resubmit path is P3)
- *                     \-> rejected
+ * submitted -> in_review -> approved -> code_issued -> grant_verified
+ *     \-> changes_requested            -> account_pending_device -> active (S4)
+ *     \-> rejected (S1 rules below; S3 also revokes live codes+grants)
+ * Burn/expiry stall at expired (officer reissue resumes); cancel
+ * aborts from any non-terminal state with a reason and a cascade
+ * revoke; provisioning collisions land at activation_failed for
+ * officer review (never auto-merge, never duplicate).
  * Maker-checker is mode-aware (S1 office model, AcmOfficeService):
  * separated mode keeps the P0 rule (decider must differ from
  * submitter, no override) and additionally requires at least two
  * active officers; solo mode allows a designated approver to decide,
  * with submitter self-decision permitted only with a recorded reason
  * and an immutable self_approved flag.
- * Approve provisions the users row + person link in ONE transaction.
- * P0 credentials: random unusable hash; first credential is issued by
- * helpdesk until the P3 invite flow ships (documented limitation).
+ * S3 cutover (design D7.2): approve AUTHORIZES code issuance — it no
+ * longer provisions. Provisioning moved to grant-backed
+ * ActivationService::establishCredentials (users row + person link
+ * in the SAME transaction as the grant consumption), and the
+ * account stays inactive until S4 device proof. The provisioning
+ * core now lives in AccountProvisioner.
  */
 
 namespace SSMS\Acm\Accounts;
@@ -21,6 +28,7 @@ namespace SSMS\Acm\Accounts;
 use InvalidArgumentException;
 use PDO;
 use RuntimeException;
+use SSMS\Acm\Activation\ActivationException;
 use SSMS\Acm\Identity\AcmPersonService;
 
 class AcmTicketService
@@ -29,6 +37,16 @@ class AcmTicketService
 
     public const OPEN_STATUSES = ['submitted', 'in_review', 'changes_requested'];
     public const DECIDABLE_STATUSES = ['submitted', 'in_review', 'changes_requested'];
+    /** S3: states a fresh (or re-) issuance may start from. */
+    public const ISSUABLE_STATUSES = ['approved', 'code_issued', 'expired', 'grant_verified'];
+    /** S3: terminal states — cancel refuses these. */
+    public const TERMINAL_STATUSES = ['rejected', 'provisioned', 'archived', 'active', 'canceled'];
+    /** S3: cancel is allowed from any of these (reason + cascade). */
+    public const CANCELABLE_STATUSES = [
+        'draft', 'submitted', 'in_review', 'changes_requested', 'approved',
+        'code_issued', 'grant_verified', 'account_pending_device',
+        'expired', 'revoked', 'activation_failed',
+    ];
 
     private PDO $pdo;
     private AcmPersonService $persons;
@@ -159,7 +177,9 @@ class AcmTicketService
         $params = [];
         $status = trim((string)($filters['status'] ?? ''));
         if ($status !== '') {
-            if (!in_array($status, ['draft', 'submitted', 'in_review', 'changes_requested', 'approved', 'rejected', 'provisioned', 'archived'], true)) {
+            // S3: new ceremony states are plain string compares — safe
+            // readers on a pre-082 database (they just match nothing).
+            if (!in_array($status, ['draft', 'submitted', 'in_review', 'changes_requested', 'approved', 'rejected', 'provisioned', 'archived', 'code_issued', 'grant_verified', 'account_pending_device', 'active', 'canceled', 'expired', 'revoked', 'activation_failed'], true)) {
                 throw new InvalidArgumentException('Unknown status filter.');
             }
             $where[] = 't.status = :status';
@@ -346,25 +366,29 @@ class AcmTicketService
                         'Duplicate warnings are open: confirm the parent/member ID check to approve.'
                     );
                 }
-                $newUserId = $this->provision($ticket, $person, $userId);
+                // S3: approve authorizes code issuance. No provisioning
+                // here — the account is created later by
+                // grant-backed establishCredentials.
                 // self_approved is referenced only on the solo self-decision
                 // path (unreachable before migration 081), so separated-mode
                 // decisions keep working on a pre-migration database.
                 $selfSql = $selfApproved ? ', self_approved = 1' : '';
                 $stmt = $this->pdo->prepare(
-                    'UPDATE acm_activation_tickets SET status = \'provisioned\', decided_by = :u,'
+                    'UPDATE acm_activation_tickets SET status = \'approved\', decided_by = :u,'
                     . ' decision_note = :note, decided_at = NOW()' . $selfSql . ' WHERE id = :id'
                 );
                 $stmt->execute([':u' => $userId, ':note' => ($note === '' ? null : $note), ':id' => $id]);
-                $meta = ['provisioned_user_id' => $newUserId];
-                if ($selfApproved) {
-                    $meta['self_approved'] = 1;
-                }
+                $meta = $selfApproved ? ['self_approved' => 1] : null;
                 $this->addEvent($id, $userId, 'approved', $note, $meta);
-                $this->addEvent($id, $userId, 'provisioned', '', $meta);
             } else {
                 $status = $decision === 'reject' ? 'rejected' : 'changes_requested';
                 $event = $decision === 'reject' ? 'rejected' : 'changes_requested';
+                if ($decision === 'reject') {
+                    // S3 (D3.3): rejection revokes live ceremony
+                    // material immediately. Pre-migration this is a
+                    // no-op (no codes/grants tables yet).
+                    $this->revokeCeremony($id, 'ticket_rejected');
+                }
                 $selfSql = $selfApproved ? ', self_approved = 1' : '';
                 $stmt = $this->pdo->prepare(
                     'UPDATE acm_activation_tickets SET status = :st, decided_by = :u,'
@@ -379,6 +403,265 @@ class AcmTicketService
             throw $e;
         }
         return $this->get($id);
+    }
+
+    // ------------------------------------------------------------
+    // S3 ceremony transitions (design D3.1). The mark* methods run
+    // inside the CALLER's transaction (ActivationService owns the
+    // D4.4 ceremony transactions); only cancel() manages its own.
+    // New states need migration 082: every mark* caller touches a
+    // 082 table first (42S02 before any new ENUM value is written),
+    // and cancel() probes explicitly. Pre-082 databases therefore
+    // fail with a clean error, never a corrupt row.
+    // ------------------------------------------------------------
+
+    /** Lock the ticket row for a ceremony transition (caller txn). */
+    public function getForUpdate(int $id): ?array
+    {
+        if ($id <= 0) {
+            return null;
+        }
+        $stmt = $this->pdo->prepare(
+            'SELECT * FROM acm_activation_tickets WHERE id = :id LIMIT 1 FOR UPDATE'
+        );
+        $stmt->execute([':id' => $id]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return is_array($row) ? $row : null;
+    }
+
+    /**
+     * Ceremony event writer. The allowlist fails fast on typos (a
+     * misspelled event would otherwise die as an ENUM error deep
+     * in a transaction); values marked S3 need migration 082.
+     */
+    public function recordEvent(
+        int $ticketId,
+        ?int $actorId,
+        string $event,
+        string $note = '',
+        ?array $meta = null
+    ): void {
+        static $allowed = [
+            'created', 'submitted', 'claimed', 'released', 'note',
+            'changes_requested', 'approved', 'rejected', 'provisioned',
+            'archived', 'code_issued', 'code_reissued', 'code_burned',
+            'grant_verified', 'credentials_set', 'activated', 'canceled',
+            'expired', 'revoked', 'activation_failed',
+        ];
+        if (!in_array($event, $allowed, true)) {
+            throw new InvalidArgumentException('Unknown ticket event.');
+        }
+        $this->addEvent($ticketId, $actorId ?? 0, $event, $note, $meta);
+    }
+
+    public function markCodeIssued(
+        int $id,
+        int $actorId,
+        bool $reissue,
+        ?int $reissueOf,
+        array $codeMeta
+    ): void {
+        $meta = $codeMeta;
+        if ($reissueOf !== null) {
+            $meta['reissue_of'] = $reissueOf;
+        }
+        $this->transition(
+            $id, self::ISSUABLE_STATUSES, 'code_issued', $actorId,
+            $reissue ? 'code_reissued' : 'code_issued', '', $meta
+        );
+    }
+
+    public function markGrantVerified(int $id, array $meta): void
+    {
+        $this->transition($id, ['code_issued'], 'grant_verified', 0, 'grant_verified', '', $meta);
+    }
+
+    public function markAccountPendingDevice(int $id, array $meta): void
+    {
+        $this->transition(
+            $id, ['grant_verified'], 'account_pending_device', 0, 'credentials_set', '', $meta
+        );
+    }
+
+    /**
+     * S4 resume path (defined in S3, called by S4 device proof):
+     * after the challenge–signature proof the device increment
+     * activates the users row, links the verified device, then
+     * calls this to close the ceremony. S4 MUST NOT write the
+     * ticket status directly — this method is the single gate.
+     */
+    public function markActivated(int $id, array $meta): void
+    {
+        $this->transition($id, ['account_pending_device'], 'active', 0, 'activated', '', $meta);
+    }
+
+    /**
+     * Stall the ticket at expired (lazy code expiry / burn). Silent
+     * when another active code still carries the ceremony, or when
+     * the ticket already left the ceremony states.
+     */
+    public function markExpired(int $id, string $reason): void
+    {
+        $chk = $this->pdo->prepare(
+            'SELECT id FROM acm_activation_codes'
+            . ' WHERE ticket_id = :t AND status = \'active\' LIMIT 1'
+        );
+        $chk->execute([':t' => $id]);
+        if ($chk->fetchColumn() !== false) {
+            return;
+        }
+        $stmt = $this->pdo->prepare(
+            'UPDATE acm_activation_tickets SET status = \'expired\''
+            . ' WHERE id = :id AND status IN (\'code_issued\',\'grant_verified\')'
+        );
+        $stmt->execute([':id' => $id]);
+        if ($stmt->rowCount() === 1) {
+            $this->addEvent($id, 0, 'expired', '', ['reason' => $reason]);
+        }
+    }
+
+    /** Provisioning collision (D3.4): officer review queue. */
+    public function failActivation(int $id, string $reason, array $meta): void
+    {
+        $meta['reason'] = $reason;
+        $this->transition(
+            $id, ['grant_verified'], 'activation_failed', 0, 'activation_failed', '', $meta
+        );
+    }
+
+    /**
+     * Abort the ceremony from any non-terminal state. Reason is
+     * mandatory; live codes AND grants are revoked in the same
+     * transaction (D4.4). Needs migration 082 (the canceled state
+     * does not exist before it) — probed explicitly so a
+     * pre-migration call fails clean instead of corrupting status.
+     */
+    public function cancel(int $id, int $userId, string $reason): array
+    {
+        if ($userId <= 0) {
+            throw new InvalidArgumentException('Not authenticated.');
+        }
+        $reason = trim($reason);
+        if (mb_strlen($reason) < 3 || mb_strlen($reason) > 2000) {
+            throw new InvalidArgumentException('A cancel reason (3-2000 chars) is required.');
+        }
+        $this->requireCeremonyTables();
+        $this->pdo->beginTransaction();
+        try {
+            $ticket = $this->lockedTicket($id);
+            if (in_array($ticket['status'], self::TERMINAL_STATUSES, true)) {
+                throw new ActivationException(
+                    ActivationException::TICKET_STATE, 409,
+                    'Ticket is already closed.'
+                );
+            }
+            $this->revokeCeremony($id, 'ticket_canceled');
+            $this->transition(
+                $id, self::CANCELABLE_STATUSES, 'canceled', $userId, 'canceled', $reason, null
+            );
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+        $ticket = $this->get($id);
+        if ($ticket === null) {
+            throw new RuntimeException('Ticket was canceled but could not be reloaded.');
+        }
+        return $ticket;
+    }
+
+    /**
+     * Revoke every live code + unconsumed grant for a ticket.
+     * Pre-migration-safe (42S02 → zeros): called from decide()
+     * and cancel(), which otherwise work on old databases.
+     * The caller owns the transaction. Returns counts.
+     *
+     * @return array{codes: int, grants: int}
+     */
+    public function revokeCeremony(int $ticketId, string $reason): array
+    {
+        try {
+            $codes = $this->pdo->prepare(
+                'UPDATE acm_activation_codes SET status = \'revoked\''
+                . ' WHERE ticket_id = :t AND status = \'active\''
+            );
+            $codes->execute([':t' => $ticketId]);
+            $nCodes = $codes->rowCount();
+            $nGrants = $this->revokeCeremonyGrants($ticketId, null, $reason);
+        } catch (\PDOException $e) {
+            if ($e->getCode() !== '42S02') {
+                throw $e;
+            }
+            return ['codes' => 0, 'grants' => 0];
+        }
+        return ['codes' => $nCodes, 'grants' => $nGrants];
+    }
+
+    /**
+     * Revoke unconsumed grants for a ticket (+ operation when set).
+     * Caller owns the transaction. No pre-migration guard: every
+     * caller touches a 082 table first.
+     */
+    public function revokeCeremonyGrants(?int $ticketId, ?string $operation, string $reason): int
+    {
+        $sql = 'UPDATE acm_activation_grants SET revoked_at = NOW(), revocation_reason = :r'
+            . ' WHERE ticket_id = :t AND consumed_at IS NULL AND revoked_at IS NULL';
+        $params = [':r' => mb_substr($reason, 0, 200), ':t' => $ticketId];
+        if ($operation !== null) {
+            $sql .= ' AND operation = :op';
+            $params[':op'] = $operation;
+        }
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->rowCount();
+    }
+
+    private function requireCeremonyTables(): void
+    {
+        try {
+            $this->pdo->query('SELECT 1 FROM acm_activation_codes LIMIT 1');
+        } catch (\PDOException $e) {
+            if ($e->getCode() === '42S02') {
+                throw new InvalidArgumentException(
+                    'Activation ceremony tables are unavailable (migration 082 pending).'
+                );
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Conditional ticket transition + event, atomically. The WHERE
+     * clause is the state machine: concurrent movers collide here
+     * and exactly one wins (rowCount 1).
+     */
+    private function transition(
+        int $id,
+        array $from,
+        string $to,
+        ?int $actorId,
+        string $event,
+        string $note,
+        ?array $meta
+    ): void {
+        if ($from === []) {
+            throw new InvalidArgumentException('Transition has no source states.');
+        }
+        $stmt = $this->pdo->prepare(
+            'UPDATE acm_activation_tickets SET status = ? WHERE id = ? AND status IN ('
+            . implode(',', array_fill(0, count($from), '?')) . ')'
+        );
+        $stmt->execute(array_merge([$to, $id], $from));
+        if ($stmt->rowCount() !== 1) {
+            throw new ActivationException(
+                ActivationException::TICKET_STATE, 409,
+                'The ticket is not in the right state for this action.'
+            );
+        }
+        $this->addEvent($id, $actorId ?? 0, $event, $note, $meta);
     }
 
     public function overviewStats(string $role, int $userId): array
@@ -412,9 +695,15 @@ class AcmTicketService
             $s->execute([':u' => $userId]);
             $mine = (int)$s->fetchColumn();
         }
+        // S3: the S3 ceremony provisions at account_pending_device
+        // (the users row exists; activation waits for S4 device
+        // proof). updated_at covers both the legacy provisioned
+        // moment and the ceremony transition; pre-082 the extra
+        // status simply matches nothing.
         $week = $this->pdo->query(
             'SELECT COUNT(*) FROM acm_activation_tickets'
-            . " WHERE status = 'provisioned' AND decided_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"
+            . " WHERE status IN ('provisioned','account_pending_device')"
+            . ' AND updated_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)'
         )->fetchColumn();
         return [
             'by_status' => $byStatus,
@@ -427,77 +716,11 @@ class AcmTicketService
         ];
     }
 
-    private function provision(array $ticket, array $person, int $actorId): int
-    {
-        $accountType = (string)$ticket['account_type'];
-        $username = $this->buildUsername($accountType, $ticket, $person);
-        $stmt = $this->pdo->prepare(
-            'INSERT INTO users (username, email, full_name, role, password_hash, is_active, member_id)'
-            . ' VALUES (:u, :e, :fn, :r, :ph, 1, :mid)'
-        );
-        $stmt->execute([
-            ':u'   => $username,
-            ':e'   => $this->personEmail($person),
-            ':fn'  => mb_substr(
-                (string)(($person['full_name_en'] ?? '') !== '' ? $person['full_name_en'] : $person['full_name_am']),
-                0, 100
-            ),
-            ':r'   => $accountType,
-            ':ph'  => password_hash(bin2hex(random_bytes(32)), PASSWORD_BCRYPT, ['cost' => 12]),
-            ':mid' => $accountType === 'member' ? (int)$ticket['member_id'] : null,
-        ]);
-        $userId = (int)$this->pdo->lastInsertId();
-        $link = $this->pdo->prepare(
-            'INSERT INTO acm_person_accounts (person_id, user_id, account_type, status, linked_by, linked_at)'
-            . ' VALUES (:p, :u, :at, \'active\', :by, NOW())'
-        );
-        $link->execute([
-            ':p' => (int)$ticket['person_id'], ':u' => $userId, ':at' => $accountType, ':by' => $actorId,
-        ]);
-        return $userId;
-    }
-
-    private function buildUsername(string $accountType, array $ticket, array $person): string
-    {
-        if ($accountType === 'member' && !empty($ticket['member_id'])) {
-            $member = $this->memberRow((int)$ticket['member_id']);
-            $code = preg_replace('/[^a-z0-9]/i', '', strtolower((string)($member['member_code'] ?? '')));
-            $base = $code !== '' ? 'm' . $code : 'm' . (int)$ticket['person_id'];
-        } else {
-            $n9 = AcmPersonService::normalizePhoneN9($person['phone'] ?? null);
-            $base = $n9 !== null ? 'p' . $n9 : 'p' . (int)$ticket['person_id'];
-        }
-        $base = substr($base, 0, 40);
-        $candidate = $base;
-        for ($i = 2; $i < 100; $i++) {
-            if (!$this->usernameTaken($candidate)) {
-                return $candidate;
-            }
-            $candidate = substr($base, 0, 38) . '-' . $i;
-        }
-        return $base . '-' . substr(md5((string)$ticket['id'] . microtime(true)), 0, 6);
-    }
-
-    private function usernameTaken(string $username): bool
-    {
-        $stmt = $this->pdo->prepare('SELECT id FROM users WHERE username = :u LIMIT 1');
-        $stmt->execute([':u' => $username]);
-        return $stmt->fetchColumn() !== false;
-    }
-
-    private function personEmail(array $person): ?string
-    {
-        $email = trim((string)($person['email'] ?? ''));
-        if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            return null;
-        }
-        $stmt = $this->pdo->prepare('SELECT id FROM users WHERE email = :e LIMIT 1');
-        $stmt->execute([':e' => $email]);
-        if ($stmt->fetchColumn() !== false) {
-            return null;
-        }
-        return substr($email, 0, 100);
-    }
+    // S3: provisioning (users row + acm_person_accounts link +
+    // username/email builders) moved to AccountProvisioner, called
+    // from grant-backed ActivationService::establishCredentials.
+    // Accounts are created INACTIVE (is_active = 0, link pending)
+    // and wait for S4 device proof at account_pending_device.
 
     private function buildEvidence(array $person, ?int $memberId, ?int $guardianId): array
     {

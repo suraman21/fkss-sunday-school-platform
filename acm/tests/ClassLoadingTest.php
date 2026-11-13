@@ -22,6 +22,13 @@ final class ClassLoadingTest extends TestCase
         $this->assertTrue(class_exists(AcmPersonService::class));
         $this->assertTrue(class_exists(AcmTicketService::class));
         $this->assertTrue(class_exists(AcmOfficeService::class));
+        // S3 ceremony classes travel with the same manifest.
+        $this->assertTrue(class_exists(\\SSMS\\Acm\\Activation\\ActivationService::class));
+        $this->assertTrue(class_exists(\\SSMS\\Acm\\Activation\\CodeAlphabet::class));
+        $this->assertTrue(class_exists(\\SSMS\\Acm\\Activation\\ActivationException::class));
+        $this->assertTrue(class_exists(\\SSMS\\Acm\\Activation\\IdempotencyStore::class));
+        $this->assertTrue(class_exists(\\SSMS\\Acm\\Accounts\\AccountProvisioner::class));
+        $this->assertTrue(class_exists(\\SSMS\\Acm\\OfficeNetwork\\OfficeNetworkSignal::class));
     }
 
     public function testContractsResolve(): void
