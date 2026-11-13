@@ -58,6 +58,16 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertNotRegex(combined, r"(?i)CREATE TABLE[^;]+webhook_secret")
         self.assertIn("defined('TELEGRAM_BOT_TOKEN')", self.webhook)
 
+    def test_member_canonical_keys_have_bounded_backfill_and_write_hook(self):
+        canonical = (ROOT / "admin/backend/services/MemberCanonicalIdentityService.php").read_text(encoding="utf-8")
+        registration = (ROOT / "admin/hr_register_member.php").read_text(encoding="utf-8")
+        self.assertIn("max(1,min(500,$limit))", canonical)
+        self.assertIn("name_norm_version IS NULL OR name_norm_version<>", canonical)
+        self.assertIn("ORDER BY id LIMIT {$limit}", canonical)
+        self.assertIn("MemberCanonicalIdentityService::refresh($conn, (int)$newId)", registration)
+        self.assertIn("phone_number", canonical)
+        self.assertNotIn("UPDATE members SET student_name=", canonical)
+
     def test_schema_has_review_and_audit_boundaries(self):
         for table in [
             "telegram_bot_users", "telegram_form_profiles", "telegram_form_fields",
