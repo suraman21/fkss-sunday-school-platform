@@ -92,6 +92,37 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertNotIn("TELEGRAM_WEBHOOK_SECRET", page)
         self.assertNotIn("approve member", page.lower())
 
+    def test_form_builder_versions_and_validates_closed_registry(self):
+        service = (ROOT / "admin/backend/services/TelegramFormAdminService.php").read_text(encoding="utf-8")
+        api = (ROOT / "admin/api_telegram_registration.php").read_text(encoding="utf-8")
+        page = (ROOT / "admin/telegram_registration.php").read_text(encoding="utf-8")
+        self.assertIn("TelegramFormRegistry::exists($key)", service)
+        self.assertIn("Published or retired versions are immutable.", service)
+        self.assertIn("Full name and gender must be enabled and required.", service)
+        self.assertIn("FOR UPDATE", service)
+        self.assertIn("begin_transaction()", service)
+        for action in ["form_registry", "form_detail", "form_create", "form_save", "form_publish"]:
+            self.assertIn(f"case '{action}'", api)
+        self.assertIn("fields_json", api)
+        self.assertIn("New waiting draft", page)
+        self.assertIn("New direct draft", page)
+        self.assertIn("Publish this immutable version", page)
+
+    def test_review_ui_has_no_approval_or_member_creation_path(self):
+        api = (ROOT / "admin/api_telegram_registration.php").read_text(encoding="utf-8")
+        page = (ROOT / "admin/telegram_registration.php").read_text(encoding="utf-8")
+        self.assertIn("case 'session_detail'", api)
+        self.assertIn("case 'review_decide'", api)
+        self.assertIn("['rejected','changes_requested','duplicate']", api)
+        self.assertIn("Approval is unavailable in review-only phase.", api)
+        self.assertIn("FOR UPDATE", api)
+        self.assertIn("candidate_cap'=>10", api)
+        self.assertIn("Request changes", page)
+        self.assertIn("Mark duplicate", page)
+        self.assertNotIn('value="approved"', page)
+        review_case = api[api.index("case 'review_decide'"):api.index("case 'audit'")]
+        self.assertNotRegex(review_case, r"INSERT\s+INTO\s+members")
+
     def test_schema_has_review_and_audit_boundaries(self):
         for table in [
             "telegram_bot_users", "telegram_form_profiles", "telegram_form_fields",

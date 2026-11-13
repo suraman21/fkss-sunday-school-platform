@@ -6,8 +6,12 @@ header('Cache-Control: no-store');
 require_once __DIR__.'/config.php';
 require_once __DIR__.'/backend/services/AmharicIdentityNormalizer.php';
 require_once __DIR__.'/backend/services/MemberCanonicalIdentityService.php';
+require_once __DIR__.'/backend/services/TelegramFormRegistry.php';
+require_once __DIR__.'/backend/services/TelegramFormAdminService.php';
 
 use App\Services\MemberCanonicalIdentityService;
+use App\Services\TelegramFormRegistry;
+use App\Services\TelegramFormAdminService;
 
 function tg_admin_error(string $message,int $code=400): never { http_response_code($code);echo json_encode(['status'=>'error','message'=>$message],JSON_UNESCAPED_UNICODE);exit; }
 function tg_admin_ok(array $data=[]): never { echo json_encode(['status'=>'success']+$data,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);exit; }
@@ -41,10 +45,27 @@ case 'operators':
     $rows=[];$r=$conn->query($sql);while($row=$r->fetch_assoc())$rows[]=$row;tg_admin_ok(['operators'=>$rows]);
 case 'forms':
     $rows=[];$r=$conn->query("SELECT p.*,COUNT(f.id) field_count,COALESCE(SUM(f.is_enabled=1),0) enabled_count,COALESCE(SUM(f.is_enabled=1 AND f.is_required=1),0) required_count FROM telegram_form_profiles p LEFT JOIN telegram_form_fields f ON f.profile_id=p.id GROUP BY p.id ORDER BY p.profile_key,p.version DESC");while($row=$r->fetch_assoc())$rows[]=$row;tg_admin_ok(['forms'=>$rows]);
+case 'form_registry':
+    tg_admin_ok(['fields'=>TelegramFormRegistry::definitions()]);
+case 'form_detail':
+    $forms=new TelegramFormAdminService($conn);$form=$forms->detail((int)($input['id']??0));if(!$form)tg_admin_error('Form not found.',404);tg_admin_ok(['form'=>$form]);
+case 'form_create':
+    if($method!=='POST'||!in_array($role,['super_admin','school_admin'],true))tg_admin_error('Only administrators may create form versions.',403);
+    $forms=new TelegramFormAdminService($conn);$form=$forms->createDraft((string)($input['profile_key']??''),$actor);tg_admin_audit($conn,$actor,'form_draft_created','form_profile',(int)$form['id'],['profile_key'=>$form['profile_key'],'version'=>$form['version']]);tg_admin_ok(['form'=>$form]);
+case 'form_save':
+    if($method!=='POST'||!in_array($role,['super_admin','school_admin'],true))tg_admin_error('Only administrators may edit forms.',403);
+    $fields=json_decode((string)($input['fields_json']??''),true);if(!is_array($fields))tg_admin_error('Invalid form fields.');$forms=new TelegramFormAdminService($conn);$form=$forms->saveDraft((int)($input['id']??0),(string)($input['title_am']??''),(string)($input['title_en']??''),$fields);tg_admin_audit($conn,$actor,'form_draft_saved','form_profile',(int)$form['id'],['field_count'=>count($fields)]);tg_admin_ok(['form'=>$form]);
+case 'form_publish':
+    if($method!=='POST'||!in_array($role,['super_admin','school_admin'],true))tg_admin_error('Only administrators may publish forms.',403);
+    $forms=new TelegramFormAdminService($conn);$form=$forms->publish((int)($input['id']??0),$actor);tg_admin_audit($conn,$actor,'form_published','form_profile',(int)$form['id'],['profile_key'=>$form['profile_key'],'version'=>$form['version']]);tg_admin_ok(['form'=>$form]);
 case 'sessions':
     $limit=tg_admin_limit($input['limit']??50);$status=trim((string)($input['status']??''));$allowed=['choosing','collecting','review','submitted','cancelled','expired','failed'];
     if($status!==''&&!in_array($status,$allowed,true))tg_admin_error('Invalid session status.');
-    $where=$status!==''?'WHERE s.status=?':'';$sql="SELECT s.id,s.public_id,s.profile_key,s.form_version,s.language,s.status,s.current_field_key,s.duplicate_state,s.submitted_at,s.created_at,s.updated_at,tb.display_name operator_name,tb.telegram_user_id FROM telegram_registration_sessions s JOIN telegram_bot_users tb ON tb.id=s.bot_user_id {$where} ORDER BY s.id DESC LIMIT {$limit}";$q=$conn->prepare($sql);if($status!=='')$q->bind_param('s',$status);$q->execute();$rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();tg_admin_ok(['sessions'=>$rows]);
+    $where=$status!==''?'WHERE s.status=?':'';$sql="SELECT s.id,s.public_id,s.profile_key,s.form_version,s.language,s.status,s.current_field_key,s.duplicate_state,s.submitted_at,s.created_at,s.updated_at,tb.display_name operator_name,tb.telegram_user_id,r.decision review_decision,r.created_at reviewed_at FROM telegram_registration_sessions s JOIN telegram_bot_users tb ON tb.id=s.bot_user_id LEFT JOIN telegram_registration_reviews r ON r.session_id=s.id {$where} ORDER BY s.id DESC LIMIT {$limit}";$q=$conn->prepare($sql);if($status!=='')$q->bind_param('s',$status);$q->execute();$rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();tg_admin_ok(['sessions'=>$rows]);
+case 'session_detail':
+    $id=(int)($input['id']??0);$q=$conn->prepare('SELECT s.*,tb.telegram_user_id,tb.display_name operator_name,u.full_name linked_user_name,u.role linked_role,r.decision review_decision,r.note review_note,r.reviewer_user_id,r.created_at reviewed_at,ru.full_name reviewer_name FROM telegram_registration_sessions s JOIN telegram_bot_users tb ON tb.id=s.bot_user_id LEFT JOIN users u ON u.id=tb.linked_user_id LEFT JOIN telegram_registration_reviews r ON r.session_id=s.id LEFT JOIN users ru ON ru.id=r.reviewer_user_id WHERE s.id=? LIMIT 1');$q->bind_param('i',$id);$q->execute();$session=$q->get_result()->fetch_assoc();$q->close();if(!$session)tg_admin_error('Session not found.',404);$q=$conn->prepare('SELECT field_key,value_text,value_normalized,updated_at FROM telegram_registration_answers WHERE session_id=? ORDER BY id');$q->bind_param('i',$id);$q->execute();$answers=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();$duplicates=json_decode((string)($session['duplicate_summary']??''),true);if(!is_array($duplicates))$duplicates=[];unset($session['duplicate_summary']);tg_admin_ok(['session'=>$session,'answers'=>$answers,'duplicate_candidates'=>$duplicates,'candidate_cap'=>10]);
+case 'review_decide':
+    if($method!=='POST')tg_admin_error('Use POST for review decisions.',405);$id=(int)($input['id']??0);$decision=(string)($input['decision']??'');if(!in_array($decision,['rejected','changes_requested','duplicate'],true))tg_admin_error('Approval is unavailable in review-only phase.');$note=trim((string)($input['note']??''));if($note===''||strlen($note)>1000)tg_admin_error('A review note of up to 1000 bytes is required.');$conn->begin_transaction();try{$q=$conn->prepare("SELECT id FROM telegram_registration_sessions WHERE id=? AND status='submitted' FOR UPDATE");$q->bind_param('i',$id);$q->execute();$found=$q->get_result()->fetch_assoc();$q->close();if(!$found)throw new \InvalidArgumentException('Only a submitted draft can be reviewed.');$q=$conn->prepare('INSERT INTO telegram_registration_reviews(session_id,decision,reviewer_user_id,note) VALUES(?,?,?,?)');$q->bind_param('isis',$id,$decision,$actor,$note);$q->execute();$reviewId=(int)$conn->insert_id;$q->close();tg_admin_audit($conn,$actor,'review_decided','session',$id,['decision'=>$decision,'review_id'=>$reviewId]);$conn->commit();tg_admin_ok(['reviewed'=>true,'decision'=>$decision]);}catch(\Throwable $e){$conn->rollback();throw $e;}
 case 'audit':
     $limit=tg_admin_limit($input['limit']??100,100);$rows=[];$r=$conn->query("SELECT id,actor_type,actor_id,event,entity_type,entity_id,result,created_at FROM telegram_audit_log ORDER BY id DESC LIMIT {$limit}");while($row=$r->fetch_assoc())$rows[]=$row;tg_admin_ok(['audit'=>$rows]);
 case 'operator_save':
@@ -61,5 +82,6 @@ case 'canonical_backfill':
     $result=MemberCanonicalIdentityService::backfill($conn,(int)($input['cursor']??0),(int)($input['limit']??100));tg_admin_audit($conn,$actor,'canonical_backfill','members',0,$result);tg_admin_ok(['backfill'=>$result]);
 default:tg_admin_error('Unknown action.');
 }}
+catch(\InvalidArgumentException $e){tg_admin_error($e->getMessage(),400);}
 catch(\mysqli_sql_exception $e){reportInternalError('Telegram admin API database failure',$e);tg_admin_error('Database operation failed.',500);}
 catch(\Throwable $e){reportInternalError('Telegram admin API failure',$e);tg_admin_error('Operation failed.',500);}
