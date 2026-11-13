@@ -32,6 +32,12 @@ final class TelegramBotApiService
         return $this->webhookInfo();
     }
 
+    /** Notify an authorized operator after HR records a review decision. */
+    public function sendMessage(int $chatId,string $text): bool
+    {
+        if($chatId<=0)throw new RuntimeException('Invalid Telegram chat.');$text=trim($text);if($text===''||strlen($text)>3500)throw new RuntimeException('Invalid Telegram notification.');$result=$this->call('sendMessage',['chat_id'=>(string)$chatId,'text'=>$text]);return is_array($result)&&!empty($result['message_id']);
+    }
+
     /** @return array<string,mixed> */
     public function webhookInfo(): array
     {
