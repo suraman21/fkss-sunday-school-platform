@@ -159,7 +159,8 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         api = (ROOT / "admin/api_telegram_registration.php").read_text(encoding="utf-8")
         self.assertIn("dirname($this->publicRoot).'/.telegram_env.php'", service)
         self.assertIn("@chmod($temp,0600)", service)
-        self.assertIn("password_verify", service)
+        self.assertNotIn("password_verify", service)
+        self.assertNotIn("current_password", service + api)
         self.assertIn("random_bytes(48)", service)
         self.assertNotRegex(service, r"INSERT\s+INTO")
         self.assertIn("dirname(__DIR__) . '/.telegram_env.php'", config)
@@ -221,6 +222,20 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn("notification_warning", review)
         self.assertIn("Telegram review notification failed", review)
         self.assertIn("result.notification_warning", page)
+
+    def test_console_has_immediate_loading_success_and_error_feedback(self):
+        page = (ROOT / "admin/telegram_registration.php").read_text(encoding="utf-8")
+        self.assertIn('id="networkActivity"', page)
+        self.assertIn('id="toastRegion"', page)
+        self.assertIn("function notify", page)
+        self.assertIn("networkBusy(true)", page)
+        self.assertIn("controller.abort(),20000", page)
+        self.assertIn("trigger.disabled=true", page)
+        self.assertIn("aria-busy", page)
+        self.assertIn("prefers-reduced-motion:reduce", page)
+        self.assertIn("notify('Telegram operator access was saved.')", page)
+        self.assertIn("Webhook active", page)
+        self.assertNotIn("Confirm your Super Admin password", page)
 
     def test_schema_has_review_and_audit_boundaries(self):
         for table in [
