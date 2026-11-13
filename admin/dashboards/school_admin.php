@@ -286,6 +286,7 @@ select.inp{cursor:pointer}
 <button class="np" data-section="staff"><i class="fa-solid fa-user-gear"></i> Staff & Users</button>
 <button class="np" data-section="reports"><i class="fa-solid fa-chart-line"></i> Reports & Export</button>
 <button class="np" data-section="system"><i class="fa-solid fa-server"></i> System Health</button>
+<a class="np" href="/admin/telegram_registration.php" style="text-decoration:none"><i class="fa-brands fa-telegram"></i> Telegram Registration</a>
 <button class="np" data-comm-open="inbox"><i class="fa-solid fa-comments"></i> Communication</button>
 <button type="button" class="np" data-section="profile" style="margin-top:.2rem;color:var(--bright)"><i class="fa-solid fa-user-gear" style="color:#38bdf8"></i> My Profile</button>
 <?php
