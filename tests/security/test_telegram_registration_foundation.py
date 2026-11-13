@@ -80,6 +80,18 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         for action in ["overview", "operators", "forms", "sessions", "audit", "operator_save", "canonical_backfill"]:
             self.assertIn(f"case '{action}'", api)
 
+    def test_admin_console_exposes_safe_phase_one_surfaces(self):
+        page = (ROOT / "admin/telegram_registration.php").read_text(encoding="utf-8")
+        self.assertIn("['super_admin','school_admin','hr_dept']", page)
+        self.assertIn("generateCsrfToken()", page)
+        self.assertIn("credentials:'same-origin'", page)
+        for label in ["Overview", "Operators", "Forms", "Sessions & reviews", "Audit"]:
+            self.assertIn(label, page)
+        self.assertIn("Phase 1 does not create members", page)
+        self.assertNotIn("TELEGRAM_BOT_TOKEN", page)
+        self.assertNotIn("TELEGRAM_WEBHOOK_SECRET", page)
+        self.assertNotIn("approve member", page.lower())
+
     def test_schema_has_review_and_audit_boundaries(self):
         for table in [
             "telegram_bot_users", "telegram_form_profiles", "telegram_form_fields",
