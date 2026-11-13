@@ -7,8 +7,7 @@
          failOnDeprecation="true">
   <testsuites>
     <testsuite name="acm">
-      <directory>tests</directory>
-      <suffix>Test.php</suffix>
+      <directory suffix="Test.php">tests</directory>
     </testsuite>
   </testsuites>
   <source>
