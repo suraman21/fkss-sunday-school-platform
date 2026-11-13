@@ -765,7 +765,7 @@ class ActivationService implements ActivationServiceContract
      * minted. Returns null when a device is already active (the
      * route reports device_registered). Concurrent retries converge:
      * every retry invalidates the previous unused grant and the
-     * client always uses its latest response. Pre-083 safe: a
+     * client always uses its latest response. Pre-084 safe: a
      * missing acm_devices table reads as "no active device"
      * (42S02-only catch -- every other error propagates).
      */

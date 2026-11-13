@@ -93,7 +93,7 @@ $showCeremony = $codeInfo !== null && in_array($status, [
     'expired', 'activation_failed',
 ], true);
 // S4 device panel: ticket account's registered devices. Null rows =
-// registry unavailable (pre-083 safe reader, like codeStatus above).
+// registry unavailable (pre-084 safe reader, like codeStatus above).
 // The page only LISTS (revoke goes through api_acm, which owns the
 // mysqli-backed family cascade), so no revoker is injected here.
 $canManageDevices = AcmPolicy::can($role, 'device', 'manage');
