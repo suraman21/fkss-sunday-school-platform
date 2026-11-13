@@ -1,10 +1,9 @@
 <?php
 /**
- * ACM P0 shared console chrome.
+ * ACM console chrome — the school_admin design system (dark + light).
  * Include-only fragment: pages must define('ACM_BOOT', true) first.
- * Reuses the school-admin visual system (super_admin.css classes,
- * theme.php brand variables, Font Awesome) so the console looks
- * like the rest of the admin instead of a foreign product.
+ * Theme choice shares school_admin's localStorage key (wbws-theme) so
+ * dark/light follows the visitor across both consoles.
  */
 if (!defined('ACM_BOOT')) {
     http_response_code(404);
@@ -15,19 +14,31 @@ function acm_head(string $title): void
 {
     $assetVer = defined('SSMS_ASSET_VER') ? (string)SSMS_ASSET_VER : 'p0';
     $csrf = function_exists('generateCsrfToken') ? generateCsrfToken() : '';
-    echo '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">'
+    echo '<!DOCTYPE html><html lang="en" data-theme="dark"><head><meta charset="utf-8">'
         . '<meta name="viewport" content="width=device-width,initial-scale=1">'
         . '<meta name="csrf-token" content="' . htmlspecialchars($csrf, ENT_QUOTES, 'UTF-8') . '">'
         . '<title>' . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . ' · Access Control</title>'
         . '<link rel="icon" href="data:image/svg+xml,<svg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 100 100\'><text y=\'.9em\' font-size=\'90\'>🛡️</text></svg>">'
         . '<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"'
         . ' integrity="sha384-/o6I2CkkWC//PSjvWC/eYN7l3xM3tJm8ZzVkCOfp//W05QcE3mlGskpoHB6XqI+B" crossorigin="anonymous">'
-        . '<link rel="stylesheet" href="/admin/css/super_admin.css?v=' . urlencode($assetVer) . '">'
-        . '<link rel="stylesheet" href="/admin/css/acm.css?v=' . urlencode($assetVer) . '">';
+        . '<link rel="stylesheet" href="/admin/css/acm.css?v=' . urlencode($assetVer) . '">'
+        . '<link rel="stylesheet" href="/admin/css/mobile.css?v=' . urlencode($assetVer) . '">'
+        . '<script>(function(){try{var s=localStorage.getItem("wbws-theme");'
+        . 'if(s==="light"||s==="dark"){document.documentElement.setAttribute("data-theme",s);}}catch(e){}})();</script>';
     if (!function_exists('_hRgb') && is_file(__DIR__ . '/theme.php')) {
         include __DIR__ . '/theme.php';
     }
     echo '</head>';
+}
+
+function acm_status_bg(string $status): string
+{
+    $map = [
+        'submitted' => 'bg-w', 'in_review' => 'bg-info',
+        'changes_requested' => 'bg-p', 'approved' => 'bg-ok',
+        'provisioned' => 'bg-ok', 'rejected' => 'bg-bad',
+    ];
+    return $map[$status] ?? 'bg-n';
 }
 
 function acm_chrome_open(string $active, string $title, string $sub, int $openCount = 0): void
@@ -40,38 +51,52 @@ function acm_chrome_open(string $active, string $title, string $sub, int $openCo
         'queue'    => ['acm_queue.php', 'fa-inbox', 'Activation queue'],
         'persons'  => ['acm_person.php', 'fa-users', 'Persons & accounts'],
     ];
-    echo '<body><aside class="sb"><div class="brand"><div class="brand-logo"><i class="fa-solid fa-shield-halved"></i></div>'
-        . '<div><div class="brand-txt">Access Control</div><div class="brand-sub">ACM Console · P0</div></div></div>'
-        . '<nav class="nav-sec"><div class="nav-title">Manage</div><ul class="nav-list">';
+    echo '<body><aside><div class="brand"><div class="brand-logo"><i class="fa-solid fa-shield-halved"></i></div>'
+        . '<div><div class="brand-txt">Access Control</div><div class="brand-sub">Account Command Center</div></div></div>'
+        . '<div class="nt">Manage</div>';
     foreach ($nav as $key => $item) {
-        $cls = $key === $active ? 'nav-link active' : 'nav-link';
+        $cls = $key === $active ? 'np active' : 'np';
         $badge = ($key === 'queue' && $openCount > 0)
-            ? ' <span class="acm-badge">' . (int)$openCount . '</span>' : '';
-        echo '<li><a class="' . $cls . '" href="/admin/' . $item[0] . '">'
-            . '<i class="fa-solid ' . $item[1] . '"></i><span>' . $item[2] . '</span>' . $badge . '</a></li>';
+            ? '<span class="badge">' . (int)$openCount . '</span>' : '';
+        echo '<a class="' . $cls . '" href="/admin/' . $item[0] . '">'
+            . '<i class="fa-solid ' . $item[1] . '"></i><span>' . $item[2] . '</span>' . $badge . '</a>';
     }
-    echo '</ul></nav><div class="sb-footer"><div class="user-card"><div class="user-av">'
-        . htmlspecialchars($initial, ENT_QUOTES, 'UTF-8') . '</div><div><div class="user-name">'
-        . htmlspecialchars($fullName, ENT_QUOTES, 'UTF-8') . '</div><div class="user-role">'
+    echo '<div class="nt">Account</div>'
+        . '<a class="np" href="/admin/dashboard.php"><i class="fa-solid fa-arrow-left"></i><span>Back to dashboard</span></a>'
+        . '<a class="np" href="/admin/logout.php" style="color:var(--bad)"><i class="fa-solid fa-right-from-bracket"></i><span>Logout</span></a>'
+        . '<div class="uc"><div class="ua">'
+        . htmlspecialchars($initial, ENT_QUOTES, 'UTF-8') . '</div><div><div class="un">'
+        . htmlspecialchars($fullName, ENT_QUOTES, 'UTF-8') . '</div><div class="ur">'
         . htmlspecialchars($roleLabel, ENT_QUOTES, 'UTF-8') . '</div></div></div>'
-        . '<a class="nav-link" href="/admin/dashboard.php"><i class="fa-solid fa-arrow-left"></i><span>Back to dashboard</span></a>'
-        . '<a class="logout-btn" href="/admin/logout.php" style="margin-top:.5rem"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>'
-        . '</div></aside><main class="main"><div class="topbar"><div><h1>'
-        . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . '</h1><div class="topbar-sub">'
-        . htmlspecialchars($sub, ENT_QUOTES, 'UTF-8') . '</div></div>'
-        . '<div class="status-badge"><span class="status-dot"></span> ACM P0</div></div>'
-        . '<div class="content">';
+        . '</aside><main><div class="topbar"><div class="topbar-left"><h1>'
+        . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . '</h1><p>'
+        . htmlspecialchars($sub, ENT_QUOTES, 'UTF-8') . '</p></div>'
+        . '<div class="topbar-right">'
+        . '<button class="icon-btn" onclick="toggleTheme()" title="Toggle theme"><i class="fa-solid fa-sun" id="themeIcon"></i></button>'
+        . '<a class="btn bo bs" href="/admin/dashboard.php"><i class="fa-solid fa-arrow-left"></i> Dashboard</a>'
+        . '</div></div>'
+        . '<div class="acm-mobnav">';
+    foreach ($nav as $key => $item) {
+        $cls = $key === $active ? 'btn bp bs' : 'btn bo bs';
+        echo '<a class="' . $cls . '" href="/admin/' . $item[0] . '"><i class="fa-solid ' . $item[1] . '"></i> ' . $item[2] . '</a>';
+    }
+    echo '</div>';
 }
 
 function acm_chrome_close(): void
 {
-    echo '</div></main>'
+    echo '</main>'
         . '<div id="acmToast" class="acm-toast" role="status" aria-live="polite"></div>'
         . '<script>'
         . 'function acmCsrf(){var m=document.querySelector(\'meta[name="csrf-token"]\');return m?m.content:"";}'
         . 'function acmToast(msg,ok){var t=document.getElementById("acmToast");t.textContent=msg;'
         . 't.className="acm-toast show "+(ok===false?"err":"ok");clearTimeout(t._h);'
         . 't._h=setTimeout(function(){t.className="acm-toast";},3600);}'
+        . 'function toggleTheme(){var h=document.documentElement,c=h.getAttribute("data-theme"),n=c==="dark"?"light":"dark";'
+        . 'h.setAttribute("data-theme",n);try{localStorage.setItem("wbws-theme",n);}catch(e){}'
+        . 'document.getElementById("themeIcon").className=n==="dark"?"fa-solid fa-sun":"fa-solid fa-moon";}'
+        . '(function(){var s=null;try{s=localStorage.getItem("wbws-theme");}catch(e){}'
+        . 'if(s==="light"){document.getElementById("themeIcon").className="fa-solid fa-moon";}})();'
         . 'async function acmApi(action,params,method){method=method||"GET";'
         . 'var url="/admin/api_acm.php",opt={credentials:"same-origin",headers:{}};'
         . 'if(method==="GET"){url+="?action="+encodeURIComponent(action);'

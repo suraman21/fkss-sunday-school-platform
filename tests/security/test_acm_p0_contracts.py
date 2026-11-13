@@ -183,3 +183,16 @@ def test_inline_dashboard_dropdown_and_toggle_cover_acm_seats():
     assert "'registrar'" in super_row and "'account_activator'" in super_row
     school_row = next(ln for ln in toggle.splitlines() if "'school_admin' =>" in ln)
     assert "'registrar'" not in school_row and "'account_activator'" not in school_row
+
+
+def test_console_uses_school_admin_theme_with_modes():
+    css = read(ROOT / "admin" / "css" / "acm.css")
+    assert '[data-theme="light"]' in css
+    assert "--ac:" in css and "--sb:" in css and "--bright:" in css
+    layout = read(LAYOUT)
+    assert "toggleTheme()" in layout
+    assert "wbws-theme" in layout  # shared key: mode follows across consoles
+    for page in PAGES + [LAYOUT]:
+        s = read(page)
+        assert "super_admin.css" not in s, page.name
+        assert 'class="eth"' not in s, page.name

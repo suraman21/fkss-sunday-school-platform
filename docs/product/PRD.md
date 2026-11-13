@@ -191,7 +191,7 @@ Other stakeholders: the parents and guardians of students (data subjects; no sys
 |---|---|---|
 | Parent app | Feature list **locked**; not started | — |
 | Members app | **On hold** | — |
-| Account Command Center (parent/member accounts and devices) | In planning; **no code until the implementation plan is approved** | — |
+| Account Command Center (parent/member accounts and devices) | P0 shipped 2026-11-13 (console + activation tickets + provisioning); owner-approved scope, scaling per plan | `sql/079`; `admin/acm_*.php`; `admin/api_acm.php` |
 | Reporting Centre department datasets | **On hold** pending user feedback | [ADR-0012](../adr/0012-reporting-centre-and-data-boundary.md) |
 | Lesson-level attendance on mobile | Not in scope of Phase 6 | [ADR-0018](../adr/0018-lesson-level-attendance.md) |
 
