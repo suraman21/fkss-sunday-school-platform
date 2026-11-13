@@ -15,6 +15,7 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         cls.service = (ROOT / "admin/backend/services/TelegramRegistrationService.php").read_text(encoding="utf-8")
         cls.duplicate = (ROOT / "admin/backend/services/TelegramDuplicateCandidateService.php").read_text(encoding="utf-8")
         cls.migration = (ROOT / "sql/080_telegram_registration_foundation.sql").read_text(encoding="utf-8")
+        cls.phase2_migration = (ROOT / "sql/081_telegram_registration_phase2_interview.sql").read_text(encoding="utf-8")
 
     def test_feature_is_fail_closed(self):
         school = (ROOT / "school_config.php").read_text(encoding="utf-8")
@@ -49,6 +50,10 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         begin = self.service[self.service.index("private function begin"):self.service.index("private function profileChoice")]
         self.assertNotIn("cancelActive", begin)
         self.assertIn("You already have an unfinished draft", begin)
+        self.assertIn("edit_return_to_review=0", self.service)
+        self.assertIn("TelegramFormRegistry::label($key)", self.service)
+        self.assertIn("edit_return_to_review", self.phase2_migration)
+        self.assertIn("information_schema.columns", self.phase2_migration)
 
     def test_submission_never_inserts_member(self):
         submit = self.service[self.service.index("private function submitReview"):]

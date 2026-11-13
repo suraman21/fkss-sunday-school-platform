@@ -147,6 +147,10 @@ final class TelegramRegistrationService
         $statement=$this->conn->prepare('INSERT INTO telegram_registration_answers (session_id,field_key,value_text,value_normalized) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE value_text=VALUES(value_text),value_normalized=VALUES(value_normalized),updated_at=CURRENT_TIMESTAMP');
         $statement->bind_param('isss',$sessionId,$key,$display,$normal); $statement->execute(); $statement->close();
         if (in_array($key,['full_name_am','dob_ec','phone_number','baptismal_name','gender'],true)) $this->refreshDuplicates($session);
+        if((int)($session['edit_return_to_review']??0)===1){
+            $statement=$this->conn->prepare("UPDATE telegram_registration_sessions SET status='review',current_field_key=NULL,edit_return_to_review=0,lock_version=lock_version+1 WHERE id=?");
+            $statement->bind_param('i',$sessionId);$statement->execute();$statement->close();$session['status']='review';$session['current_field_key']=null;$session['edit_return_to_review']=0;return $this->review($session);
+        }
         $next=$this->nextField((int)$session['form_profile_id'],(int)$field['sort_order'],(int)$field['id']);
         if (!$next) { $statement=$this->conn->prepare("UPDATE telegram_registration_sessions SET status='review',current_field_key=NULL,lock_version=lock_version+1 WHERE id=?"); $statement->bind_param('i',$sessionId); $statement->execute(); $statement->close(); $session['status']='review'; return $this->review($session); }
         $nextKey=(string)$next['field_key'];
@@ -167,12 +171,13 @@ final class TelegramRegistrationService
     {
         $answers=$this->answers((int)$session['id']);
         $lines=['📋 የምዝገባ ማጠቃለያ / Registration draft'];
-        foreach($answers as $key=>$value) if($value!=='') $lines[]=$key.': '.$value;
+        foreach($answers as $key=>$value) if($value!=='') $lines[]=TelegramFormRegistry::label($key).': '.$value;
         $fresh=$this->session((int)$session['id']) ?: $session;
         $state=(string)($fresh['duplicate_state']??'not_checked');
         $lines[]='';
         $lines[]=$state==='none'?'✅ No indexed duplicate candidate found.':($state==='likely'?'🚨 Likely duplicate candidate found — HR must review.':($state==='possible'?'⚠️ Possible duplicate candidate found — HR must review.':'ℹ️ Duplicate check: '.$state));
         $duplicateMeta=json_decode((string)($fresh['duplicate_summary']??''),true);if(is_array($duplicateMeta)&&!empty($duplicateMeta['capped']))$lines[]='More plausible candidates exist than the safe display limit. Add or verify date of birth and phone so HR can refine the result.';
+        $editable=array_keys($answers);if($editable!==[])$lines[]='Edit one answer: /edit '.implode(', /edit ',$editable);
         $lines[]='No member will be created now. Submit this draft to HR for review.';
         return self::message((int)$session['telegram_chat_id'],implode("\n",$lines),['keyboard'=>[[['text'=>'✅ ላክ'],['text'=>'✏️ አርም']],[['text'=>'❌ Cancel']]],'resize_keyboard'=>true]);
     }
@@ -203,10 +208,11 @@ final class TelegramRegistrationService
         $field=$this->field((int)($session['form_profile_id']??0),$key);
         if(!$field)return self::message((int)$session['telegram_chat_id'],'That question is not enabled in this form. Use /review to see available fields.');
         $id=(int)$session['id'];
-        $statement=$this->conn->prepare("UPDATE telegram_registration_sessions SET status='collecting',current_field_key=?,lock_version=lock_version+1 WHERE id=? AND status IN ('collecting','review')");
-        $statement->bind_param('si',$key,$id);$statement->execute();$changed=$statement->affected_rows;$statement->close();
+        $returnToReview=$session['status']==='review'?1:0;
+        $statement=$this->conn->prepare("UPDATE telegram_registration_sessions SET status='collecting',current_field_key=?,edit_return_to_review=?,lock_version=lock_version+1 WHERE id=? AND status IN ('collecting','review')");
+        $statement->bind_param('sii',$key,$returnToReview,$id);$statement->execute();$changed=$statement->affected_rows;$statement->close();
         if($changed!==1)return self::message((int)$session['telegram_chat_id'],'This draft can no longer be edited.');
-        $answers=$this->answers($id);$session['status']='collecting';$session['current_field_key']=$key;
+        $answers=$this->answers($id);$session['status']='collecting';$session['current_field_key']=$key;$session['edit_return_to_review']=$returnToReview;
         return $this->prompt($session,$field,isset($answers[$key])?'Current: '.$answers[$key]:null);
     }
 
