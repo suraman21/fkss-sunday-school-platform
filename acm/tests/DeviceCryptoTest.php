@@ -206,7 +206,7 @@ final class DeviceCryptoTest extends TestCase
     {
         $this->assertNull(DeviceCrypto::cleanName(null));
         $this->assertNull(DeviceCrypto::cleanName("  \t "));
-        $this->assertSame('Pixel 8', DeviceCrypto::cleanName("  Pixel\x008\n "));
+        $this->assertSame('Pixel 8', DeviceCrypto::cleanName("  Pixel\x00 8\n "));
         $this->assertSame(80, strlen((string)DeviceCrypto::cleanName(str_repeat('n', 200))));
     }
 
