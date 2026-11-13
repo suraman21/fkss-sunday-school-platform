@@ -9,7 +9,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SQL80 = ROOT / "sql" / "080_acm_office_model.sql"
-SVC = ROOT / "admin" / "backend" / "services" / "Acm"
+SVC = ROOT / "admin" / "backend" / "services" / "Acm"  # S2: shims only
+ACMSRC = ROOT / "acm" / "src"
 API = ROOT / "admin" / "api_acm.php"
 OFFICE_PAGE = ROOT / "admin" / "acm_office.php"
 AUDIT_PAGE = ROOT / "admin" / "acm_audit.php"
@@ -48,7 +49,7 @@ def test_s1_migration_seeds_settings_and_renames_seats():
 # ---- office service ----
 
 def test_office_service_uses_prepared_statements_and_no_superglobals():
-    s = read(SVC / "AcmOfficeService.php")
+    s = read(ACMSRC / "Office" / "AcmOfficeService.php")
     assert "->prepare(" in s
     assert "$_GET" not in s and "$_POST" not in s
     # Dynamic table names are constrained to two literals.
@@ -57,7 +58,7 @@ def test_office_service_uses_prepared_statements_and_no_superglobals():
 
 
 def test_office_mode_change_requires_reason_date_and_staffing():
-    s = read(SVC / "AcmOfficeService.php")
+    s = read(ACMSRC / "Office" / "AcmOfficeService.php")
     assert "function setMode" in s
     assert "Only a Super Admin can change the office mode." in s
     assert "YYYY-MM-DD" in s
@@ -68,7 +69,7 @@ def test_office_mode_change_requires_reason_date_and_staffing():
 
 
 def test_designations_require_super_admin_reason_effective():
-    s = read(SVC / "AcmOfficeService.php")
+    s = read(ACMSRC / "Office" / "AcmOfficeService.php")
     for fn in ("designateApprover", "revokeApprover",
                "designateReviewer", "revokeReviewer"):
         assert f"function {fn}" in s, fn
@@ -78,7 +79,7 @@ def test_designations_require_super_admin_reason_effective():
 
 
 def test_attestation_enforces_independence_and_snapshot_hash():
-    s = read(SVC / "AcmOfficeService.php")
+    s = read(ACMSRC / "Office" / "AcmOfficeService.php")
     assert "function attest" in s
     assert "isActiveReviewer" in s
     assert "hasOfficeActionsInMonth" in s
@@ -93,7 +94,7 @@ def test_attestation_enforces_independence_and_snapshot_hash():
 # ---- mode-aware decide ----
 
 def test_decide_is_mode_aware_with_staffing_floor():
-    s = read(SVC / "AcmTicketService.php")
+    s = read(ACMSRC / "Accounts" / "AcmTicketService.php")
     assert "array $office = []" in s
     assert "Unknown office mode." in s
     # Separated keeps the P0 submitter rule + staffing floor.
@@ -106,7 +107,7 @@ def test_decide_is_mode_aware_with_staffing_floor():
 
 
 def test_decide_self_flag_never_touches_separated_path():
-    s = read(SVC / "AcmTicketService.php")
+    s = read(ACMSRC / "Accounts" / "AcmTicketService.php")
     # Dynamic SET fragment: the column is referenced only when set.
     assert "$selfSql" in s
     assert "pre-migration" in s

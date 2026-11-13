@@ -8,7 +8,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SQL = ROOT / "sql" / "079_acm_p0_foundation.sql"
-SVC = ROOT / "admin" / "backend" / "services" / "Acm"
+SVC = ROOT / "admin" / "backend" / "services" / "Acm"  # S2: shims only
+ACMSRC = ROOT / "acm" / "src"  # S2: the implementation lives here
 API = ROOT / "admin" / "api_acm.php"
 PAGES = [ROOT / "admin" / n for n in (
     "acm_overview.php", "acm_queue.php", "acm_ticket.php", "acm_person.php",
@@ -46,7 +47,7 @@ def test_migration_touches_no_existing_table():
 # ---- policy ----
 
 def test_policy_deny_by_default_and_p0_roles():
-    s = read(SVC / "AcmPolicy.php")
+    s = read(ACMSRC / "Policy" / "AcmPolicy.php")
     assert "return false;" in s
     # S1: one accounts_office seat; old seat names are gone from policy.
     assert "'accounts_office'" in s
@@ -64,17 +65,18 @@ def test_policy_deny_by_default_and_p0_roles():
 # ---- services ----
 
 def test_services_use_prepared_statements_only():
-    for name in ("AcmPersonService.php", "AcmTicketService.php"):
-        s = read(SVC / name)
-        assert "->prepare(" in s, name
-        assert "$_GET" not in s and "$_POST" not in s, name  # no superglobals
+    for path in (ACMSRC / "Identity" / "AcmPersonService.php",
+                 ACMSRC / "Accounts" / "AcmTicketService.php"):
+        s = read(path)
+        assert "->prepare(" in s, path.name
+        assert "$_GET" not in s and "$_POST" not in s, path.name  # no superglobals
         # No interpolated variables straight into SQL strings.
         for m in re.finditer(r"prepare\(\s*['\"](.*?)['\"]", s, re.S):
-            assert "$" not in m.group(1), f"{name}: {m.group(1)[:60]}"
+            assert "$" not in m.group(1), f"{path.name}: {m.group(1)[:60]}"
 
 
 def test_ticket_state_machine_pins():
-    s = read(SVC / "AcmTicketService.php")
+    s = read(ACMSRC / "Accounts" / "AcmTicketService.php")
     assert "FOR UPDATE" in s  # decide/claim are row-locked
     assert "beginTransaction" in s and "rollBack" in s
     assert "Maker-checker" in s or "maker-checker" in s

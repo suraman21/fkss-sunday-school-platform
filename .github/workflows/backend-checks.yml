@@ -369,6 +369,52 @@ jobs:
       - name: Run the existing test suite
         run: flutter test --reporter expanded
 
+  acm-contracts:
+    # S2. The ACM package (acm/src, SSMS\Acm) proves its PSR-4 mapping
+    # and its authorization-seam parity here. Non-DB only: the services
+    # use MySQL-isms (FOR UPDATE, ON DUPLICATE KEY), so behavior stays
+    # pinned by tests/security statics plus the dev E2E walkthrough.
+    name: ACM package contracts (PHPUnit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP 8.2
+        uses: shivammathur/setup-php@v2
+        with:
+          # composer.json platform pin. Lint on 8.4/8.5 stays in the
+          # php-lint jobs, which pick up acm/**/*.php automatically.
+          php-version: '8.2'
+          coverage: none
+
+      - name: Install PHP dependencies
+        run: |
+          set -euo pipefail
+          # TEMPORARY (S2): composer.json gains the SSMS\Acm PSR-4 mapping
+          # and the phpunit dev dependency, but composer.lock + vendor/ are
+          # regenerated on a composer-equipped dev machine (tracked-vendor
+          # model) — the sandbox cannot do it. Until that commit lands, the
+          # runner updates ephemerally. Afterwards this MUST become
+          # `composer install --frozen-lockfile` plus a
+          # `git diff --exit-code -- composer.lock vendor/composer` check.
+          composer update --no-interaction --prefer-dist --no-progress
+
+      - name: PSR-4 smoke test
+        run: |
+          set -euo pipefail
+          php -r 'require "vendor/autoload.php";
+            foreach (["SSMS\\Acm\\Policy\\AcmPolicy", "SSMS\\Acm\\Identity\\AcmPersonService", "SSMS\\Acm\\Accounts\\AcmTicketService", "SSMS\\Acm\\Office\\AcmOfficeService", "SSMS\\Acm\\Policy\\PolicyAuthorizer"] as $c) {
+              if (!class_exists($c)) { fwrite(STDERR, "missing $c\n"); exit(1); }
+            }
+            foreach (["SSMS\\Acm\\Contracts\\Authorizer", "SSMS\\Acm\\Contracts\\ActivationService"] as $i) {
+              if (!interface_exists($i)) { fwrite(STDERR, "missing $i\n"); exit(1); }
+            }
+            echo "PSR-4 smoke OK\n";'
+
+      - name: Run ACM PHPUnit suite
+        run: ./vendor/bin/phpunit -c acm/phpunit.xml
+
   migration-hygiene:
     name: Migration numbering
     runs-on: ubuntu-latest

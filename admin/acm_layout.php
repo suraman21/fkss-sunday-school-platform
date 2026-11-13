@@ -44,7 +44,7 @@ function acm_status_bg(string $status): string
 function acm_chrome_open(string $active, string $title, string $sub, int $openCount = 0): void
 {
     $fullName = (string)($_SESSION['admin_full_name'] ?? $_SESSION['admin_username'] ?? 'User');
-    $roleLabel = \App\Services\Acm\AcmPolicy::roleLabel((string)($_SESSION['admin_role'] ?? ''));
+    $roleLabel = \SSMS\Acm\Policy\AcmPolicy::roleLabel((string)($_SESSION['admin_role'] ?? ''));
     $initial = strtoupper(mb_substr($fullName, 0, 1));
     $nav = [
         'overview' => ['acm_overview.php', 'fa-gauge-high', 'Overview'],

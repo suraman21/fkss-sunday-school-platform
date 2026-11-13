@@ -33,15 +33,12 @@
 header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/backend/services/SecurityAuditService.php';
-require_once __DIR__ . '/backend/services/Acm/AcmPolicy.php';
-require_once __DIR__ . '/backend/services/Acm/AcmPersonService.php';
-require_once __DIR__ . '/backend/services/Acm/AcmTicketService.php';
-require_once __DIR__ . '/backend/services/Acm/AcmOfficeService.php';
+require_once __DIR__ . '/../acm/autoload.php';
 
-use App\Services\Acm\AcmOfficeService;
-use App\Services\Acm\AcmPersonService;
-use App\Services\Acm\AcmPolicy;
-use App\Services\Acm\AcmTicketService;
+use SSMS\Acm\Accounts\AcmTicketService;
+use SSMS\Acm\Identity\AcmPersonService;
+use SSMS\Acm\Office\AcmOfficeService;
+use SSMS\Acm\Policy\AcmPolicy;
 use App\Services\SecurityAuditService;
 
 function acm_ok(array $data = []): void
