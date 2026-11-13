@@ -101,6 +101,21 @@ def test_package_loader_is_an_explicit_manifest():
         assert rel in s, rel
 
 
+def test_package_loader_orders_contracts_before_services():
+    s = read(ROOT / "acm" / "autoload.php")
+    # implements/extends targets must be DECLARED before the classes
+    # that name them: the tracked vendor/ predates the SSMS mapping,
+    # so composer cannot resolve them on demand (S4 login-seam fatal,
+    # 2026-11-13: Authorizer not found via routes/auth.php).
+    last_contract = max(s.index(f"/src/Contracts/{n}.php") for n in (
+        "Authorizer", "PersonDirectory", "DeviceRegistry",
+        "ActivationService", "AuditTrail"))
+    first_service = min(s.index(f"/src/{n}.php") for n in (
+        "Policy/PolicyAuthorizer", "Device/DeviceService",
+        "Activation/ActivationService"))
+    assert last_contract < first_service
+
+
 def test_composer_declares_psr4_and_phpunit():
     composer = json.loads(read(ROOT / "composer.json"))
     assert composer["autoload"]["psr-4"]["SSMS\\Acm\\"] == "acm/src/"

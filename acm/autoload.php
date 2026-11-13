@@ -20,23 +20,11 @@ if (!defined('SSMS_ACM_AUTOLOAD')) {
 
     require_once dirname(__DIR__) . '/vendor/autoload.php';
 
-    // Services (moved S2, previously admin/backend/services/Acm/).
-    require_once __DIR__ . '/src/Policy/AcmPolicy.php';
-    require_once __DIR__ . '/src/Policy/PolicyAuthorizer.php';
-    require_once __DIR__ . '/src/Identity/AcmPersonService.php';
-    // S3 activation ceremony.
-    require_once __DIR__ . '/src/Activation/CodeAlphabet.php';
-    require_once __DIR__ . '/src/Activation/ActivationException.php';
-    require_once __DIR__ . '/src/Activation/IdempotencyStore.php';
-    require_once __DIR__ . '/src/Accounts/AccountProvisioner.php';
-    require_once __DIR__ . '/src/Accounts/AcmTicketService.php';
-    require_once __DIR__ . '/src/Activation/ActivationService.php';
-    require_once __DIR__ . '/src/OfficeNetwork/OfficeNetworkSignal.php';
-    // S4 device registry.
-    require_once __DIR__ . '/src/Device/DeviceCrypto.php';
-    require_once __DIR__ . '/src/Device/DeviceService.php';
-    require_once __DIR__ . '/src/Office/AcmOfficeService.php';
-    // Contracts: value types first, then interfaces.
+    // Contracts FIRST, then services. implements/extends targets
+    // must be declared before the classes that name them: the
+    // tracked vendor/ predates the SSMS mapping, so composer
+    // cannot be relied upon to resolve them on demand (S4 login
+    // seam fatal, 2026-11-13). Value types first, then interfaces.
     require_once __DIR__ . '/src/Contracts/AccountContext.php';
     require_once __DIR__ . '/src/Contracts/ResourceRef.php';
     require_once __DIR__ . '/src/Contracts/AuthorizationDecision.php';
@@ -54,4 +42,20 @@ if (!defined('SSMS_ACM_AUTOLOAD')) {
     require_once __DIR__ . '/src/Contracts/DeviceRegistry.php';
     require_once __DIR__ . '/src/Contracts/ActivationService.php';
     require_once __DIR__ . '/src/Contracts/AuditTrail.php';
+    // Services (moved S2, previously admin/backend/services/Acm/).
+    require_once __DIR__ . '/src/Policy/AcmPolicy.php';
+    require_once __DIR__ . '/src/Policy/PolicyAuthorizer.php';
+    require_once __DIR__ . '/src/Identity/AcmPersonService.php';
+    // S3 activation ceremony.
+    require_once __DIR__ . '/src/Activation/CodeAlphabet.php';
+    require_once __DIR__ . '/src/Activation/ActivationException.php';
+    require_once __DIR__ . '/src/Activation/IdempotencyStore.php';
+    require_once __DIR__ . '/src/Accounts/AccountProvisioner.php';
+    require_once __DIR__ . '/src/Accounts/AcmTicketService.php';
+    require_once __DIR__ . '/src/Activation/ActivationService.php';
+    require_once __DIR__ . '/src/OfficeNetwork/OfficeNetworkSignal.php';
+    // S4 device registry.
+    require_once __DIR__ . '/src/Device/DeviceCrypto.php';
+    require_once __DIR__ . '/src/Device/DeviceService.php';
+    require_once __DIR__ . '/src/Office/AcmOfficeService.php';
 }
