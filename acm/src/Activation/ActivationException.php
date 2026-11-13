@@ -1,6 +1,9 @@
 <?php
 /**
- * ACM S3 — typed ceremony failure (design §§D4.2–D4.3).
+ * ACM — typed ceremony/device failure (design §§D4.2–D4.3).
+ * S3 defined the code/grant vocabulary; S4 extends the SAME
+ * exception with the device vocabulary (routes translate via
+ * machineCode() either way).
  * ------------------------------------------------------------
  * Every activation failure carries a STABLE machine-readable code
  * (never message-only) plus the HTTP status and a safe message.
@@ -35,6 +38,12 @@ class ActivationException extends \InvalidArgumentException
     public const TICKET_STATE        = 'ticket_state';
     public const WEAK_PASSWORD       = 'weak_password';
     public const INVALID_REQUEST     = 'invalid_request';
+    // S4 device vocabulary (design §D3.6/D4.2; DEVICE_CONFLICT is
+    // the never-silent-overwrite verdict for a changed key).
+    public const CHALLENGE_FAILED    = 'challenge_failed';
+    public const DEVICE_LIMIT        = 'device_limit';
+    public const DEVICE_REVOKED      = 'device_revoked';
+    public const DEVICE_CONFLICT     = 'device_conflict';
 
     private string $machineCode;
     private int $httpStatus;
@@ -60,6 +69,16 @@ class ActivationException extends \InvalidArgumentException
     public static function verifyFailed(): self
     {
         return new self(self::CODE_INVALID, 400, 'The code is invalid or expired.');
+    }
+
+    /**
+     * The single generic device-proof failure — no oracle (§D3.6):
+     * unknown/expired/burned challenge, wrong bytes, bad signature,
+     * and cross-user challenge use are indistinguishable on the wire.
+     */
+    public static function challengeFailed(): self
+    {
+        return new self(self::CHALLENGE_FAILED, 401, 'The device proof is invalid or expired.');
     }
 
     public static function networkDenied(): self

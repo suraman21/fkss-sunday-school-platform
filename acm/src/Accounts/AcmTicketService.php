@@ -447,6 +447,7 @@ class AcmTicketService
             'archived', 'code_issued', 'code_reissued', 'code_burned',
             'grant_verified', 'credentials_set', 'activated', 'canceled',
             'expired', 'revoked', 'activation_failed',
+            'device_registered', 'device_revoked',
         ];
         if (!in_array($event, $allowed, true)) {
             throw new InvalidArgumentException('Unknown ticket event.');
@@ -493,6 +494,16 @@ class AcmTicketService
     public function markActivated(int $id, array $meta): void
     {
         $this->transition($id, ['account_pending_device'], 'active', 0, 'activated', '', $meta);
+    }
+
+    /**
+     * S4: a device_add ceremony completed device proof. Runs inside
+     * the CALLER's transaction (DeviceService owns it), like every
+     * other mark* method.
+     */
+    public function markDeviceRegistered(int $id, array $meta): void
+    {
+        $this->transition($id, ['grant_verified'], 'active', 0, 'device_registered', '', $meta);
     }
 
     /**

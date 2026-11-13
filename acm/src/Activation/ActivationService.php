@@ -93,9 +93,10 @@ class ActivationService implements ActivationServiceContract
         if (!AcmPolicy::can($ctx->role, AcmPolicy::RES_CODE, 'issue')) {
             throw new InvalidArgumentException('Access denied.');
         }
-        if ($purpose !== CodePurpose::Activation) {
-            // device_add / reset ceremonies are later increments;
-            // the purpose machinery below is already purpose-bound.
+        if ($purpose !== CodePurpose::Activation && $purpose !== CodePurpose::DeviceAdd) {
+            // S4 opens device_add; reset (recovery) is a later
+            // increment. The purpose machinery below is already
+            // purpose-bound.
             throw new InvalidArgumentException('This code purpose is not available in this increment.');
         }
         if (!ctype_digit($ticketId) || (int)$ticketId <= 0) {
@@ -346,8 +347,16 @@ class ActivationService implements ActivationServiceContract
                     'This idempotency key was already used with a different session.'
                 );
             }
+            // S4: the chained device grant cannot be reproduced
+            // (hash-only storage), so replay mints a FRESH one after
+            // revoking the ticket's outstanding unused device grant
+            // -- or returns null when a device is already active.
+            $deviceGrantToken = $this->replayDeviceGrant(
+                (int)$grant['ticket_id'], (int)$prior['user_id'], (int)$grant['id']
+            );
             return new AccountRef(
-                (int)$prior['user_id'], (string)$prior['username'], (string)$prior['account_type']
+                (int)$prior['user_id'], (string)$prior['username'], (string)$prior['account_type'],
+                $deviceGrantToken
             );
         }
         if ($grant['consumed_at'] !== null) {
@@ -370,6 +379,10 @@ class ActivationService implements ActivationServiceContract
             );
         }
 
+        // S4: chained device-registration grant minted below (the
+        // activation grant is consumed, and inactive accounts cannot
+        // start sessions, so without this the device flow deadlocks).
+        $deviceGrantToken = null;
         $this->pdo->beginTransaction();
         try {
             // Atomic single-use consumption (D3.3): affected-rows = 1
@@ -439,9 +452,12 @@ class ActivationService implements ActivationServiceContract
                 $this->pdo->rollBack();
                 $winner = $this->idempotency->findValid($idempotencyKey);
                 if ($winner !== null && hash_equals((string)$winner['grant_fingerprint'], $fingerprint)) {
+                    $deviceGrantToken = $this->replayDeviceGrant(
+                        (int)$grant['ticket_id'], (int)$winner['user_id'], (int)$grant['id']
+                    );
                     return new AccountRef(
                         (int)$winner['user_id'], (string)$winner['username'],
-                        (string)$winner['account_type']
+                        (string)$winner['account_type'], $deviceGrantToken
                     );
                 }
                 throw new ActivationException(
@@ -449,6 +465,15 @@ class ActivationService implements ActivationServiceContract
                     'This idempotency key was already used with a different session.'
                 );
             }
+            $chained = $this->mintGrant(
+                [
+                    'id' => (int)$grant['code_id'],
+                    'ticket_id' => (int)$grant['ticket_id'],
+                    'person_id' => (int)$grant['person_id'],
+                ],
+                CodePurpose::Activation->value
+            );
+            $deviceGrantToken = $chained['token'];
             $this->pdo->commit();
         } catch (ActivationException $e) {
             if ($this->pdo->inTransaction()) {
@@ -461,7 +486,89 @@ class ActivationService implements ActivationServiceContract
             }
             throw $e;
         }
-        return new AccountRef($userId, $username, $accountType);
+        return new AccountRef($userId, $username, $accountType, $deviceGrantToken);
+    }
+
+    // ------------------------------------------------------------
+    // S4: grant-authorized registration context (D3.6 step 2).
+    // Grants are owned HERE (single validation point); device
+    // state is owned by DeviceService; the route passes this row
+    // to DeviceService::beginFull(). Ticket-state here is a
+    // fail-fast read -- complete() re-validates under lock.
+    // ------------------------------------------------------------
+    /**
+     * @return array{id:int,ticket_id:int,user_id:int,operation:string}
+     */
+    public function resolveRegistrationGrant(string $grantToken): array
+    {
+        if (!preg_match('/^[A-Za-z0-9_-]{20,128}$/', $grantToken)) {
+            throw new ActivationException(
+                ActivationException::GRANT_INVALID, 401,
+                'The registration session is invalid.'
+            );
+        }
+        $fingerprint = substr(hash('sha256', $grantToken), 0, 12);
+        $grant = $this->grantByFingerprint($fingerprint);
+        if ($grant === null || !password_verify($grantToken, (string)$grant['grant_hash'])) {
+            throw new ActivationException(
+                ActivationException::GRANT_INVALID, 401,
+                'The registration session is invalid.'
+            );
+        }
+        if (!in_array(
+            (string)$grant['operation'],
+            \SSMS\Acm\Device\DeviceService::REGISTRATION_OPERATIONS,
+            true
+        )) {
+            throw new ActivationException(
+                ActivationException::GRANT_INVALID, 401,
+                'The registration session is invalid.'
+            );
+        }
+        if ($grant['revoked_at'] !== null) {
+            throw new ActivationException(
+                ActivationException::GRANT_REVOKED, 403,
+                'The registration session was revoked. Ask the office to reissue a code.'
+            );
+        }
+        if ($grant['consumed_at'] !== null) {
+            throw new ActivationException(
+                ActivationException::GRANT_CONSUMED, 409,
+                'The registration session was already used.'
+            );
+        }
+        if ((int)$grant['live'] !== 1) {
+            throw new ActivationException(
+                ActivationException::GRANT_EXPIRED, 410,
+                'The registration session expired. Ask the office to reissue a code.'
+            );
+        }
+        $ticket = $this->tickets->get((int)$grant['ticket_id']);
+        $expected = $grant['operation'] === CodePurpose::Activation->value
+            ? 'account_pending_device' : 'grant_verified';
+        if ($ticket === null || $ticket['status'] !== $expected) {
+            throw new ActivationException(
+                ActivationException::TICKET_STATE, 409,
+                'The ticket is not awaiting device registration.'
+            );
+        }
+        // The provisioned account for this ticket's person + type
+        // (activation path: created inactive by establishCredentials;
+        // device_add path: the existing account). No is_active check:
+        // activation is ALWAYS inactive here by design, and a device
+        // row on an inactive account is inert (login still 403s).
+        $userId = $this->provisioner->userIdFor(
+            (int)$ticket['person_id'], (string)$ticket['account_type']
+        );
+        if ($userId === null) {
+            throw new RuntimeException('Registration account link is missing.');
+        }
+        return [
+            'id' => (int)$grant['id'],
+            'ticket_id' => (int)$grant['ticket_id'],
+            'user_id' => (int)$userId,
+            'operation' => (string)$grant['operation'],
+        ];
     }
 
     // ------------------------------------------------------------
@@ -650,10 +757,78 @@ class ActivationService implements ActivationServiceContract
         throw new RuntimeException('Grant issuance failed.');
     }
 
+    /**
+     * S4: idempotent-replay device grant. REVOKE-then-MINT in one
+     * transaction: the ticket's outstanding live-but-unused device
+     * grant is revoked (the client retries BECAUSE it never got a
+     * response, so the old grant is unreceivable) and a fresh one
+     * minted. Returns null when a device is already active (the
+     * route reports device_registered). Concurrent retries converge:
+     * every retry invalidates the previous unused grant and the
+     * client always uses its latest response. Pre-083 safe: a
+     * missing acm_devices table reads as "no active device"
+     * (42S02-only catch -- every other error propagates).
+     */
+    private function replayDeviceGrant(int $ticketId, int $userId, int $excludeGrantId): ?string
+    {
+        try {
+            $chk = $this->pdo->prepare(
+                'SELECT id FROM acm_devices WHERE user_id = :u AND status = \'active\' LIMIT 1'
+            );
+            $chk->execute([':u' => $userId]);
+            if ($chk->fetchColumn() !== false) {
+                return null;
+            }
+        } catch (\PDOException $e) {
+            if ($e->getCode() !== '42S02') {
+                throw $e;
+            }
+        }
+        $this->pdo->beginTransaction();
+        try {
+            $revoke = $this->pdo->prepare(
+                'UPDATE acm_activation_grants SET revoked_at = NOW(),'
+                . ' revocation_reason = \'credentials_replay\''
+                . ' WHERE ticket_id = :t AND operation = \'activation\' AND id <> :self'
+                . ' AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at > NOW()'
+            );
+            $revoke->execute([':t' => $ticketId, ':self' => $excludeGrantId]);
+            $src = $this->pdo->prepare(
+                'SELECT code_id, ticket_id, person_id FROM acm_activation_grants'
+                . ' WHERE id = :id LIMIT 1'
+            );
+            $src->execute([':id' => $excludeGrantId]);
+            $lineage = $src->fetch(PDO::FETCH_ASSOC);
+            if (!is_array($lineage)) {
+                throw new RuntimeException('Replay grant lineage is missing.');
+            }
+            $fresh = $this->mintGrant(
+                [
+                    'id' => (int)$lineage['code_id'],
+                    'ticket_id' => (int)$lineage['ticket_id'],
+                    'person_id' => (int)$lineage['person_id'],
+                ],
+                CodePurpose::Activation->value
+            );
+            $this->pdo->commit();
+            return $fresh['token'];
+        } catch (ActivationException $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        } catch (\Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
     private function grantByFingerprint(string $fingerprint): ?array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, ticket_id, person_id, operation, grant_hash,'
+            'SELECT id, code_id, ticket_id, person_id, operation, grant_hash,'
             . ' consumed_at, revoked_at, (expires_at > NOW()) AS live'
             . ' FROM acm_activation_grants WHERE fingerprint = :fp LIMIT 1'
         );

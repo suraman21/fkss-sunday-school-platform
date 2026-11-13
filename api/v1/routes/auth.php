@@ -2,6 +2,8 @@
 /**
  * School API v1 — Auth Routes
  * POST /auth/login          — Login with username + password, get tokens
+ *                             (+ optional S4 device assertion:
+ *                             installation_id + device_fingerprint)
  * POST /auth/refresh-token  — Rotate refresh token and get a new token pair
  * POST /auth/logout         — Revoke the presented refresh-token family
  * GET  /auth/verify         — Verify current token is valid
@@ -9,6 +11,7 @@
 
 require_once __DIR__ . '/../../../admin/backend/services/RefreshTokenService.php';
 require_once __DIR__ . '/../../../admin/backend/services/ProfileService.php';
+require_once __DIR__ . '/../../../acm/autoload.php';
 
 $action = $ROUTE['id'] ?? '';
 $refreshService = new \App\Services\RefreshTokenService(
@@ -77,14 +80,50 @@ if ($action === 'login' && $method === 'POST') {
     if ((int)$user['is_active'] !== 1) {
         err('Your account is inactive. Contact an administrator.', 403);
     }
-    
+
+    // S4 (D3.8): optional device assertion links the new refresh
+    // family to a registered device. Best-effort by design: absent
+    // or unusable assertions yield a legacy unlinked family (login
+    // still succeeds -- S4 links, S5 enforces). Only a MISSING 083
+    // table reads as absent (pre-migration probe); every other
+    // failure propagates loudly (fail closed, never silently
+    // unlinked on a migrated database).
+    $acmDeviceId = null;
+    $assertInstall = isset($input['installation_id']) && is_string($input['installation_id'])
+        ? $input['installation_id'] : '';
+    $assertFp = isset($input['device_fingerprint']) && is_string($input['device_fingerprint'])
+        ? $input['device_fingerprint'] : '';
+    if ($assertInstall !== '' && $assertFp !== '' && isset($pdo) && $pdo instanceof PDO) {
+        $acmPersonsForLogin = new \SSMS\Acm\Identity\AcmPersonService($pdo);
+        $acmDevicesForLogin = new \SSMS\Acm\Device\DeviceService(
+            $pdo,
+            new \SSMS\Acm\Accounts\AcmTicketService($pdo, $acmPersonsForLogin)
+        );
+        try {
+            $acmDeviceId = $acmDevicesForLogin->findActiveForAssertion(
+                (int)$user['id'], $assertInstall, $assertFp
+            );
+        } catch (\PDOException $e) {
+            if ($e->getCode() !== '42S02') {
+                throw $e;
+            }
+            $acmDeviceId = null;
+        }
+    }
+
     try {
-        $refreshToken = $refreshService->issue($user, $clientIp, $userAgent);
+        $refreshToken = $refreshService->issue($user, $clientIp, $userAgent, $acmDeviceId);
         $accessFamily = apiRefreshAccessBinding($refreshToken, (int)$user['id']);
     } catch (Throwable $error) {
         error_log('API refresh session creation failed. Apply migrations 010 and 048.');
         err('Authentication service is temporarily unavailable.', 503,
             ['code' => 'AUTH_SERVICE_UNAVAILABLE']);
+    }
+
+    if ($acmDeviceId !== null && isset($acmDevicesForLogin)) {
+        // Best-effort (never throws): keeps the device list's
+        // last-seen truthful for revoke-this-device UX.
+        $acmDevicesForLogin->touchLastSeen($acmDeviceId);
     }
 
     $conn->query("UPDATE users SET last_login = NOW() WHERE id = " . (int)$user['id']);

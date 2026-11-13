@@ -104,6 +104,23 @@ class AccountProvisioner
         return $stmt->fetchColumn() !== false;
     }
 
+    /**
+     * S4: provisioned user id for a person + account type (active
+     * link, newest wins). Null when no active link exists. Single
+     * home for the lookup (grant resolution + console device list).
+     */
+    public function userIdFor(int $personId, string $accountType): ?int
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT user_id FROM acm_person_accounts'
+            . ' WHERE person_id = :p AND account_type = :at AND status = \'active\''
+            . ' ORDER BY id DESC LIMIT 1'
+        );
+        $stmt->execute([':p' => $personId, ':at' => $accountType]);
+        $id = $stmt->fetchColumn();
+        return $id === false ? null : (int)$id;
+    }
+
     public function usernameForUser(int $userId): ?string
     {
         $stmt = $this->pdo->prepare('SELECT username FROM users WHERE id = :u LIMIT 1');

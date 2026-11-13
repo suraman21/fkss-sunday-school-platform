@@ -29,6 +29,7 @@ class AcmPolicy
     public const RES_REVIEWER = 'reviewer';
     public const RES_ATTEST   = 'attest';
     public const RES_CODE     = 'code';
+    public const RES_DEVICE   = 'device';
 
     /**
      * role => resource => actions. accounts_office holds the union of
@@ -44,6 +45,9 @@ class AcmPolicy
             'account'  => ['view'],
             'audit'    => ['view'],
             'code'     => ['issue', 'view'],
+            // S4: console device list + revoke (officer-only;
+            // self-service revoke is mobile-session-authed).
+            'device'   => ['manage'],
             'office'   => [],
             'approver' => [],
             'reviewer' => [],
