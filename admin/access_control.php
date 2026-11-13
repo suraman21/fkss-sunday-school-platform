@@ -242,17 +242,20 @@ if (!defined('ACCESS_CONTROL_LOADED')) {
             'user-delete.php' => ['super_admin'],
             'user-toggle.php' => ['super_admin'],
 
-            // ---- ACM console P0: registrar + activator seats ----
+            // ---- ACM console S1: single accounts_office seat ----
             // Actions are restricted further inside api_acm.php via
-            // AcmPolicy (maker-checker: registrar submits, activator
-            // decides). Member/parent login roles are NOT listed here
-            // on purpose: they must never open the admin console.
-            'api_acm.php'      => ['super_admin', 'registrar', 'account_activator'],
-            'acm_overview.php' => ['super_admin', 'registrar', 'account_activator'],
-            'acm_queue.php'    => ['super_admin', 'registrar', 'account_activator'],
-            'acm_ticket.php'   => ['super_admin', 'registrar', 'account_activator'],
-            'acm_person.php'   => ['super_admin', 'registrar', 'account_activator'],
-            'acm_layout.php'   => ['super_admin', 'registrar', 'account_activator'],
+            // AcmPolicy (mode-aware maker-checker by user ID) and
+            // AcmOfficeService (solo designations, attestations).
+            // Member/parent login roles are NOT listed here on
+            // purpose: they must never open the admin console.
+            'api_acm.php'      => ['super_admin', 'accounts_office'],
+            'acm_overview.php' => ['super_admin', 'accounts_office'],
+            'acm_queue.php'    => ['super_admin', 'accounts_office'],
+            'acm_ticket.php'   => ['super_admin', 'accounts_office'],
+            'acm_person.php'   => ['super_admin', 'accounts_office'],
+            'acm_office.php'   => ['super_admin', 'accounts_office'],
+            'acm_audit.php'    => ['super_admin', 'accounts_office'],
+            'acm_layout.php'   => ['super_admin', 'accounts_office'],
 
             // ---- Department-owned attendance takers ----
             // Each department manages ONLY its own taker type; the

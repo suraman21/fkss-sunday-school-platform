@@ -1,7 +1,7 @@
 <?php
 /**
- * ACM P0 — Ticket detail. Identity evidence + manual decision.
- * Roles: super_admin, registrar, account_activator.
+ * ACM S1 — Ticket detail. Identity evidence + manual decision.
+ * Roles: super_admin, accounts_office.
  */
 define('ACM_BOOT', true);
 require_once __DIR__ . '/config.php';
@@ -9,7 +9,9 @@ require_once __DIR__ . '/acm_layout.php';
 require_once __DIR__ . '/backend/services/Acm/AcmPolicy.php';
 require_once __DIR__ . '/backend/services/Acm/AcmPersonService.php';
 require_once __DIR__ . '/backend/services/Acm/AcmTicketService.php';
+require_once __DIR__ . '/backend/services/Acm/AcmOfficeService.php';
 
+use App\Services\Acm\AcmOfficeService;
 use App\Services\Acm\AcmPersonService;
 use App\Services\Acm\AcmPolicy;
 use App\Services\Acm\AcmTicketService;
@@ -50,7 +52,21 @@ $canClaim = $isOpen && $status === 'submitted' && AcmPolicy::can($role, 'ticket'
 $canRelease = $status === 'in_review' && AcmPolicy::can($role, 'ticket', 'claim')
     && ($role === 'super_admin' || (int)($ticket['assignee_id'] ?? 0) === $actorId);
 $canNote = $isOpen && AcmPolicy::can($role, 'ticket', 'note');
-$canDecide = $isOpen && !$isMine && AcmPolicy::can($role, 'ticket', 'approve');
+$officeMode = 'separated';
+$isDesignee = false;
+try {
+    $officeSvc = new AcmOfficeService($pdo);
+    $officeMode = $officeSvc->mode();
+    $isDesignee = $officeSvc->isActiveApprover($actorId);
+} catch (\Throwable $e) {
+    $officeMode = 'separated';
+}
+// Separated: maker-checker by user ID. Solo: designee-only, and a
+// designee may self-decide with a recorded reason (server-enforced,
+// flagged in the monthly audit).
+$modeAllowsDecide = $officeMode === 'solo' ? $isDesignee : !$isMine;
+$canDecide = $isOpen && AcmPolicy::can($role, 'ticket', 'approve') && $modeAllowsDecide;
+$soloSelf = $isOpen && $isMine && $officeMode === 'solo' && $isDesignee;
 $dups = $ticket['live_duplicates'] ?? [];
 $hasDupWarnings = !empty($dups['same_phone']) || !empty($dups['same_name_dob']);
 $od = !empty($ticket['sla_due']) && strtotime((string)$ticket['sla_due']) < time() && $isOpen;
@@ -66,6 +82,10 @@ acm_chrome_open('queue', (string)($ticket['ticket_no'] ?? 'Ticket'), 'Activation
     <div class="ct"><i class="fa-solid fa-ticket"></i> <?= e((string)($ticket['ticket_no'] ?? '')) ?>
         <span class="bg <?= acm_status_bg($status) ?>"><?= e(str_replace('_', ' ', $status)) ?></span>
         <span class="bg bg-n"><?= e((string)($ticket['account_type'] ?? '')) ?> account</span>
+        <span class="bg bg-n"><?= e($officeMode) ?> mode</span>
+        <?php if (!empty($ticket['self_approved'])): ?>
+        <span class="bg bg-p">self-approved</span>
+        <?php endif; ?>
     </div>
     <dl class="acm-kv">
         <dt>Person</dt><dd><a href="/admin/acm_person.php?id=<?= (int)$ticket['person_id'] ?>"><span class="amharic"><?= e((string)($ticket['full_name_am'] ?? '')) ?></span></a></dd>
@@ -77,8 +97,14 @@ acm_chrome_open('queue', (string)($ticket['ticket_no'] ?? 'Ticket'), 'Activation
         <dt>Decision note</dt><dd><?= e((string)($ticket['decision_note'] ?? '—')) ?></dd>
         <?php endif; ?>
     </dl>
-    <?php if ($isMine && $isOpen): ?>
+    <?php if ($isMine && $isOpen && $officeMode !== 'solo'): ?>
     <div class="acm-alert warn" style="margin-top:.8rem"><i class="fa-solid fa-scale-balanced"></i> Maker–checker: you submitted this ticket, so the decision buttons are disabled for you.</div>
+    <?php endif; ?>
+    <?php if ($officeMode === 'solo' && $isOpen && !$isDesignee): ?>
+    <div class="acm-alert warn" style="margin-top:.8rem"><i class="fa-solid fa-user-lock"></i> Solo mode: only a designated approver can decide tickets.</div>
+    <?php endif; ?>
+    <?php if ($soloSelf): ?>
+    <div class="acm-alert warn" style="margin-top:.8rem"><i class="fa-solid fa-triangle-exclamation"></i> Solo self-approval: a written reason is required and this decision will be flagged in the monthly audit.</div>
     <?php endif; ?>
     <div class="acm-btn-row">
         <?php if ($canClaim): ?>
@@ -164,7 +190,7 @@ acm_chrome_open('queue', (string)($ticket['ticket_no'] ?? 'Ticket'), 'Activation
 <div class="cd">
     <div class="ct"><i class="fa-solid fa-gavel"></i> Review actions</div>
     <div class="full" style="margin-bottom:.6rem">
-        <label class="flbl" for="acmNote">Note / reason (required to reject or request changes)</label>
+        <label class="flbl" for="acmNote">Note / reason<?= $soloSelf ? ' (required — solo self-approval)' : ' (required to reject or request changes)' ?></label>
         <textarea class="inp" id="acmNote" rows="3" maxlength="2000" placeholder="What did you verify?"></textarea>
     </div>
     <?php if ($canDecide && $hasDupWarnings): ?>

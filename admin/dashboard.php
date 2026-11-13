@@ -111,8 +111,7 @@ switch ($role) {
         require __DIR__ . '/dashboards/content_editor.php';
         break;
 
-    case 'registrar':
-    case 'account_activator':
+    case 'accounts_office':
         require __DIR__ . '/acm_overview.php';
         break;
 

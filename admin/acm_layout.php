@@ -50,6 +50,8 @@ function acm_chrome_open(string $active, string $title, string $sub, int $openCo
         'overview' => ['acm_overview.php', 'fa-gauge-high', 'Overview'],
         'queue'    => ['acm_queue.php', 'fa-inbox', 'Activation queue'],
         'persons'  => ['acm_person.php', 'fa-users', 'Persons & accounts'],
+        'office'   => ['acm_office.php', 'fa-building', 'Office'],
+        'audit'    => ['acm_audit.php', 'fa-file-shield', 'Monthly audit'],
     ];
     echo '<body><aside><div class="brand"><div class="brand-logo"><i class="fa-solid fa-shield-halved"></i></div>'
         . '<div><div class="brand-txt">Access Control</div><div class="brand-sub">Account Command Center</div></div></div>'

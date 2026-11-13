@@ -1,7 +1,7 @@
 <?php
 /**
- * ACM P0 — Activation queue. Filterable ticket table.
- * Roles: super_admin, registrar, account_activator.
+ * ACM S1 — Activation queue. Filterable ticket table.
+ * Roles: super_admin, accounts_office.
  */
 define('ACM_BOOT', true);
 require_once __DIR__ . '/config.php';

@@ -1,23 +1,32 @@
 <?php
 /**
  * ============================================================
- * ACM P0 console API — Access Control Management.
+ * ACM S1 console API — Access Control Management.
  * ============================================================
  *   GET  ?action=overview                            → KPI stats
  *   GET  ?action=queue[&status=&account_type=&q=&mine=1&overdue=1&limit=&offset=]
  *   GET  ?action=ticket&id=                          → full ticket detail
  *   GET  ?action=person_search&q=                    → person lookup
  *   GET  ?action=person&id=                          → person + accounts + tickets
- *   POST action=person_create                        → create person (registrar)
- *   POST action=person_update                        → edit person (registrar)
- *   POST action=ticket_create                       → submit ticket (registrar)
+ *   POST action=person_create                        → create person (office)
+ *   POST action=person_update                        → edit person (office)
+ *   POST action=ticket_create                       → submit ticket (office)
  *   POST action=claim | release | note               → queue ops
  *   POST action=decide&decision=approve|reject|request_changes
+ *   GET  ?action=office_mode_get                     → mode + staffing + history
+ *   POST action=office_mode_set                      → switch mode (super_admin)
+ *   GET  ?action=approvers_list | reviewers_list     → active designations
+ *   POST action=approvers_designate | approvers_revoke      (super_admin)
+ *   POST action=reviewers_designate | reviewers_revoke      (super_admin)
+ *   GET  ?action=office_users&q=                     → user search (super_admin)
+ *   GET  ?action=office_audit&month=YYYY-MM          → monthly report + hash
+ *   POST action=office_attest                        → attest month (reviewer)
  *
  * Same JSON contract and security posture as api_identity.php:
  * session auth, ROLE_MAP guard, AcmPolicy per action, CSRF on
  * POST, prepared statements (in services), audit logging.
- * P0 roles: super_admin, registrar, account_activator.
+ * S1 roles: super_admin, accounts_office. Reviewers are a
+ * designation (AcmOfficeService), not a user role.
  * ============================================================
  */
 
@@ -27,7 +36,9 @@ require_once __DIR__ . '/backend/services/SecurityAuditService.php';
 require_once __DIR__ . '/backend/services/Acm/AcmPolicy.php';
 require_once __DIR__ . '/backend/services/Acm/AcmPersonService.php';
 require_once __DIR__ . '/backend/services/Acm/AcmTicketService.php';
+require_once __DIR__ . '/backend/services/Acm/AcmOfficeService.php';
 
+use App\Services\Acm\AcmOfficeService;
 use App\Services\Acm\AcmPersonService;
 use App\Services\Acm\AcmPolicy;
 use App\Services\Acm\AcmTicketService;
@@ -66,6 +77,8 @@ if ($method === 'POST' && !validateCsrf($_POST['csrf_token'] ?? null)) {
 
 $persons = new AcmPersonService($pdo);
 $tickets = new AcmTicketService($pdo, $persons);
+$office = new AcmOfficeService($pdo);
+$isSuperAdmin = $role === 'super_admin';
 
 function acm_audit(PDO $pdo, string $action, array $details, ?string $entityType, ?int $entityId): void
 {
@@ -213,7 +226,7 @@ try {
             if (!AcmPolicy::can($role, AcmPolicy::RES_TICKET, 'claim')) {
                 acm_err('Access denied.', 403);
             }
-            $ticket = $tickets->release((int)($_POST['id'] ?? 0), $actorId, $role === 'super_admin');
+            $ticket = $tickets->release((int)($_POST['id'] ?? 0), $actorId, $isSuperAdmin);
             acm_audit($pdo, 'acm.ticket.released', [
                 'ticket_no' => (string)($ticket['ticket_no'] ?? ''),
             ], 'acm_ticket', (int)$ticket['id']);
@@ -247,19 +260,188 @@ try {
             if (!AcmPolicy::can($role, AcmPolicy::RES_TICKET, $needed)) {
                 acm_err('Access denied.', 403);
             }
+            $officeCtx = [
+                'mode' => $office->mode(),
+                // Solo mode is designee-only with no super_admin shortcut:
+                // the governed break-glass is a (reasoned, audited)
+                // self-designation first.
+                'is_designee' => $office->isActiveApprover($actorId),
+                'active_officers' => $office->countActiveOfficers(),
+            ];
             $ticket = $tickets->decide(
                 (int)($_POST['id'] ?? 0),
                 $actorId,
                 $decision,
                 (string)($_POST['note'] ?? ''),
-                !empty($_POST['verified_parent_id'])
+                !empty($_POST['verified_parent_id']),
+                $officeCtx
             );
             acm_audit($pdo, 'acm.ticket.' . $decision, [
                 'ticket_no' => (string)($ticket['ticket_no'] ?? ''),
                 'account_type' => (string)($ticket['account_type'] ?? ''),
                 'person_id' => (int)($ticket['person_id'] ?? 0),
+                'mode' => $officeCtx['mode'],
             ], 'acm_ticket', (int)$ticket['id']);
             acm_ok(['ticket' => $ticket]);
+            break;
+        }
+
+        case 'office_mode_get': {
+            acm_ok([
+                'mode' => $office->mode(),
+                'active_officers' => $office->countActiveOfficers(),
+                'is_designee' => $office->isActiveApprover($actorId),
+                'is_reviewer' => $office->isActiveReviewer($actorId),
+                'history' => $office->modeHistory(),
+            ]);
+            break;
+        }
+
+        case 'office_mode_set': {
+            if ($method !== 'POST') {
+                acm_err('Method not allowed.', 405);
+            }
+            $mode = $office->setMode(
+                (string)($_POST['mode'] ?? ''),
+                (string)($_POST['reason'] ?? ''),
+                (string)($_POST['effective_date'] ?? ''),
+                $actorId,
+                $isSuperAdmin
+            );
+            acm_audit($pdo, 'acm.office.mode_set', [
+                'mode' => $mode,
+            ], 'acm_office', null);
+            acm_ok(['mode' => $mode]);
+            break;
+        }
+
+        case 'approvers_list': {
+            acm_ok(['approvers' => $office->approvers()]);
+            break;
+        }
+
+        case 'reviewers_list': {
+            acm_ok(['reviewers' => $office->reviewers()]);
+            break;
+        }
+
+        case 'approvers_designate': {
+            if ($method !== 'POST') {
+                acm_err('Method not allowed.', 405);
+            }
+            $row = $office->designateApprover(
+                (int)($_POST['user_id'] ?? 0),
+                (string)($_POST['reason'] ?? ''),
+                (string)($_POST['effective'] ?? ''),
+                $actorId,
+                $isSuperAdmin
+            );
+            acm_audit($pdo, 'acm.office.approver_designated', [
+                'username' => $row['username'],
+            ], 'acm_office', (int)$row['id']);
+            acm_ok(['designation' => $row]);
+            break;
+        }
+
+        case 'approvers_revoke': {
+            if ($method !== 'POST') {
+                acm_err('Method not allowed.', 405);
+            }
+            $office->revokeApprover(
+                (int)($_POST['user_id'] ?? 0),
+                (string)($_POST['reason'] ?? ''),
+                (string)($_POST['effective'] ?? ''),
+                $actorId,
+                $isSuperAdmin
+            );
+            acm_audit($pdo, 'acm.office.approver_revoked', [
+                'user_id' => (int)($_POST['user_id'] ?? 0),
+            ], 'acm_office', null);
+            acm_ok([]);
+            break;
+        }
+
+        case 'reviewers_designate': {
+            if ($method !== 'POST') {
+                acm_err('Method not allowed.', 405);
+            }
+            $row = $office->designateReviewer(
+                (int)($_POST['user_id'] ?? 0),
+                (string)($_POST['reason'] ?? ''),
+                (string)($_POST['effective'] ?? ''),
+                $actorId,
+                $isSuperAdmin
+            );
+            acm_audit($pdo, 'acm.office.reviewer_designated', [
+                'username' => $row['username'],
+            ], 'acm_office', (int)$row['id']);
+            acm_ok(['designation' => $row]);
+            break;
+        }
+
+        case 'reviewers_revoke': {
+            if ($method !== 'POST') {
+                acm_err('Method not allowed.', 405);
+            }
+            $office->revokeReviewer(
+                (int)($_POST['user_id'] ?? 0),
+                (string)($_POST['reason'] ?? ''),
+                (string)($_POST['effective'] ?? ''),
+                $actorId,
+                $isSuperAdmin
+            );
+            acm_audit($pdo, 'acm.office.reviewer_revoked', [
+                'user_id' => (int)($_POST['user_id'] ?? 0),
+            ], 'acm_office', null);
+            acm_ok([]);
+            break;
+        }
+
+        case 'office_users': {
+            if (!$isSuperAdmin) {
+                acm_err('Access denied.', 403);
+            }
+            $q = trim((string)($_GET['q'] ?? ''));
+            if (mb_strlen($q) < 2) {
+                acm_ok(['users' => []]);
+                break;
+            }
+            $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], mb_substr($q, 0, 60)) . '%';
+            $stmt = $pdo->prepare(
+                'SELECT id, username, full_name, role FROM users'
+                . " WHERE is_active = 1 AND (username LIKE :q ESCAPE '\\'"
+                . " OR full_name LIKE :q ESCAPE '\\') ORDER BY username ASC LIMIT 20"
+            );
+            $stmt->execute([':q' => $like]);
+            acm_ok(['users' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
+            break;
+        }
+
+        case 'office_audit': {
+            if (!AcmPolicy::can($role, AcmPolicy::RES_AUDIT, 'view')) {
+                acm_err('Access denied.', 403);
+            }
+            $month = trim((string)($_GET['month'] ?? date('Y-m')));
+            acm_ok(['report' => $office->auditReport($month)]);
+            break;
+        }
+
+        case 'office_attest': {
+            if ($method !== 'POST') {
+                acm_err('Method not allowed.', 405);
+            }
+            $row = $office->attest(
+                trim((string)($_POST['month'] ?? '')),
+                (string)($_POST['note'] ?? ''),
+                (string)($_POST['report_fingerprint'] ?? ''),
+                $actorId
+            );
+            acm_audit($pdo, 'acm.office.attested', [
+                'month' => (string)($row['month'] ?? ''),
+                'kind' => (string)($row['kind'] ?? ''),
+                'attestation_id' => (int)($row['id'] ?? 0),
+            ], 'acm_office', (int)($row['id'] ?? 0));
+            acm_ok(['attestation' => $row]);
             break;
         }
 
