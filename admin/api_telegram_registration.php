@@ -14,6 +14,8 @@ require_once __DIR__.'/backend/services/TelegramApprovalReadinessService.php';
 require_once __DIR__.'/backend/services/MemberDuplicateService.php';
 require_once __DIR__.'/backend/services/TelegramMemberApprovalService.php';
 require_once __DIR__.'/backend/services/TelegramAttachmentService.php';
+require_once __DIR__.'/backend/services/TelegramMessageService.php';
+require_once __DIR__.'/backend/services/TelegramBotMessages.php';
 
 use App\Services\MemberCanonicalIdentityService;
 use App\Services\TelegramFormRegistry;
@@ -23,6 +25,8 @@ use App\Services\TelegramBotApiService;
 use App\Services\TelegramApprovalReadinessService;
 use App\Services\TelegramMemberApprovalService;
 use App\Services\TelegramAttachmentService;
+use App\Services\TelegramMessageService;
+use App\Services\TelegramBotMessages;
 
 function tg_admin_error(string $message,int $code=400): never { http_response_code($code);echo json_encode(['status'=>'error','message'=>$message],JSON_UNESCAPED_UNICODE);exit; }
 function tg_admin_ok(array $data=[]): never { echo json_encode(['status'=>'success']+$data,JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE);exit; }
@@ -39,19 +43,24 @@ $method=strtoupper((string)($_SERVER['REQUEST_METHOD']??'GET'));
 $input=$method==='POST'?$_POST:$_GET;
 $action=trim((string)($input['action']??'overview'));
 $superActions=['overview','bot_config','bot_config_save','feature_toggle','bot_verify','webhook_status','webhook_set','canonical_backfill'];
+// v2 additions: per-school message editor is available to both roles.
+$superActions=array_merge($superActions,['messages','message_save','message_reset']);
 $hrActions=['overview','operators','eligible_users','forms','form_registry','form_detail','form_create','form_save','form_publish','sessions','analytics','session_detail','review_decide','review_approve','review_batch_approve','attachment_cleanup','audit','operator_save'];
+$hrActions=array_merge($hrActions,['messages','message_save','message_reset']);
 if(($role==='super_admin'&&!in_array($action,$superActions,true))||($role==='hr_dept'&&!in_array($action,$hrActions,true)))tg_admin_error('This function belongs to the other administration area.',403);
 if($method==='POST'&&!validateCsrf($input['csrf_token']??($_SERVER['HTTP_X_CSRF_TOKEN']??null)))tg_admin_error('Invalid session token.',403);
 $schema=tg_admin_tables($conn);
 if(!$schema&&$action!=='overview')tg_admin_error('Telegram migration 080 is not installed.',503);
 
 try{
+// Seed default bot messages whenever the admin console loads (idempotent).
+if($schema){ try { \App\Services\TelegramMessageService::seedDefaults($conn); \App\Services\TelegramMessageService::invalidate(); } catch (\Throwable $ignore) {} }
 switch($action){
 case 'overview':
-    $stats=['operators'=>0,'active_operators'=>0,'submitted'=>0,'open_sessions'=>0,'failed_updates_24h'=>0];
+    $stats=['operators'=>0,'active_operators'=>0,'submitted'=>0,'open_sessions'=>0,'failed_updates_24h'=>0,'escalated'=>0];
     if($schema){
         $r=$conn->query("SELECT COUNT(*) operators,COALESCE(SUM(status='active'),0) active_operators FROM telegram_bot_users");$stats=array_merge($stats,$r->fetch_assoc());
-        $r=$conn->query("SELECT COALESCE(SUM(status='submitted'),0) submitted,COALESCE(SUM(status IN ('choosing','collecting','review')),0) open_sessions FROM telegram_registration_sessions");$stats=array_merge($stats,$r->fetch_assoc());
+        $r=$conn->query("SELECT COALESCE(SUM(status='submitted'),0) submitted,COALESCE(SUM(status IN ('choosing','collecting','review','duplicate_search','duplicate_review','identity_verification','final_validation')),0) open_sessions,COALESCE(SUM(status='escalated'),0) escalated FROM telegram_registration_sessions");$stats=array_merge($stats,$r->fetch_assoc());
         $r=$conn->query("SELECT COUNT(*) failed_updates_24h FROM telegram_processed_updates WHERE status='failed' AND received_at>=DATE_SUB(NOW(),INTERVAL 1 DAY)");$stats=array_merge($stats,$r->fetch_assoc());
     }
     tg_admin_ok(['available'=>$schema,'feature_enabled'=>feature_enabled('telegram_registration'),'secrets'=>['bot_token'=>defined('TELEGRAM_BOT_TOKEN'),'webhook_secret'=>defined('TELEGRAM_WEBHOOK_SECRET')],'canonical_columns'=>MemberCanonicalIdentityService::available($conn),'approval_schema'=>tg_approval_schema($conn),'stats'=>$stats]);
@@ -91,7 +100,7 @@ case 'form_publish':
 case 'analytics':
     $days=max(7,min(365,(int)($input['days']??30)));$summary=[];$q=$conn->query("SELECT COUNT(*) total,COALESCE(SUM(status='submitted'),0) pending,COALESCE(SUM(status='approved'),0) approved,COALESCE(SUM(duplicate_state IN ('possible','likely')),0) duplicate_attention FROM telegram_registration_sessions WHERE created_at>=DATE_SUB(NOW(),INTERVAL {$days} DAY)");$summary=$q?$q->fetch_assoc():[];$types=[];$q=$conn->query("SELECT COALESCE(profile_key,'unselected') label,COUNT(*) total FROM telegram_registration_sessions WHERE created_at>=DATE_SUB(NOW(),INTERVAL {$days} DAY) GROUP BY profile_key ORDER BY total DESC");if($q)while($row=$q->fetch_assoc())$types[]=$row;$operators=[];$q=$conn->query("SELECT COALESCE(tb.display_name,CAST(tb.telegram_user_id AS CHAR)) label,COUNT(*) total FROM telegram_registration_sessions s JOIN telegram_bot_users tb ON tb.id=s.bot_user_id WHERE s.created_at>=DATE_SUB(NOW(),INTERVAL {$days} DAY) GROUP BY s.bot_user_id,tb.display_name,tb.telegram_user_id ORDER BY total DESC LIMIT 20");if($q)while($row=$q->fetch_assoc())$operators[]=$row;tg_admin_ok(['days'=>$days,'summary'=>$summary,'registration_types'=>$types,'operators'=>$operators]);
 case 'sessions':
-    $limit=min(50,tg_admin_limit($input['limit']??25,25));$offset=max(0,min(100000,(int)($input['offset']??0)));$sort=(string)($input['sort']??'newest');$sortMap=['newest'=>'s.id DESC','oldest'=>'s.id ASC','name'=>'an.value_text ASC, s.id DESC','type'=>'s.profile_key ASC, s.id DESC'];if(!isset($sortMap[$sort]))tg_admin_error('Invalid queue sort.');$status=trim((string)($input['status']??''));$profile=trim((string)($input['profile']??''));$duplicate=trim((string)($input['duplicate']??''));$search=trim((string)($input['q']??''));$allowed=['choosing','collecting','review','submitted','approved','cancelled','expired','failed'];if($status!==''&&!in_array($status,$allowed,true))tg_admin_error('Invalid session status.');if($profile!==''&&!in_array($profile,['waiting','direct','transfer'],true))tg_admin_error('Invalid registration type.');if($duplicate!==''&&!in_array($duplicate,['not_checked','none','possible','likely','error'],true))tg_admin_error('Invalid duplicate filter.');if(function_exists('mb_substr'))$search=mb_substr($search,0,80,'UTF-8');else$search=substr($search,0,80);
+    $limit=min(50,tg_admin_limit($input['limit']??25,25));$offset=max(0,min(100000,(int)($input['offset']??0)));$sort=(string)($input['sort']??'newest');$sortMap=['newest'=>'s.id DESC','oldest'=>'s.id ASC','name'=>'an.value_text ASC, s.id DESC','type'=>'s.profile_key ASC, s.id DESC'];if(!isset($sortMap[$sort]))tg_admin_error('Invalid queue sort.');$status=trim((string)($input['status']??''));$profile=trim((string)($input['profile']??''));$duplicate=trim((string)($input['duplicate']??''));$search=trim((string)($input['q']??''));$allowed=['choosing','collecting','review','submitted','approved','cancelled','expired','failed','duplicate_search','duplicate_review','identity_verification','final_validation','escalated','completed'];if($status!==''&&!in_array($status,$allowed,true))tg_admin_error('Invalid session status.');if($profile!==''&&!in_array($profile,['waiting','direct','transfer'],true))tg_admin_error('Invalid registration type.');if($duplicate!==''&&!in_array($duplicate,['not_checked','none','possible','likely','error'],true))tg_admin_error('Invalid duplicate filter.');if(function_exists('mb_substr'))$search=mb_substr($search,0,80,'UTF-8');else$search=substr($search,0,80);
     $conditions=[];$types='';$params=[];if($status!==''){$conditions[]='s.status=?';$types.='s';$params[]=$status;}else$conditions[]="s.status IN ('submitted','approved')";if($profile!==''){$conditions[]='s.profile_key=?';$types.='s';$params[]=$profile;}if($duplicate!==''){$conditions[]='s.duplicate_state=?';$types.='s';$params[]=$duplicate;}if($search!==''){$conditions[]='(an.value_text LIKE ? OR bn.value_text LIKE ? OR s.public_id LIKE ?)';$pattern='%'.$search.'%';$types.='sss';array_push($params,$pattern,$pattern,$pattern);}$where='WHERE '.implode(' AND ',$conditions);
     $sql="SELECT s.id,s.public_id,s.profile_key,s.form_version,s.language,s.status,s.current_field_key,s.duplicate_state,s.submitted_at,s.created_at,s.updated_at,tb.display_name operator_name,tb.telegram_user_id,an.value_text member_name,bn.value_text baptismal_name,dn.value_text dob_ec,sn.value_text current_section,r.decision review_decision,r.session_revision review_revision,r.created_at reviewed_at FROM telegram_registration_sessions s JOIN telegram_bot_users tb ON tb.id=s.bot_user_id LEFT JOIN telegram_registration_answers an ON an.session_id=s.id AND an.field_key='full_name_am' LEFT JOIN telegram_registration_answers bn ON bn.session_id=s.id AND bn.field_key='baptismal_name' LEFT JOIN telegram_registration_answers dn ON dn.session_id=s.id AND dn.field_key='dob_ec' LEFT JOIN telegram_registration_answers sn ON sn.session_id=s.id AND sn.field_key='current_section' LEFT JOIN telegram_registration_reviews r ON r.id=(SELECT rr.id FROM telegram_registration_reviews rr WHERE rr.session_id=s.id ORDER BY rr.id DESC LIMIT 1) {$where} ORDER BY {$sortMap[$sort]} LIMIT ".($limit+1)." OFFSET {$offset}";$q=$conn->prepare($sql);if($types!=='')$q->bind_param($types,...$params);$q->execute();$rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();$hasMore=count($rows)>$limit;if($hasMore)array_pop($rows);tg_admin_ok(['sessions'=>$rows,'offset'=>$offset,'limit'=>$limit,'has_more'=>$hasMore]);
 case 'session_detail':
@@ -119,6 +128,34 @@ case 'operator_save':
 case 'canonical_backfill':
     if($method!=='POST'||$role!=='super_admin')tg_admin_error('Only super administrators may run this operation.',403);
     $result=MemberCanonicalIdentityService::backfill($conn,(int)($input['cursor']??0),(int)($input['limit']??100));tg_admin_audit($conn,$actor,'canonical_backfill','members',0,$result);tg_admin_ok(['backfill'=>$result]);
+case 'messages':
+    TelegramMessageService::seedDefaults($conn); TelegramMessageService::invalidate();
+    $rows=[]; $r=$conn->query('SELECT message_key,language,message_text FROM telegram_bot_messages ORDER BY message_key,language');
+    if($r) while($row=$r->fetch_assoc()) $rows[]=$row;
+    $defaults=[]; foreach(TelegramBotMessages::defaults() as $k=>$v) $defaults[$k]=$v;
+    tg_admin_ok(['messages'=>$rows,'defaults'=>$defaults]);
+case 'message_save':
+    if($method!=='POST')tg_admin_error('POST required.',405);
+    $key=trim((string)($input['message_key']??'')); $lang=trim((string)($input['language']??'am')); $text=trim((string)($input['message_text']??''));
+    if(!preg_match('/^[a-z0-9_]{1,80}$/D',$key)||!in_array($lang,['am','en'],true))tg_admin_error('Invalid message key or language.');
+    if(!isset(TelegramBotMessages::defaults()[$key]))tg_admin_error('Unknown message key.');
+    if($text===''){
+        $q=$conn->prepare('DELETE FROM telegram_bot_messages WHERE message_key=? AND language=?'); $q->bind_param('ss',$key,$lang); $q->execute(); $q->close();
+    }else{
+        if(mb_strlen($text)>4000)tg_admin_error('Message too long.');
+        $q=$conn->prepare('INSERT INTO telegram_bot_messages (message_key,language,message_text) VALUES (?,?,?) ON DUPLICATE KEY UPDATE message_text=VALUES(message_text),updated_at=CURRENT_TIMESTAMP');
+        $q->bind_param('sss',$key,$lang,$text); $q->execute(); $q->close();
+    }
+    TelegramMessageService::invalidate();
+    tg_admin_audit($conn,$actor,'message_saved','bot_message',0,['key'=>$key,'lang'=>$lang]);
+    tg_admin_ok(['saved'=>true]);
+case 'message_reset':
+    if($method!=='POST')tg_admin_error('POST required.',405);
+    $key=trim((string)($input['message_key']??'')); $lang=trim((string)($input['language']??'am'));
+    if(!preg_match('/^[a-z0-9_]{1,80}$/D',$key)||!in_array($lang,['am','en'],true))tg_admin_error('Invalid message key or language.');
+    $q=$conn->prepare('DELETE FROM telegram_bot_messages WHERE message_key=? AND language=?'); $q->bind_param('ss',$key,$lang); $q->execute(); $q->close();
+    TelegramMessageService::invalidate();
+    tg_admin_ok(['reset'=>true]);
 default:tg_admin_error('Unknown action.');
 }}
 catch(\InvalidArgumentException $e){tg_admin_error($e->getMessage(),400);}

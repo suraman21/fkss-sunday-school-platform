@@ -12,6 +12,8 @@ final class TelegramFormRegistry
         'baptismal_name' => ['max'=>150, 'skip'=>true, 'label'=>'የክርስትና ስም', 'script'=>'ethiopic'],
         'gender' => ['max'=>10, 'skip'=>false, 'label'=>'Gender / ጾታ', 'input'=>'choice', 'choices'=>['male'=>'ወንድ / Male','female'=>'ሴት / Female']],
         'dob_ec' => ['max'=>10, 'skip'=>true, 'label'=>'Ethiopian date of birth / የትውልድ ቀን'],
+        'father_name' => ['max'=>150, 'skip'=>false, 'label'=>'የአባት ስም', 'script'=>'ethiopic'],
+        'mother_name' => ['max'=>150, 'skip'=>true, 'label'=>'የእናት ስም', 'script'=>'ethiopic'],
         'phone_number' => ['max'=>30, 'skip'=>true, 'label'=>'Phone / ስልክ'],
         'guardian_name' => ['max'=>150, 'skip'=>true, 'label'=>'የአሳዳጊ ስም', 'script'=>'ethiopic'],
         'guardian_phone1' => ['max'=>30, 'skip'=>true, 'label'=>'የአሳዳጊ ስልክ'],
@@ -82,6 +84,11 @@ final class TelegramFormRegistry
         if ($key === 'full_name_am') {
             $parts = preg_split('/\s+/u', $value, -1, PREG_SPLIT_NO_EMPTY) ?: [];
             if (count($parts) < 2) throw new InvalidArgumentException('Enter at least first and father name.');
+            return ['display'=>$value, 'normalized'=>AmharicIdentityNormalizer::normalize($value)];
+        }
+        if (in_array($key, ['father_name','mother_name'], true)) {
+            $parts = preg_split('/\s+/u', $value, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+            if (count($parts) < 1) throw new InvalidArgumentException('ያስገቡት ስም ትክክል አይደለም።');
             return ['display'=>$value, 'normalized'=>AmharicIdentityNormalizer::normalize($value)];
         }
         $choices=self::choices($key);
