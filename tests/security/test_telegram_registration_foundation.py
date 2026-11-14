@@ -136,6 +136,16 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn("የቦት ጥያቄ", page)
         self.assertIn("body.set('title_en',formEditor.elements.namedItem('title_am').value)", page)
 
+    def test_desktop_sidebar_and_readable_approval_queue(self):
+        page = (ROOT / "admin/telegram_registration.php").read_text(encoding="utf-8")
+        api = (ROOT / "admin/api_telegram_registration.php").read_text(encoding="utf-8")
+        self.assertIn("grid-template-columns:240px minmax(0,1fr)", page)
+        self.assertIn("position:sticky;top:18px", page)
+        self.assertIn("class=\"sessionSelect\"", page)
+        for alias in ["member_name", "baptismal_name", "dob_ec", "current_section"]:
+            self.assertIn(alias, api)
+        self.assertIn("an.field_key='full_name_am'", api)
+
     def test_submission_never_inserts_member(self):
         submit = self.service[self.service.index("private function submitReview"):]
         self.assertIn("status='submitted'", submit)
