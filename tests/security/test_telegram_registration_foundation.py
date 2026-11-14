@@ -190,6 +190,17 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn('id="sessionDuplicate"', page)
         self.assertIn("setTimeout(()=>loadSessions", page)
 
+    def test_queue_sort_and_pagination_are_bounded(self):
+        api = (ROOT / "admin/api_telegram_registration.php").read_text(encoding="utf-8")
+        page = (ROOT / "admin/telegram_registration.php").read_text(encoding="utf-8")
+        self.assertIn("$sortMap=['newest'", api)
+        self.assertIn("$limit+1", api)
+        self.assertIn("min(100000", api)
+        self.assertIn("'has_more'=>$hasMore", api)
+        self.assertIn('id="sessionSort"', page)
+        self.assertIn('id="sessionPrev"', page)
+        self.assertIn('id="sessionNext"', page)
+
     def test_submission_never_inserts_member(self):
         submit = self.service[self.service.index("private function submitReview"):]
         self.assertIn("status='submitted'", submit)
