@@ -1,8 +1,11 @@
 <?php
 /**
- * School API v1 — ACM activation ceremony (S3) + devices (S4, design §D4.1).
+ * School API v1 — ACM activation ceremony (S3) + devices (S4, design §D4.1)
+ * + credential recovery (S6).
  * POST /acm/activate/verify      {selector, secret, purpose, installation_id?}
  * POST /acm/activate/credentials {grant, password, idempotency_key}
+ * POST /acm/reset/verify      {selector, secret, purpose='reset'}
+ * POST /acm/reset/credentials {grant, new_password, confirm_password, idempotency_key}
  * POST /acm/devices/register/begin   {grant?, installation_id, pubkey, name?}
  * POST /acm/devices/register/complete {challenge_id, challenge, signature}
  * GET  /acm/devices
@@ -34,6 +37,12 @@ use SSMS\Acm\OfficeNetwork\OfficeNetworkSignal;
 require_once __DIR__ . '/../../../acm/autoload.php';
 require_once __DIR__ . '/../../../admin/backend/services/PasswordPolicy.php';
 require_once __DIR__ . '/../../../admin/backend/services/RefreshTokenService.php';
+// S6 recovery: the shared administrator password primitive +
+// the security-audit writer (users.php requires the same set;
+// require_once keeps repeated loads free).
+require_once __DIR__ . '/../../../admin/backend/services/ProfileService.php';
+require_once __DIR__ . '/../../../admin/backend/services/AccountCredentialService.php';
+require_once __DIR__ . '/../../../admin/backend/services/SecurityAuditService.php';
 
 if (!function_exists('acmWireError')) {
     /**
@@ -116,7 +125,28 @@ if (!($pdo instanceof PDO)) {
 
 $acmAction = ($ROUTE['id'] ?? '') . '/' . ($ROUTE['sub'] ?? '');
 $acmPersons = new AcmPersonService($pdo);
-$ceremony = new ActivationService($pdo, new AcmTicketService($pdo, $acmPersons), $acmPersons);
+// S6 credential recovery. The password resetter is mysqli-backed
+// (the ACM package stays PDO-only); without a live mysqli handle
+// recovery fails closed inside the service (grant never consumed).
+$acmResetter = null;
+if (isset($conn) && $conn instanceof \mysqli) {
+    $acmResetter = static function (int $officerId, int $userId, string $newPassword) use ($conn): void {
+        $credentials = new \App\Services\AccountCredentialService(
+            new \App\Services\MysqliCredentialRepository($conn)
+        );
+        // Confirmation was already matched server-side in the
+        // service; the administrator primitive re-validates
+        // policy (+ match) and revokes ALL refresh sessions in
+        // the same transaction as the new hash.
+        $credentials->resetPasswordByAdministrator(
+            \App\Services\AuthorizedAdministratorIdentity::fromTrustedAuthorization($officerId),
+            $userId,
+            $newPassword,
+            $newPassword
+        );
+    };
+}
+$ceremony = new ActivationService($pdo, new AcmTicketService($pdo, $acmPersons), $acmPersons, $acmResetter);
 // S4 device registry. The family revoker is mysqli-backed (the ACM
 // package stays PDO-only); without a live mysqli handle revoke
 // fails closed inside the service (never silently unlinked).
@@ -219,6 +249,90 @@ if ($acmAction === 'activate/credentials' && $method === 'POST') {
         $credentialsResponse['device_registered'] = true;
     }
     ok($credentialsResponse);
+}
+
+// ============================================================
+// POST /acm/reset/verify
+// R-code redemption: identical machinery to activate/verify --
+// only the purpose differs (minted grant carries operation =
+// reset). No installation_id: recovery needs no device context.
+// ============================================================
+if ($acmAction === 'reset/verify' && $method === 'POST') {
+    if (isApiRateLimited('acm_reset_verify', 30)) {
+        err('Too many attempts. Wait a while and try again.', 429, ['code' => 'rate_limited']);
+    }
+    $body = acmStrictBody(['selector', 'secret', 'purpose']);
+    if ($body['purpose'] !== CodePurpose::Reset->value) {
+        err('The code is invalid or expired.', 400, ['code' => 'code_invalid']);
+    }
+    $signal = $ceremony->networkSignal();
+    $clientIp = OfficeNetworkSignal::resolveClientIp($_SERVER, $signal->trustedProxies());
+    try {
+        $grant = $ceremony->verifyCode(
+            $body['selector'], $body['secret'], CodePurpose::Reset,
+            new RequestMeta($clientIp, null)
+        );
+    } catch (ActivationException $e) {
+        acmWireError($e);
+    } catch (InvalidArgumentException $e) {
+        err('The request is invalid.', 400, ['code' => 'invalid_request']);
+    }
+    ok([
+        'grant' => $grant->token,
+        'operation' => $grant->operation->value,
+        'expires_at' => $grant->expiresAt,
+    ]);
+}
+
+// ============================================================
+// POST /acm/reset/credentials
+// Grant + new password (+ server-matched confirmation) +
+// idempotency key. Audits PASSWORD_RECOVERED once per recovery
+// (replays never re-audit); the issuing officer is the actor.
+// Best-effort audit AFTER the commits -- identical precedent to
+// PASSWORD_CHANGED in users.php (the durable trail is the
+// ticket's `recovered` event, committed before we return).
+// ============================================================
+if ($acmAction === 'reset/credentials' && $method === 'POST') {
+    if (isApiRateLimited('acm_reset_credentials', 10)) {
+        err('Too many attempts. Wait a while and try again.', 429, ['code' => 'rate_limited']);
+    }
+    $body = acmStrictBody(['grant', 'new_password', 'confirm_password', 'idempotency_key'], 4096);
+    try {
+        $recovered = $ceremony->completeRecovery(
+            $body['grant'], $body['new_password'], $body['confirm_password'], $body['idempotency_key']
+        );
+    } catch (ActivationException $e) {
+        acmWireError($e, $body['new_password']);
+    } catch (InvalidArgumentException $e) {
+        err('The request is invalid.', 400, ['code' => 'invalid_request']);
+    }
+    if (!$recovered['replayed'] && isset($conn) && $conn instanceof \mysqli) {
+        $recoveryActor = \App\Services\SecurityAuditActor::fromAuthenticatedContext(
+            (int)$recovered['officer_id'],
+            (string)$recovered['officer_username'],
+            'api',
+            $_SERVER
+        );
+        if (!\App\Services\SecurityAuditService::recordTrusted(
+            $conn,
+            $recoveryActor,
+            'PASSWORD_RECOVERED',
+            [
+                'operation' => 'acm_credential_recovery',
+                'ticket_id' => (int)$recovered['ticket_id'],
+                'grant_fp' => substr(hash('sha256', (string)$body['grant']), 0, 6) . '...',
+            ],
+            'user',
+            (int)$recovered['user_id']
+        )) {
+            error_log('Credential-recovery audit event could not be recorded.');
+        }
+    }
+    ok([
+        'recovered' => true,
+        'ticket_id' => (int)$recovered['ticket_id'],
+    ]);
 }
 
 // ============================================================

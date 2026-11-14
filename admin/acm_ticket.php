@@ -292,6 +292,7 @@ acm_chrome_open('queue', (string)($ticket['ticket_no'] ?? 'Ticket'), 'Activation
         <select class="inp" id="acmIssuePurpose" aria-label="Code purpose" style="max-width:12rem">
             <option value="activation">Activation code</option>
             <option value="device_add">Add-a-device code</option>
+            <option value="reset">Recovery code</option>
         </select>
         <button class="btn bp" id="acmIssueBtn"><i class="fa-solid fa-key"></i> <?= $liveCode !== null ? 'Reissue code' : 'Issue code' ?></button>
         <?php endif; ?>

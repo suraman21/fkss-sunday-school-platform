@@ -507,6 +507,40 @@ class AcmTicketService
     }
 
     /**
+     * S6: a reset ceremony completed. Closes grant_verified ->
+     * active with a `recovered` event. Runs inside the CALLER's
+     * transaction (ActivationService owns it), like every other
+     * mark* method.
+     *
+     * Idempotent for same-fingerprint replays: a double-submit or
+     * crash-continuation retry that finds the ticket already
+     * active WITH a `recovered` event for this grant fingerprint
+     * returns silently instead of 409ing -- the loser converges
+     * on the winner's outcome. Anything else still throws
+     * TICKET_STATE via transition().
+     */
+    public function markRecovered(int $id, array $meta): void
+    {
+        $fp = (string)($meta['grant_fp'] ?? '');
+        if ($fp !== '') {
+            // LOCATE, not LIKE: the fingerprint is matched
+            // literally (no pattern-character semantics at all).
+            $chk = $this->pdo->prepare(
+                "SELECT t.status FROM acm_activation_tickets t"
+                . " WHERE t.id = :t AND t.status = 'active'"
+                . " AND EXISTS (SELECT 1 FROM acm_ticket_events e"
+                . " WHERE e.ticket_id = t.id AND e.event = 'recovered'"
+                . " AND LOCATE(:m, e.meta) > 0) LIMIT 1"
+            );
+            $chk->execute([':t' => $id, ':m' => '"grant_fp":"' . $fp . '"']);
+            if ($chk->fetchColumn() !== false) {
+                return;
+            }
+        }
+        $this->transition($id, ['grant_verified'], 'active', 0, 'recovered', '', $meta);
+    }
+
+    /**
      * Stall the ticket at expired (lazy code expiry / burn). Silent
      * when another active code still carries the ceremony, or when
      * the ticket already left the ceremony states.
