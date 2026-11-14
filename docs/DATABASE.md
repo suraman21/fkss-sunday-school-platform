@@ -1,6 +1,6 @@
 # Database and migrations
 
-**Status:** maintained migration reference. Original review: `46fbaa7` (2026-10-22); numbered-file count and `CREATE TABLE` targets rechecked at `7e28157` (2026-10-28), excluding SQL comments. **No production database was queried.** Source diagrams and historical table definitions are in the [table-level dictionary](DATA_DICTIONARY.md); neither is a verified live-schema export. Source inventories do not establish applied migrations, column parity or real row counts.
+**Status:** maintained migration reference. Original review: `46fbaa7` (2026-10-22); numbered-file count and `CREATE TABLE` targets rechecked at `7ce13af` (2026-11-03), excluding SQL comments. **No production database was queried.** Source diagrams and historical table definitions are in the [table-level dictionary](DATA_DICTIONARY.md); neither is a verified live-schema export. Source inventories do not establish applied migrations, column parity or real row counts.
 
 ## Source-defined ledger columns
 
@@ -31,7 +31,7 @@ The [Finance/Materials column reference](database/LEDGER_COLUMNS.md), source-rev
 | Runtime DDL | `MezmurSchemaReconciler::apply`, called from `admin/api_mezmur.php`, can create or alter Mezmur tables at request time | Production can drift from `sql/` |
 | `tests/e2e/provision_env.sh` | Encodes the apply order that produces a working test database | The best available **executable** description of the schema; test-only |
 
-At `7e28157` (2026-10-28) plus migrations 079 (ACM P0), 080 (Telegram registration), 081 (ACM S1 office model + telegram phase2 interview), 082 (ACM S3 activation ceremony + telegram corrections), 083 (telegram approval) and 084 (ACM S4 device registry), the **84 numbered migration files** (`001`–`084`, with gaps — `081` and `082` exist twice: ACM + telegram) contain **125 distinct `CREATE TABLE` target names**, excluding block/line comments and including archive/quarantine definitions. This is a lexical source inventory, not the number of active business tables or proof that every conditional statement ran. Legacy PHP/snapshot definitions are outside this count. The former count of 103 incorrectly treated the word `only` in migration 026's comment as a table.
+At `7e28157` (2026-10-28) plus migrations 079 (ACM P0), 080 (Telegram registration), 081 (ACM S1 office model + telegram phase2 interview), 082 (ACM S3 activation ceremony + telegram corrections), 083 (telegram approval), 084 (ACM S4 device registry) and 085 (Telegram transfer registration), the **85 numbered migration files** (`001`–`085`, with gaps — `081` and `082` exist twice: ACM + telegram) contain **125 distinct `CREATE TABLE` target names**, excluding block/line comments and including archive/quarantine definitions. This is a lexical source inventory, not the number of active business tables or proof that every conditional statement ran. Legacy PHP/snapshot definitions are outside this count. The former count of 103 incorrectly treated the word `only` in migration 026's comment as a table.
 
 ## 3. Migration rules in force
 
