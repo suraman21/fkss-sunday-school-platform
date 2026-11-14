@@ -347,6 +347,13 @@ check('D1: device active', 'active', $dev1->status);
 check('D1: fingerprint is the SPKI hash', $keyA['fp'], $dev1->fingerprint);
 check('D1: ticket activated', 'active', ticketStatus((int)$t1['id']));
 check('D1: account flipped active', 1, userIsActive($a1->userId));
+// Pending-link fix: the provision-time pending link converges to
+// active in the same transaction (userIdFor + lifecycle guards
+// require it; before the fix the chained grant above could never
+// resolve and D1 fataled).
+$linkStmt = $pdo->prepare('SELECT status FROM acm_person_accounts WHERE user_id = :u LIMIT 1');
+$linkStmt->execute([':u' => $a1->userId]);
+check('D1: link flipped active', 'active', (string)$linkStmt->fetchColumn());
 $rowA = deviceRowByUuid($dev1->deviceUuid);
 check('D1: stored alg is ES256', 'ES256', (string)$rowA['alg']);
 check('D1: stored name kept', 'E2E phone A', (string)$rowA['name']);
