@@ -41,6 +41,8 @@ function acm_status_bg(string $status): string
         'expired' => 'bg-w', 'activation_failed' => 'bg-bad',
         'canceled' => 'bg-n', 'revoked' => 'bg-bad',
         'provisioned' => 'bg-ok', 'rejected' => 'bg-bad',
+        // S10 staff-enrollment request statuses.
+        'requested' => 'bg-w', 'consumed' => 'bg-ok',
     ];
     return $map[$status] ?? 'bg-n';
 }
@@ -54,6 +56,7 @@ function acm_chrome_open(string $active, string $title, string $sub, int $openCo
         'overview' => ['acm_overview.php', 'fa-gauge-high', 'Overview'],
         'queue'    => ['acm_queue.php', 'fa-inbox', 'Activation queue'],
         'persons'  => ['acm_person.php', 'fa-users', 'Persons & accounts'],
+        'staff_enroll' => ['acm_staff_enroll.php', 'fa-id-badge', 'Staff enrollment'],
         'office'   => ['acm_office.php', 'fa-building', 'Office'],
         'audit'    => ['acm_audit.php', 'fa-file-shield', 'Monthly audit'],
     ];

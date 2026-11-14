@@ -910,6 +910,13 @@ class ActivationService implements ActivationServiceContract
                 'The registration session expired. Ask the office to reissue a code.'
             );
         }
+        // S10: staff grants carry no ticket — the request row is the
+        // provenance. Approved + live request, live staff account, or
+        // the grant is unusable (fail-fast read; complete() re-checks
+        // under lock).
+        if ((string)$grant['operation'] === 'staff_enroll') {
+            return $this->resolveStaffGrant((int)$grant['id']);
+        }
         $ticket = $this->tickets->get((int)$grant['ticket_id']);
         $expected = $grant['operation'] === CodePurpose::Activation->value
             ? 'account_pending_device' : 'grant_verified';
@@ -1111,6 +1118,7 @@ class ActivationService implements ActivationServiceContract
                 );
                 $sel->execute([':id' => $id]);
                 return [
+                    'id' => $id,
                     'token' => $token,
                     'fingerprint' => $fingerprint,
                     'expires_at' => (string)$sel->fetchColumn(),
@@ -1122,6 +1130,26 @@ class ActivationService implements ActivationServiceContract
             }
         }
         throw new RuntimeException('Grant issuance failed.');
+    }
+
+    /**
+     * S10: staff-enrollment grant. Same 15-minute single-use shape as
+     * every other grant; staff have no code/ticket/person rows so the
+     * entity links are 0-sentinels and the request row (grant_id) is
+     * the provenance. Joins the caller's transaction (decide()).
+     *
+     * @return array{id:int,token:string,fingerprint:string,expires_at:string}
+     */
+    public function mintStaffEnrollGrant(array $request): array
+    {
+        if ((string)($request['status'] ?? '') !== 'requested'
+            || (int)($request['user_id'] ?? 0) <= 0) {
+            throw new InvalidArgumentException('Enrollment request is not approvable.');
+        }
+        return $this->mintGrant(
+            ['id' => 0, 'ticket_id' => 0, 'person_id' => 0],
+            'staff_enroll'
+        );
     }
 
     /**
@@ -1190,6 +1218,40 @@ class ActivationService implements ActivationServiceContract
             }
             throw $e;
         }
+    }
+
+    /**
+     * S10: resolve a `staff_enroll` grant to its staffer. Same return
+     * shape as the family path (ticket_id 0: no ticket exists).
+     *
+     * @return array{id:int,ticket_id:int,user_id:int,operation:string}
+     */
+    private function resolveStaffGrant(int $grantId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT r.user_id, r.status, (r.expires_at > NOW()) AS live,'
+            . ' u.is_active AS staff_active'
+            . ' FROM acm_staff_enrollment_requests r'
+            . ' LEFT JOIN users u ON u.id = r.user_id'
+            . ' WHERE r.grant_id = :g LIMIT 1'
+        );
+        $stmt->execute([':g' => $grantId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!is_array($row)
+            || (string)$row['status'] !== 'approved'
+            || (int)$row['live'] !== 1
+            || (int)($row['staff_active'] ?? 0) !== 1) {
+            throw new ActivationException(
+                ActivationException::GRANT_INVALID, 401,
+                'The registration session is invalid.'
+            );
+        }
+        return [
+            'id' => $grantId,
+            'ticket_id' => 0,
+            'user_id' => (int)$row['user_id'],
+            'operation' => 'staff_enroll',
+        ];
     }
 
     private function grantByFingerprint(string $fingerprint): ?array

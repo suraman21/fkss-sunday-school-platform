@@ -443,6 +443,30 @@ try {
             }
         }
 
+        // S10 (#38): the edit form flips the same is_active bit as
+        // user-toggle — a 1→0 save closes staff devices + sessions
+        // + open requests exactly like the toggle does (same four
+        // statements, same 42S02/42S22 tolerance). 0→1 revives
+        // nothing: re-enrollment is a fresh request.
+        if ($isActive === 0 && $wasActive) {
+            $s10Closures = [
+                "UPDATE acm_devices SET status = 'revoked' WHERE user_id = :uid AND status IN ('pending','active')",
+                'UPDATE api_refresh_sessions SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP) WHERE user_id = :uid',
+                "UPDATE acm_staff_enrollment_requests SET status = 'canceled' WHERE user_id = :uid AND status = 'requested'",
+                "UPDATE acm_activation_grants g JOIN acm_staff_enrollment_requests r ON r.grant_id = g.id SET g.revoked_at = COALESCE(g.revoked_at, NOW()), g.revocation_reason = 'staff account deactivated' WHERE r.user_id = :uid AND g.revoked_at IS NULL AND g.consumed_at IS NULL",
+            ];
+            foreach ($s10Closures as $sql) {
+                try {
+                    $closeStmt = $pdo->prepare($sql);
+                    $closeStmt->execute([':uid' => (int)$userId]);
+                } catch (PDOException $e) {
+                    if ($e->getCode() !== '42S02' && $e->getCode() !== '42S22') {
+                        throw $e;
+                    }
+                }
+            }
+        }
+
         respond('success', 'User updated successfully.');
     }
 

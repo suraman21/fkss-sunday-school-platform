@@ -121,6 +121,33 @@ try {
     $stmt = $pdo->prepare("UPDATE users SET is_active = ? WHERE id = ?");
     $stmt->execute([$newStatus, $userId]);
 
+    // S10 (#38): a 1→0 flip is a staff deactivation — enrolled
+    // devices + refresh sessions + open enrollment requests die
+    // with the bit so nothing usable outlives it (the gate
+    // already fails closed on is_active = 0; this removes the
+    // rows instead of leaving them inert). 0→1 flips revive
+    // NOTHING: re-enrollment is a fresh request (S8 precedent).
+    // Each statement is 42S02/42S22-tolerant so pre-ACM/pre-S10
+    // deployments toggle exactly as before.
+    if ($newStatus === 0) {
+        $s10Closures = [
+            "UPDATE acm_devices SET status = 'revoked' WHERE user_id = ? AND status IN ('pending','active')",
+            'UPDATE api_refresh_sessions SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP) WHERE user_id = ?',
+            "UPDATE acm_staff_enrollment_requests SET status = 'canceled' WHERE user_id = ? AND status = 'requested'",
+            "UPDATE acm_activation_grants g JOIN acm_staff_enrollment_requests r ON r.grant_id = g.id SET g.revoked_at = COALESCE(g.revoked_at, NOW()), g.revocation_reason = 'staff account deactivated' WHERE r.user_id = ? AND g.revoked_at IS NULL AND g.consumed_at IS NULL",
+        ];
+        foreach ($s10Closures as $sql) {
+            try {
+                $close = $pdo->prepare($sql);
+                $close->execute([$userId]);
+            } catch (PDOException $e) {
+                if ($e->getCode() !== '42S02' && $e->getCode() !== '42S22') {
+                    throw $e;
+                }
+            }
+        }
+    }
+
     echo json_encode([
         'status' => 'success',
         'message' => $newStatus ? 'User activated' : 'User deactivated',

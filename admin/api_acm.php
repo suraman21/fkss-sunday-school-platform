@@ -50,6 +50,7 @@ use SSMS\Acm\Contracts\AccountContext;
 use SSMS\Acm\Contracts\CodePurpose;
 use SSMS\Acm\Device\DeviceCrypto;
 use SSMS\Acm\Device\DeviceService;
+use SSMS\Acm\Enrollment\StaffEnrollmentRequestService;
 use SSMS\Acm\Identity\AcmPersonService;
 use SSMS\Acm\Office\AcmOfficeService;
 use SSMS\Acm\OfficeNetwork\OfficeNetworkSignal;
@@ -726,6 +727,106 @@ try {
                 'link' => 'active/suspended->revoked',
             ], 'user', $result['user_id']);
             acm_ok(['deactivated' => true, 'account' => $result]);
+            break;
+        }
+
+        // S10: staff enrollment request queue. Same issuance-class
+        // policy (RES_CODE/issue) + office-network gate as code
+        // issuance — no new policy surface. Audit uses the `acm.`
+        // prefix so the reviewer report picks events up with zero
+        // report changes.
+        case 'staff_enroll_queue': {
+            if (!AcmPolicy::can($role, AcmPolicy::RES_CODE, 'view')) {
+                acm_err('Access denied.', 403);
+            }
+            $requests = new StaffEnrollmentRequestService($pdo);
+            $result = $requests->queue(
+                trim((string)($_GET['status'] ?? '')),
+                25,
+                max(0, (int)($_GET['offset'] ?? 0))
+            );
+            acm_ok(['rows' => $result['rows'], 'total' => $result['total']]);
+            break;
+        }
+
+        case 'staff_enroll_request': {
+            if ($method !== 'POST') {
+                acm_err('Method not allowed.', 405);
+            }
+            if (!AcmPolicy::can($role, AcmPolicy::RES_CODE, 'issue')) {
+                acm_err('Access denied.', 403);
+            }
+            $requests = new StaffEnrollmentRequestService($pdo);
+            $row = $requests->request(
+                (int)($_POST['user_id'] ?? 0),
+                $actorId,
+                (string)($_POST['operation'] ?? 'activation')
+            );
+            acm_audit($pdo, 'acm.staff_enroll.requested', [
+                'request_id' => (int)$row['id'],
+                'user_id' => (int)$row['user_id'],
+                'operation' => (string)$row['operation'],
+            ], 'acm_staff_enrollment_request', (int)$row['id']);
+            acm_ok(['request' => $row]);
+            break;
+        }
+
+        case 'staff_enroll_decide': {
+            if ($method !== 'POST') {
+                acm_err('Method not allowed.', 405);
+            }
+            if (!AcmPolicy::can($role, AcmPolicy::RES_CODE, 'issue')) {
+                acm_err('Access denied.', 403);
+            }
+            $signal = $ceremony->networkSignal();
+            if ($signal->gatesIssuance()
+                && !$signal->allows(OfficeNetworkSignal::resolveClientIp($_SERVER, $signal->trustedProxies()))) {
+                acm_err('Enrollment approval is not available from this network.', 403);
+            }
+            $requests = new StaffEnrollmentRequestService($pdo);
+            $result = $requests->decide(
+                (int)($_POST['id'] ?? 0),
+                $actorId,
+                (string)($_POST['decision'] ?? ''),
+                (string)($_POST['note'] ?? ''),
+                static function (array $req) use ($ceremony): array {
+                    return $ceremony->mintStaffEnrollGrant($req);
+                }
+            );
+            $req = $result['request'];
+            // Audit carries the grant fingerprint only — never the
+            // token (same secret rule as code_issue).
+            $grantFp = is_array($result['grant'])
+                ? substr((string)($result['grant']['fingerprint'] ?? ''), 0, 6) . '...'
+                : null;
+            acm_audit($pdo, 'acm.staff_enroll.' . (string)$req['status'], [
+                'request_id' => (int)$req['id'],
+                'user_id' => (int)$req['user_id'],
+                'operation' => (string)$req['operation'],
+                'grant_fp' => $grantFp,
+            ], 'acm_staff_enrollment_request', (int)$req['id']);
+            // Plaintext travels ONLY in this response: the page shows
+            // it once (officer relays to the staffer out-of-band, same
+            // as an issued code), then masks it (D3.2). Never logged,
+            // never stored.
+            acm_ok(['request' => $req, 'grant' => $result['grant']]);
+            break;
+        }
+
+        case 'staff_enroll_cancel': {
+            if ($method !== 'POST') {
+                acm_err('Method not allowed.', 405);
+            }
+            if (!AcmPolicy::can($role, AcmPolicy::RES_CODE, 'issue')) {
+                acm_err('Access denied.', 403);
+            }
+            $requests = new StaffEnrollmentRequestService($pdo);
+            $row = $requests->cancel((int)($_POST['id'] ?? 0), $actorId);
+            acm_audit($pdo, 'acm.staff_enroll.canceled', [
+                'request_id' => (int)$row['id'],
+                'user_id' => (int)$row['user_id'],
+            ], 'acm_staff_enrollment_request', (int)$row['id']);
+            acm_ok(['request' => $row]);
             break;
         }
 
