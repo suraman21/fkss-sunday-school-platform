@@ -8,18 +8,28 @@ final class TelegramFormRegistry
 {
     /** @var array<string,array<string,mixed>> */
     private const FIELDS = [
-        'full_name_am' => ['max'=>150, 'skip'=>false, 'label'=>'Full name / ሙሉ ስም'],
-        'baptismal_name' => ['max'=>150, 'skip'=>true, 'label'=>'Baptismal name / የክርስትና ስም'],
+        'full_name_am' => ['max'=>150, 'skip'=>false, 'label'=>'ሙሉ ስም', 'script'=>'ethiopic'],
+        'baptismal_name' => ['max'=>150, 'skip'=>true, 'label'=>'የክርስትና ስም', 'script'=>'ethiopic'],
         'gender' => ['max'=>10, 'skip'=>false, 'label'=>'Gender / ጾታ', 'input'=>'choice', 'choices'=>['male'=>'ወንድ / Male','female'=>'ሴት / Female']],
         'dob_ec' => ['max'=>10, 'skip'=>true, 'label'=>'Ethiopian date of birth / የትውልድ ቀን'],
         'phone_number' => ['max'=>30, 'skip'=>true, 'label'=>'Phone / ስልክ'],
-        'guardian_name' => ['max'=>150, 'skip'=>true, 'label'=>'Guardian name / የአሳዳጊ ስም'],
-        'guardian_phone1' => ['max'=>30, 'skip'=>true, 'label'=>'Guardian phone / የአሳዳጊ ስልክ'],
+        'guardian_name' => ['max'=>150, 'skip'=>true, 'label'=>'የአሳዳጊ ስም', 'script'=>'ethiopic'],
+        'guardian_phone1' => ['max'=>30, 'skip'=>true, 'label'=>'የአሳዳጊ ስልክ'],
+        'guardian_phone2' => ['max'=>30, 'skip'=>true, 'label'=>'ተጨማሪ የአሳዳጊ ስልክ'],
+        'alt_phone_number' => ['max'=>30, 'skip'=>true, 'label'=>'ተጨማሪ ስልክ'],
         'city' => ['max'=>60, 'skip'=>true, 'label'=>'City / ከተማ'],
         'sub_city' => ['max'=>60, 'skip'=>true, 'label'=>'Sub-city / ክፍለ ከተማ'],
         'woreda' => ['max'=>10, 'skip'=>true, 'label'=>'Woreda / ወረዳ'],
         'mender' => ['max'=>10, 'skip'=>true, 'label'=>'Mender / መንደር'],
-        'house_number' => ['max'=>20, 'skip'=>true, 'label'=>'House number / የቤት ቁጥር'],
+        'block_number' => ['max'=>20, 'skip'=>true, 'label'=>'ብሎክ ቁጥር'],
+        'house_number' => ['max'=>20, 'skip'=>true, 'label'=>'የቤት ቁጥር'],
+        'work_profession' => ['max'=>100, 'skip'=>true, 'label'=>'ሙያ'],
+        'guardian_city' => ['max'=>60, 'skip'=>true, 'label'=>'የአሳዳጊ ከተማ'],
+        'guardian_sub_city' => ['max'=>60, 'skip'=>true, 'label'=>'የአሳዳጊ ክፍለ ከተማ'],
+        'guardian_woreda' => ['max'=>10, 'skip'=>true, 'label'=>'የአሳዳጊ ወረዳ'],
+        'guardian_mender' => ['max'=>10, 'skip'=>true, 'label'=>'የአሳዳጊ መንደር'],
+        'guardian_block_number' => ['max'=>20, 'skip'=>true, 'label'=>'የአሳዳጊ ብሎክ'],
+        'guardian_house' => ['max'=>20, 'skip'=>true, 'label'=>'የአሳዳጊ ቤት ቁጥር'],
         'education_level' => ['max'=>60, 'skip'=>true, 'label'=>'Education level / የትምህርት ደረጃ', 'input'=>'choice', 'choices'=>['kg'=>'KG','elementary'=>'Elementary (1–8)','high'=>'High School (9–12)','tvet_level1'=>'TVET Level I','tvet_level2'=>'TVET Level II','tvet_level3'=>'TVET Level III','diploma'=>'Diploma','advanced_diploma'=>'Advanced Diploma','degree'=>'Degree','masters'=>'Masters','phd'=>'PhD','other'=>'ሌላ / Other']],
         'spiritual_education' => ['max'=>100, 'skip'=>true, 'label'=>'Spiritual education / መንፈሳዊ ትምህርት', 'input'=>'choice', 'choices'=>['grade_1'=>'1ኛ ክፍል / Grade 1','grade_2'=>'2ኛ ክፍል / Grade 2','grade_3'=>'3ኛ ክፍል / Grade 3','grade_4'=>'4ኛ ክፍል / Grade 4','grade_5'=>'5ኛ ክፍል / Grade 5','grade_6'=>'6ኛ ክፍል / Grade 6','grade_7'=>'7ኛ ክፍል / Grade 7','grade_8'=>'8ኛ ክፍል / Grade 8','grade_9'=>'9ኛ ክፍል / Grade 9','grade_10'=>'10ኛ ክፍል / Grade 10','grade_11'=>'11ኛ ክፍል / Grade 11','grade_12'=>'12ኛ ክፍል / Grade 12','diploma'=>'ዲፕሎማ / Diploma','degree'=>'ዲግሪ / Degree']],
         'current_section' => ['max'=>100, 'skip'=>true, 'label'=>'Current section / ክፍል', 'input'=>'dynamic_choice'],
@@ -59,6 +69,9 @@ final class TelegramFormRegistry
         if ($length > (int)self::FIELDS[$key]['max']) {
             throw new InvalidArgumentException('The answer is too long.');
         }
+        if((self::FIELDS[$key]['script']??'')==='ethiopic'&&!preg_match('/^[\\x{1200}-\\x{137F}\\s፡።፣፤፥፦፧፨\'’-]+$/u',$value)){
+            throw new InvalidArgumentException('ይህ መረጃ በአማርኛ ፊደል ብቻ መጻፍ አለበት።');
+        }
 
         if ($key === 'full_name_am') {
             $parts = preg_split('/\s+/u', $value, -1, PREG_SPLIT_NO_EMPTY) ?: [];
@@ -85,7 +98,7 @@ final class TelegramFormRegistry
             $canonical = sprintf('%02d/%02d/%04d', $day, $month, $year);
             return ['display'=>$canonical, 'normalized'=>$canonical];
         }
-        if (in_array($key, ['phone_number','guardian_phone1'], true)) {
+        if (in_array($key, ['phone_number','alt_phone_number','guardian_phone1','guardian_phone2'], true)) {
             if (!preg_match('/^[0-9+()\- .]+$/', $value)) throw new InvalidArgumentException('Enter a valid phone number.');
             $suffix = AmharicIdentityNormalizer::phoneSuffix($value);
             if ($suffix === '') throw new InvalidArgumentException('Enter at least 9 phone digits.');

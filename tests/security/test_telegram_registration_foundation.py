@@ -123,6 +123,19 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn("dialog-close", page)
         self.assertIn("aria-label','ዝጋ'", page)
 
+    def test_amharic_identity_policy_and_full_size_editor(self):
+        page = (ROOT / "admin/telegram_registration.php").read_text(encoding="utf-8")
+        approval = (ROOT / "admin/backend/services/TelegramMemberApprovalService.php").read_text(encoding="utf-8")
+        self.assertIn("'script'=>'ethiopic'", self.registry)
+        self.assertIn("በአማርኛ ፊደል ብቻ", self.registry)
+        for key in ["guardian_phone2", "alt_phone_number", "block_number", "work_profession", "guardian_house"]:
+            self.assertIn(f"'{key}'", self.registry)
+            self.assertIn(f"'{key}'=>", approval)
+        self.assertIn('class="editor-workspace"', page)
+        self.assertIn("height:94vh", page)
+        self.assertIn("የቦት ጥያቄ", page)
+        self.assertIn("body.set('title_en',formEditor.elements.namedItem('title_am').value)", page)
+
     def test_submission_never_inserts_member(self):
         submit = self.service[self.service.index("private function submitReview"):]
         self.assertIn("status='submitted'", submit)
