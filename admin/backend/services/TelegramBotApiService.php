@@ -38,6 +38,12 @@ final class TelegramBotApiService
         if($chatId<=0)throw new RuntimeException('Invalid Telegram chat.');$text=trim($text);if($text===''||strlen($text)>3500)throw new RuntimeException('Invalid Telegram notification.');$result=$this->call('sendMessage',['chat_id'=>(string)$chatId,'text'=>$text]);return is_array($result)&&!empty($result['message_id']);
     }
 
+    /** Download a Telegram file into a caller-owned temporary file. */
+    public function downloadFile(string $fileId,int $maxBytes=5242880): string
+    {
+        if(!preg_match('/^[A-Za-z0-9_-]{10,255}$/D',$fileId))throw new RuntimeException('Invalid Telegram file identifier.');$meta=$this->call('getFile',['file_id'=>$fileId]);$path=is_array($meta)?(string)($meta['file_path']??''):'';$size=is_array($meta)?(int)($meta['file_size']??0):0;$maxBytes=max(1,min(5242880,$maxBytes));if($path===''||!preg_match('#^[A-Za-z0-9_./-]{1,255}$#D',$path)||str_contains($path,'..'))throw new RuntimeException('Telegram returned an invalid file path.');if($size<1||$size>$maxBytes)throw new RuntimeException('The file exceeds the allowed size.');$tmp=tempnam(sys_get_temp_dir(),'tgfile_');if($tmp===false)throw new RuntimeException('Temporary file storage is unavailable.');$out=fopen($tmp,'wb');$handle=curl_init('https://api.telegram.org/file/bot'.$this->token.'/'.$path);curl_setopt_array($handle,[CURLOPT_FILE=>$out,CURLOPT_CONNECTTIMEOUT=>5,CURLOPT_TIMEOUT=>20,CURLOPT_PROTOCOLS=>CURLPROTO_HTTPS,CURLOPT_FOLLOWLOCATION=>false,CURLOPT_FAILONERROR=>true]);$ok=curl_exec($handle);curl_close($handle);fclose($out);$actual=@filesize($tmp);if(!$ok||$actual===false||$actual<1||$actual>$maxBytes){@unlink($tmp);throw new RuntimeException('Telegram file download failed.');}return $tmp;
+    }
+
     /** @return array<string,mixed> */
     public function webhookInfo(): array
     {

@@ -215,6 +215,18 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         for key in ["student_photo", "guardian_photo", "doc_school_records", "doc_spiritual", "doc_signed_form"]:
             self.assertIn(f"'{key}'", self.registry)
 
+    def test_telegram_files_are_bounded_verified_and_privately_quarantined(self):
+        bot = (ROOT / "admin/backend/services/TelegramBotApiService.php").read_text(encoding="utf-8")
+        attachments = (ROOT / "admin/backend/services/TelegramAttachmentService.php").read_text(encoding="utf-8")
+        self.assertIn("public function downloadFile", bot)
+        self.assertIn("$size>$maxBytes", bot)
+        self.assertIn("str_contains($path,'..')", bot)
+        self.assertIn("CURLOPT_FOLLOWLOCATION=>false", bot)
+        self.assertIn(r"new \finfo(FILEINFO_MIME_TYPE)", attachments)
+        self.assertIn("file_get_contents($tmp,false,null,0,5)==='%PDF-'", attachments)
+        self.assertIn("ssms_private/telegram_quarantine", attachments)
+        self.assertIn("@chmod($target,0600)", attachments)
+
     def test_submission_never_inserts_member(self):
         submit = self.service[self.service.index("private function submitReview"):]
         self.assertIn("status='submitted'", submit)
