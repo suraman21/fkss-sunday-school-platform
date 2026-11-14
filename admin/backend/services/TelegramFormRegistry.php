@@ -50,7 +50,7 @@ final class TelegramFormRegistry
             throw new InvalidArgumentException('Unsupported registration field.');
         }
         $value = trim((string)$raw);
-        $skip = in_array(strtolower($value), ['/skip','skip','ዝለል'], true);
+        $skip = in_array(strtolower($value), ['/skip','skip','ዝለል','⏭️ ዝለል'], true);
         if ($skip) {
             if ($required || !self::FIELDS[$key]['skip']) {
                 throw new InvalidArgumentException('This answer is required.');

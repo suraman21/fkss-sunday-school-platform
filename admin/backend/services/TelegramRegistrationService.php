@@ -48,13 +48,13 @@ final class TelegramRegistrationService
 
         if ($text === '/start' || $text === '/help') return $this->home($chatId, $actor);
         if (in_array($text, ['/cancel','❌ Cancel','❌ ሰርዝ'], true)) { $this->cancelActive((int)$actor['id']); return self::message($chatId, 'Cancelled. / ተሰርዟል።', self::homeKeyboard()); }
-        if ($text === '/resume' || $text === '▶️ ቀጥል / Resume') return $this->resume($chatId, $actor);
+        if ($text === '/resume' || in_array($text,['▶️ ቀጥል','▶️ ቀጥል / Resume'],true)) return $this->resume($chatId, $actor);
         if ($text === '/new' || $text === '➕ አዲስ ምዝገባ' || $text === '➕ New registration') return $this->begin($chatId, $actor);
 
         $session = $this->activeSession((int)$actor['id'], $chatId);
         if (!$session) return $this->home($chatId, $actor);
-        if ($text === '/back') return $this->back($session);
-        if ($text === '/review') return $this->review($session);
+        if (in_array($text,['/back','⬅️ ወደ ኋላ'],true)) return $this->back($session);
+        if (in_array($text,['/review','📋 መረጃውን አሳይ'],true)) return $this->review($session);
         if (preg_match('/^\/edit(?:\s+([a-z0-9_]+))?$/i', $text, $edit)) return $this->editAnswer($session, (string)($edit[1] ?? ''));
 
         if ($session['status'] === 'choosing') return $this->chooseProfile($session, $actor, $text);
@@ -89,9 +89,9 @@ final class TelegramRegistrationService
     private function home(int $chatId, array $actor): array
     {
         $active=$this->activeSession((int)$actor['id'],$chatId);
-        $resume=$active!==null?"\n\nAn unfinished draft is available. Use /resume to continue it.":'';
+        $resume=$active!==null?"\n\nያልተጠናቀቀ ምዝገባ አለ። ለመቀጠል «ቀጥል» የሚለውን አዝራር ይጫኑ።":'';
         return self::message($chatId,
-            "የአባላት ምዝገባ ረዳት\nMember registration assistant\n\nThe bot collects a draft. HR must review it before any member is created.".$resume."\n\n/new — start\n/resume — continue unfinished draft\n/cancel — cancel current draft\n/back — previous question\n/review — review answers\n/edit field_key — edit one answer",
+            "የአባላት ምዝገባ ረዳት\n\nመረጃው ከተላከ በኋላ በሰው ኃይል ክፍል ይገመገማል።".$resume."\n\nለመቀጠል ከታች ያለውን አዝራር ይጫኑ።",
             self::homeKeyboard($active!==null)
         );
     }
@@ -182,7 +182,7 @@ final class TelegramRegistrationService
         $duplicateMeta=json_decode((string)($fresh['duplicate_summary']??''),true);if(is_array($duplicateMeta)&&!empty($duplicateMeta['capped']))$lines[]='More plausible candidates exist than the safe display limit. Add or verify date of birth and phone so HR can refine the result.';
         $editable=array_keys($answers);if($editable!==[])$lines[]='Edit one answer: /edit '.implode(', /edit ',$editable);
         $lines[]='No member will be created now. Submit this draft to HR for review.';
-        return self::message((int)$session['telegram_chat_id'],implode("\n",$lines),['keyboard'=>[[['text'=>'✅ ላክ'],['text'=>'✏️ አርም']],[['text'=>'❌ Cancel']]],'resize_keyboard'=>true]);
+        return self::message((int)$session['telegram_chat_id'],implode("\n",$lines),['keyboard'=>[[['text'=>'✅ ላክ'],['text'=>'✏️ አርም']],[['text'=>'❌ ሰርዝ']]],'resize_keyboard'=>true]);
     }
 
     private function submitReview(array $session): array
@@ -238,9 +238,8 @@ final class TelegramRegistrationService
 
     private function prompt(array $session,array $field,?string $prefix=null): array
     {
-        $keyboard=['remove_keyboard'=>true];
         $choices=$field['field_key']==='current_section'?$this->sectionOptions():TelegramFormRegistry::choices((string)$field['field_key']);
-        if($choices!==[]){$buttons=[];foreach(array_values($choices) as $index=>$label)$buttons[intdiv($index,2)][]=['text'=>$label];if((int)($field['is_required']??0)!==1)$buttons[]=[['text'=>'/skip']];$keyboard=['keyboard'=>$buttons,'resize_keyboard'=>true,'one_time_keyboard'=>true];}
+        $buttons=[];if($choices!==[])foreach(array_values($choices) as $index=>$label)$buttons[intdiv($index,2)][]=['text'=>$label];if((int)($field['is_required']??0)!==1)$buttons[]=[['text'=>'⏭️ ዝለል']];$buttons[]=[['text'=>'⬅️ ወደ ኋላ'],['text'=>'📋 መረጃውን አሳይ']];$buttons[]=[['text'=>'❌ ሰርዝ']];$keyboard=['keyboard'=>$buttons,'resize_keyboard'=>true];
         $text=$this->promptText($field); if($prefix)$text=$prefix."\n\n".$text;
         return self::message((int)$session['telegram_chat_id'],$text,$keyboard);
     }
@@ -257,7 +256,7 @@ final class TelegramRegistrationService
     /** @return array{display:string,normalized:string} */
     private function validateSection(string $raw,bool $required): array
     {
-        $value=trim($raw);if(in_array(strtolower($value),['/skip','skip','ዝለል'],true)){if($required)throw new InvalidArgumentException('This answer is required.');return ['display'=>'','normalized'=>''];}
+        $value=trim($raw);if(in_array(strtolower($value),['/skip','skip','ዝለል','⏭️ ዝለል'],true)){if($required)throw new InvalidArgumentException('This answer is required.');return ['display'=>'','normalized'=>''];}
         $options=$this->sectionOptions();foreach($options as $stored=>$label)if($value===$stored||$value===$label)return ['display'=>$label,'normalized'=>$stored];
         throw new InvalidArgumentException($options===[]?'No active school sections are configured. Contact HR.':'Choose one of the available school sections.');
     }
@@ -274,7 +273,7 @@ final class TelegramRegistrationService
     private function audit(string $type,int $actor,string $event,string $entity,int $entityId,string $result='success'): void { try{$s=$this->conn->prepare('INSERT INTO telegram_audit_log (actor_type,actor_id,event,entity_type,entity_id,result) VALUES (?,?,?,?,?,?)');$s->bind_param('sissis',$type,$actor,$event,$entity,$entityId,$result);$s->execute();$s->close();}catch(\Throwable $e){error_log('Telegram audit failed: '.$e->getMessage());} }
 
     private static function message(int $chatId,string $text,?array $markup=null): array { $p=['method'=>'sendMessage','chat_id'=>$chatId,'text'=>$text];if($markup!==null)$p['reply_markup']=$markup;return $p; }
-    private static function homeKeyboard(bool $hasActive=false): array { $rows=[];if($hasActive)$rows[]=[['text'=>'▶️ ቀጥል / Resume']];$rows[]=[['text'=>'➕ አዲስ ምዝገባ']];return ['keyboard'=>$rows,'resize_keyboard'=>true]; }
+    private static function homeKeyboard(bool $hasActive=false): array { $rows=[];if($hasActive)$rows[]=[['text'=>'▶️ ቀጥል']];$rows[]=[['text'=>'➕ አዲስ ምዝገባ']];return ['keyboard'=>$rows,'resize_keyboard'=>true]; }
     private static function positiveId($value): int { return is_int($value)||is_string($value)?max(0,(int)$value):0; }
     private static function publicId(): string { return substr(strtoupper(bin2hex(random_bytes(13))),0,26); }
 }
