@@ -182,7 +182,7 @@ $departments = [
     ['name' => 'Mezmur Dept', 'icon' => 'fa-music', 'color' => '#06b6d4', 'amharic' => 'መዝሙር ክፍል'],
 ];
 
-$roles = ['super_admin' => 'Super Admin', 'school_admin' => 'School Admin', 'hr_dept' => 'HR Dept', 'info_dept' => 'Info Dept', 'edu_dept' => 'Edu Dept', 'finance_dept' => 'Finance Dept', 'material_dept' => 'Material Dept', 'mezmur_dept' => 'Mezmur Dept', 'teacher' => 'Teacher', 'attendance_taker' => 'Attendance Taker', 'content_editor' => 'Content Editor (Website)', 'registrar' => 'Registrar (ACM)', 'account_activator' => 'Account Activator (ACM)'];
+$roles = ['super_admin' => 'Super Admin', 'school_admin' => 'School Admin', 'hr_dept' => 'HR Dept', 'info_dept' => 'Info Dept', 'edu_dept' => 'Edu Dept', 'finance_dept' => 'Finance Dept', 'material_dept' => 'Material Dept', 'mezmur_dept' => 'Mezmur Dept', 'teacher' => 'Teacher', 'attendance_taker' => 'Attendance Taker', 'content_editor' => 'Content Editor (Website)', 'accounts_office' => 'Accounts Office (ACM)'];
 
 $checks = [
     ['name' => 'PHP', 'status' => version_compare($phpVersion, '7.4', '>=') ? 'good' : 'warning', 'value' => $phpVersion],
@@ -647,6 +647,7 @@ if (!in_array($activeSection, $saAllowedSections, true)) {
                 <li><button class="nav-link <?= $activeSection === 'app_telemetry' ? 'active' : '' ?>" data-section="app_telemetry"><i class="fa-solid fa-chart-line"></i> Fleet Analytics</button></li>
                 <li><button class="nav-link <?= $activeSection === 'failure_intelligence' ? 'active' : '' ?>" data-section="failure_intelligence"><i class="fa-solid fa-triangle-exclamation"></i> Failure Intelligence</button></li>
                 <li><button class="nav-link <?= $activeSection === 'health' ? 'active' : '' ?>" data-section="health"><i class="fa-solid fa-heart-pulse"></i> Site Health</button></li>
+                <li><a href="/admin/telegram_registration.php" class="nav-link" style="text-decoration:none"><i class="fa-brands fa-telegram"></i> Telegram Registration</a></li>
                 <li><button class="nav-link <?= $activeSection === 'settings' ? 'active' : '' ?>" data-section="settings"><i class="fa-solid fa-gear"></i> Settings</button></li>
                 <li><button class="nav-link <?= $activeSection === 'branding' ? 'active' : '' ?>" data-section="branding"><i class="fa-solid fa-palette"></i> Branding</button></li>
             </ul>

@@ -1,18 +1,21 @@
 <?php
 /**
- * ACM P0 — Ticket detail. Identity evidence + manual decision.
- * Roles: super_admin, registrar, account_activator.
+ * ACM S1 — Ticket detail. Identity evidence + manual decision.
+ * Roles: super_admin, accounts_office.
  */
 define('ACM_BOOT', true);
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/acm_layout.php';
-require_once __DIR__ . '/backend/services/Acm/AcmPolicy.php';
-require_once __DIR__ . '/backend/services/Acm/AcmPersonService.php';
-require_once __DIR__ . '/backend/services/Acm/AcmTicketService.php';
+require_once __DIR__ . '/../acm/autoload.php';
 
-use App\Services\Acm\AcmPersonService;
-use App\Services\Acm\AcmPolicy;
-use App\Services\Acm\AcmTicketService;
+use SSMS\Acm\Accounts\AccountProvisioner;
+use SSMS\Acm\Accounts\AcmTicketService;
+use SSMS\Acm\Activation\ActivationService;
+use SSMS\Acm\Device\DeviceCrypto;
+use SSMS\Acm\Device\DeviceService;
+use SSMS\Acm\Identity\AcmPersonService;
+use SSMS\Acm\Office\AcmOfficeService;
+use SSMS\Acm\Policy\AcmPolicy;
 
 if (!function_exists('isLoggedIn') || !isLoggedIn()) {
     header('Location: index.php');
@@ -50,10 +53,65 @@ $canClaim = $isOpen && $status === 'submitted' && AcmPolicy::can($role, 'ticket'
 $canRelease = $status === 'in_review' && AcmPolicy::can($role, 'ticket', 'claim')
     && ($role === 'super_admin' || (int)($ticket['assignee_id'] ?? 0) === $actorId);
 $canNote = $isOpen && AcmPolicy::can($role, 'ticket', 'note');
-$canDecide = $isOpen && !$isMine && AcmPolicy::can($role, 'ticket', 'approve');
+$officeMode = 'separated';
+$isDesignee = false;
+try {
+    $officeSvc = new AcmOfficeService($pdo);
+    $officeMode = $officeSvc->mode();
+    $isDesignee = $officeSvc->isActiveApprover($actorId);
+} catch (\Throwable $e) {
+    $officeMode = 'separated';
+}
+// Separated: maker-checker by user ID. Solo: designee-only, and a
+// designee may self-decide with a recorded reason (server-enforced,
+// flagged in the monthly audit).
+$modeAllowsDecide = $officeMode === 'solo' ? $isDesignee : !$isMine;
+$canDecide = $isOpen && AcmPolicy::can($role, 'ticket', 'approve') && $modeAllowsDecide;
+$soloSelf = $isOpen && $isMine && $officeMode === 'solo' && $isDesignee;
 $dups = $ticket['live_duplicates'] ?? [];
 $hasDupWarnings = !empty($dups['same_phone']) || !empty($dups['same_name_dob']);
 $od = !empty($ticket['sla_due']) && strtotime((string)$ticket['sla_due']) < time() && $isOpen;
+// S3 ceremony panel: issuing needs an issuable state + code.issue;
+// viewing needs code.view. codeStatus() throws pre-082, so the
+// panel stays hidden until the migration lands (safe reader).
+$canIssueCode = in_array($status, AcmTicketService::ISSUABLE_STATUSES, true)
+    && AcmPolicy::can($role, 'code', 'issue');
+$canCancel = in_array($status, AcmTicketService::CANCELABLE_STATUSES, true)
+    && AcmPolicy::can($role, 'ticket', 'cancel');
+$codeInfo = null;
+if ($ticket !== null && AcmPolicy::can($role, 'code', 'view')) {
+    try {
+        $codeInfo = (new ActivationService(
+            $pdo, $tickets, new AcmPersonService($pdo)
+        ))->codeStatus((int)$ticket['id']);
+    } catch (\Throwable $e) {
+        $codeInfo = null;
+    }
+}
+$showCeremony = $codeInfo !== null && in_array($status, [
+    'approved', 'code_issued', 'grant_verified', 'account_pending_device',
+    'expired', 'activation_failed',
+], true);
+// S4 device panel: ticket account's registered devices. Null rows =
+// registry unavailable (pre-084 safe reader, like codeStatus above).
+// The page only LISTS (revoke goes through api_acm, which owns the
+// mysqli-backed family cascade), so no revoker is injected here.
+$canManageDevices = AcmPolicy::can($role, 'device', 'manage');
+$deviceRows = null;
+$deviceUserId = null;
+if ($ticket !== null && $canManageDevices) {
+    try {
+        $deviceUserId = (new AccountProvisioner($pdo))->userIdFor(
+            (int)$ticket['person_id'], (string)$ticket['account_type']
+        );
+        $deviceRows = $deviceUserId === null ? [] : (new DeviceService($pdo, $tickets))->listForUser(
+            $deviceUserId
+        );
+    } catch (\Throwable $e) {
+        $deviceRows = null;
+    }
+}
+$showDevices = $canManageDevices && $deviceUserId !== null;
 
 acm_head((string)($ticket['ticket_no'] ?? 'Ticket'));
 acm_chrome_open('queue', (string)($ticket['ticket_no'] ?? 'Ticket'), 'Activation review', $openCount);
@@ -66,6 +124,10 @@ acm_chrome_open('queue', (string)($ticket['ticket_no'] ?? 'Ticket'), 'Activation
     <div class="ct"><i class="fa-solid fa-ticket"></i> <?= e((string)($ticket['ticket_no'] ?? '')) ?>
         <span class="bg <?= acm_status_bg($status) ?>"><?= e(str_replace('_', ' ', $status)) ?></span>
         <span class="bg bg-n"><?= e((string)($ticket['account_type'] ?? '')) ?> account</span>
+        <span class="bg bg-n"><?= e($officeMode) ?> mode</span>
+        <?php if (!empty($ticket['self_approved'])): ?>
+        <span class="bg bg-p">self-approved</span>
+        <?php endif; ?>
     </div>
     <dl class="acm-kv">
         <dt>Person</dt><dd><a href="/admin/acm_person.php?id=<?= (int)$ticket['person_id'] ?>"><span class="amharic"><?= e((string)($ticket['full_name_am'] ?? '')) ?></span></a></dd>
@@ -77,8 +139,14 @@ acm_chrome_open('queue', (string)($ticket['ticket_no'] ?? 'Ticket'), 'Activation
         <dt>Decision note</dt><dd><?= e((string)($ticket['decision_note'] ?? '—')) ?></dd>
         <?php endif; ?>
     </dl>
-    <?php if ($isMine && $isOpen): ?>
+    <?php if ($isMine && $isOpen && $officeMode !== 'solo'): ?>
     <div class="acm-alert warn" style="margin-top:.8rem"><i class="fa-solid fa-scale-balanced"></i> Maker–checker: you submitted this ticket, so the decision buttons are disabled for you.</div>
+    <?php endif; ?>
+    <?php if ($officeMode === 'solo' && $isOpen && !$isDesignee): ?>
+    <div class="acm-alert warn" style="margin-top:.8rem"><i class="fa-solid fa-user-lock"></i> Solo mode: only a designated approver can decide tickets.</div>
+    <?php endif; ?>
+    <?php if ($soloSelf): ?>
+    <div class="acm-alert warn" style="margin-top:.8rem"><i class="fa-solid fa-triangle-exclamation"></i> Solo self-approval: a written reason is required and this decision will be flagged in the monthly audit.</div>
     <?php endif; ?>
     <div class="acm-btn-row">
         <?php if ($canClaim): ?>
@@ -164,7 +232,7 @@ acm_chrome_open('queue', (string)($ticket['ticket_no'] ?? 'Ticket'), 'Activation
 <div class="cd">
     <div class="ct"><i class="fa-solid fa-gavel"></i> Review actions</div>
     <div class="full" style="margin-bottom:.6rem">
-        <label class="flbl" for="acmNote">Note / reason (required to reject or request changes)</label>
+        <label class="flbl" for="acmNote">Note / reason<?= $soloSelf ? ' (required — solo self-approval)' : ' (required to reject or request changes)' ?></label>
         <textarea class="inp" id="acmNote" rows="3" maxlength="2000" placeholder="What did you verify?"></textarea>
     </div>
     <?php if ($canDecide && $hasDupWarnings): ?>
@@ -175,11 +243,79 @@ acm_chrome_open('queue', (string)($ticket['ticket_no'] ?? 'Ticket'), 'Activation
         <button class="btn bo" data-act="note"><i class="fa-solid fa-comment"></i> Add note</button>
         <?php endif; ?>
         <?php if ($canDecide): ?>
-        <button class="btn bp" data-act="approve"><i class="fa-solid fa-check"></i> Approve &amp; provision</button>
+        <button class="btn bp" data-act="approve"><i class="fa-solid fa-check"></i> Approve</button>
         <button class="btn bo" data-act="request_changes"><i class="fa-solid fa-pen"></i> Request changes</button>
         <button class="btn bd" data-act="reject"><i class="fa-solid fa-xmark"></i> Reject</button>
         <?php endif; ?>
     </div>
+    <?php if ($canDecide): ?>
+    <div style="font-size:.75rem;color:var(--dim);margin-top:.5rem"><i class="fa-solid fa-circle-info"></i> Approval authorizes code issuance — no account is created until the user completes activation in the app.</div>
+    <?php endif; ?>
+</div>
+<?php endif; ?>
+
+<?php if ($showCeremony): ?>
+<div class="cd">
+    <div class="ct"><i class="fa-solid fa-key"></i> Activation code</div>
+    <?php $liveCode = is_array($codeInfo['active'] ?? null) ? $codeInfo['active'] : null; ?>
+    <?php $lastCode = is_array($codeInfo['last'] ?? null) ? $codeInfo['last'] : null; ?>
+    <?php if ($liveCode !== null): ?>
+    <dl class="acm-kv">
+        <dt>Selector</dt><dd><?= e((string)($liveCode['selector'] ?? '')) ?> · <?= e((string)($liveCode['prefix'] ?? '')) ?> · <?= e((string)($liveCode['purpose'] ?? '')) ?></dd>
+        <dt>Expires</dt><dd><?= e((string)($liveCode['expires_at'] ?? '')) ?><?= empty($liveCode['live']) ? ' · EXPIRED — reissue to resume' : '' ?></dd>
+        <dt>Attempts left</dt><dd><?= max(0, (int)($liveCode['max_attempts'] ?? 0) - (int)($liveCode['attempts'] ?? 0)) ?> of <?= (int)($liveCode['max_attempts'] ?? 0) ?></dd>
+    </dl>
+    <?php elseif ($lastCode !== null): ?>
+    <dl class="acm-kv">
+        <dt>Last code</dt><dd><?= e((string)($lastCode['selector'] ?? '')) ?> · <?= e(str_replace('_', ' ', (string)($lastCode['status'] ?? ''))) ?></dd>
+        <dt>Attempts used</dt><dd><?= (int)($lastCode['attempts'] ?? 0) ?> of <?= (int)($lastCode['max_attempts'] ?? 0) ?></dd>
+    </dl>
+    <?php else: ?>
+    <div style="font-size:.8rem;color:var(--dim)">No code issued yet.</div>
+    <?php endif; ?>
+    <?php if ((int)($codeInfo['velocity_1h'] ?? 0) >= (int)($codeInfo['velocity_limit'] ?? 30)): ?>
+    <div class="acm-alert err" style="margin-top:.6rem"><i class="fa-solid fa-triangle-exclamation"></i> Unusual verification activity in the last hour (<?= (int)($codeInfo['velocity_1h'] ?? 0) ?> failures). This ticket may be under attack — consider canceling it.</div>
+    <?php endif; ?>
+    <div id="acmCodeOnce" class="acm-alert warn" style="display:none;margin-top:.6rem"></div>
+    <div class="acm-btn-row" style="margin-top:.6rem">
+        <?php if ($canIssueCode): ?>
+        <select class="inp" id="acmIssuePurpose" aria-label="Code purpose" style="max-width:12rem">
+            <option value="activation">Activation code</option>
+            <option value="device_add">Add-a-device code</option>
+        </select>
+        <button class="btn bp" id="acmIssueBtn"><i class="fa-solid fa-key"></i> <?= $liveCode !== null ? 'Reissue code' : 'Issue code' ?></button>
+        <?php endif; ?>
+        <?php if ($canCancel): ?>
+        <input class="inp" id="acmCancelReason" maxlength="2000" placeholder="Cancel reason (required)" style="flex:1;min-width:12rem" aria-label="Cancel reason">
+        <button class="btn bd" id="acmCancelBtn"><i class="fa-solid fa-ban"></i> Cancel ticket</button>
+        <?php endif; ?>
+    </div>
+    <?php if ($canIssueCode): ?>
+    <div style="font-size:.75rem;color:var(--dim);margin-top:.5rem"><i class="fa-solid fa-eye"></i> The full code shows once — read it to the user in person, then it is masked forever. Reissuing kills the previous code.</div>
+    <?php endif; ?>
+</div>
+<?php endif; ?>
+
+<?php if ($showDevices): ?>
+<div class="cd">
+    <div class="ct"><i class="fa-solid fa-mobile-screen"></i> Registered devices</div>
+    <?php if ($deviceRows === null): ?>
+    <div style="font-size:.8rem;color:var(--dim)">Device registry unavailable (migration pending).</div>
+    <?php elseif ($deviceRows === []): ?>
+    <div style="font-size:.8rem;color:var(--dim)">No devices registered yet.</div>
+    <?php else: ?>
+    <dl class="acm-kv">
+        <?php foreach ($deviceRows as $dr): ?>
+        <dt><?= e((string)($dr['name'] ?? 'Unnamed device')) ?> <span class="bg bg-n"><?= e((string)($dr['status'] ?? '')) ?></span></dt>
+        <dd><?= e(DeviceCrypto::shortFingerprint((string)($dr['fingerprint'] ?? ''))) ?> · <?= e((string)($dr['alg'] ?? '')) ?> · last seen <?= e((string)($dr['last_seen'] ?? 'never')) ?>
+            <?php if (($dr['status'] ?? '') !== 'revoked'): ?>
+            <button class="btn bd" data-revoke="<?= e((string)($dr['uuid'] ?? '')) ?>" style="margin-left:.6rem">Revoke</button>
+            <?php endif; ?>
+        </dd>
+        <?php endforeach; ?>
+    </dl>
+    <div style="margin-top:.6rem"><input class="inp" id="acmRevokeReason" maxlength="2000" placeholder="Revoke reason (required)" style="width:100%" aria-label="Revoke reason"></div>
+    <?php endif; ?>
 </div>
 <?php endif; ?>
 
@@ -228,6 +364,79 @@ acm_chrome_open('queue', (string)($ticket['ticket_no'] ?? 'Ticket'), 'Activation
                     if (v) { params.verified_parent_id = v.checked ? 1 : 0; }
                     await acmApi('decide', params, 'POST');
                 }
+                window.location.reload();
+            } catch (err) {
+                acmToast(err.message || 'Action failed.', false);
+                btn.disabled = false;
+            }
+        });
+    });
+    // S3 ceremony buttons (no data-act: custom handlers, no reload on issue).
+    var issueBtn = document.getElementById('acmIssueBtn');
+    if (issueBtn) {
+        issueBtn.addEventListener('click', async function () {
+            issueBtn.disabled = true;
+            try {
+                var purposeEl = document.getElementById('acmIssuePurpose');
+                var purpose = purposeEl ? purposeEl.value : 'activation';
+                var d = await acmApi('code_issue', { id: id, purpose: purpose }, 'POST');
+                var box = document.getElementById('acmCodeOnce');
+                var code = (d.code && d.code.display) ? d.code.display : '';
+                box.style.display = 'block';
+                box.textContent = 'ONE-TIME CODE: ' + code
+                    + ' (expires ' + ((d.code && d.code.expires_at) ? d.code.expires_at : '?')
+                    + '). Read it to the user in person — reloading this page masks it forever.';
+                issueBtn.innerHTML = '<i class="fa-solid fa-key"></i> Reissue code';
+                issueBtn.disabled = false;
+            } catch (err) {
+                acmToast(err.message || 'Action failed.', false);
+                issueBtn.disabled = false;
+            }
+        });
+    }
+    var cancelBtn = document.getElementById('acmCancelBtn');
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', async function () {
+            var reasonEl = document.getElementById('acmCancelReason');
+            var reason = reasonEl ? reasonEl.value.trim() : '';
+            if (reason.length < 3) { acmToast('Write a cancel reason first (min 3 chars).', false); return; }
+            if (cancelBtn.getAttribute('data-armed') !== '1') {
+                cancelBtn.setAttribute('data-armed', '1');
+                cancelBtn.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Click again to cancel';
+                setTimeout(function () {
+                    cancelBtn.setAttribute('data-armed', '');
+                    cancelBtn.innerHTML = '<i class="fa-solid fa-ban"></i> Cancel ticket';
+                }, 5000);
+                return;
+            }
+            cancelBtn.disabled = true;
+            try {
+                await acmApi('ticket_cancel', { id: id, reason: reason }, 'POST');
+                window.location.reload();
+            } catch (err) {
+                acmToast(err.message || 'Action failed.', false);
+                cancelBtn.disabled = false;
+            }
+        });
+    }
+    // S4 device revoke buttons (two-click arm, like cancel).
+    document.querySelectorAll('[data-revoke]').forEach(function (btn) {
+        btn.addEventListener('click', async function () {
+            var reasonEl = document.getElementById('acmRevokeReason');
+            var reason = reasonEl ? reasonEl.value.trim() : '';
+            if (reason.length < 3) { acmToast('Write a revoke reason first (min 3 chars).', false); return; }
+            if (btn.getAttribute('data-armed') !== '1') {
+                btn.setAttribute('data-armed', '1');
+                btn.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Confirm revoke';
+                setTimeout(function () {
+                    btn.setAttribute('data-armed', '');
+                    btn.innerHTML = 'Revoke';
+                }, 5000);
+                return;
+            }
+            btn.disabled = true;
+            try {
+                await acmApi('device_revoke', { id: id, device_uuid: btn.getAttribute('data-revoke'), reason: reason }, 'POST');
                 window.location.reload();
             } catch (err) {
                 acmToast(err.message || 'Action failed.', false);

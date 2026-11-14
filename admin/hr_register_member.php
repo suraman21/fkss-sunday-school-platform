@@ -18,6 +18,8 @@ require_once __DIR__ . '/backend/services/MemberCategory.php';
 require_once __DIR__ . '/backend/services/IdentityCodeService.php';
 require_once __DIR__ . '/backend/services/MemberRegistrationPolicy.php';
 require_once __DIR__ . '/backend/services/MemberDuplicateService.php';
+require_once __DIR__ . '/backend/services/AmharicIdentityNormalizer.php';
+require_once __DIR__ . '/backend/services/MemberCanonicalIdentityService.php';
 require_once __DIR__ . '/backend/services/ApiIdempotencyService.php';
 require_once __DIR__ . '/backend/services/SecurityAuditService.php';
 
@@ -558,6 +560,13 @@ try {
         \App\Services\GuardianService::attachFromLegacy($conn, (int)$newId, $pickedGuardianId, 'hr');
     } catch (\Throwable $glError) {
         error_log('Family Link hook failed for member ' . $newId . ': ' . $glError->getMessage());
+    }
+
+    // Keep versioned search keys transactionally aligned with the original
+    // member fields. This is a no-op until sql/080 is present.
+    if (!\App\Services\MemberCanonicalIdentityService::refresh($conn, (int)$newId)
+        && \App\Services\MemberCanonicalIdentityService::available($conn)) {
+        throw new RuntimeException('Canonical identity refresh failed.');
     }
 
     if (!\App\Services\SecurityAuditService::record(

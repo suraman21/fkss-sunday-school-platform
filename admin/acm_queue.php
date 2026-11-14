@@ -1,18 +1,16 @@
 <?php
 /**
- * ACM P0 — Activation queue. Filterable ticket table.
- * Roles: super_admin, registrar, account_activator.
+ * ACM S1 — Activation queue. Filterable ticket table.
+ * Roles: super_admin, accounts_office.
  */
 define('ACM_BOOT', true);
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/acm_layout.php';
-require_once __DIR__ . '/backend/services/Acm/AcmPolicy.php';
-require_once __DIR__ . '/backend/services/Acm/AcmPersonService.php';
-require_once __DIR__ . '/backend/services/Acm/AcmTicketService.php';
+require_once __DIR__ . '/../acm/autoload.php';
 
-use App\Services\Acm\AcmPersonService;
-use App\Services\Acm\AcmPolicy;
-use App\Services\Acm\AcmTicketService;
+use SSMS\Acm\Accounts\AcmTicketService;
+use SSMS\Acm\Identity\AcmPersonService;
+use SSMS\Acm\Policy\AcmPolicy;
 
 if (!function_exists('isLoggedIn') || !isLoggedIn()) {
     header('Location: index.php');
@@ -53,6 +51,10 @@ try {
 
 $statuses = ['' => 'Open (all)', 'submitted' => 'Submitted', 'in_review' => 'In review',
     'changes_requested' => 'Changes requested', 'approved' => 'Approved',
+    'code_issued' => 'Code issued', 'grant_verified' => 'Grant verified',
+    'account_pending_device' => 'Pending device (S4)', 'active' => 'Active',
+    'expired' => 'Expired', 'activation_failed' => 'Failed (review)',
+    'canceled' => 'Canceled', 'revoked' => 'Revoked',
     'rejected' => 'Rejected', 'provisioned' => 'Provisioned', 'archived' => 'Archived'];
 
 acm_head('Activation queue');

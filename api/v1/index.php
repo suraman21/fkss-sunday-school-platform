@@ -116,6 +116,7 @@ if ($route === '' || $route === 'ping') {
 // ============================================================
 $routeMap = [
     'auth'          => 'auth.php',
+    'acm'           => 'acm.php',
     'members'       => 'members.php',
     'attendance'    => 'attendance.php',
     'classes'       => 'classes.php',

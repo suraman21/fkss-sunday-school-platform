@@ -1,36 +1,58 @@
 <?php
 /**
  * ============================================================
- * ACM P0 console API — Access Control Management.
+ * ACM S1 console API — Access Control Management.
  * ============================================================
  *   GET  ?action=overview                            → KPI stats
  *   GET  ?action=queue[&status=&account_type=&q=&mine=1&overdue=1&limit=&offset=]
  *   GET  ?action=ticket&id=                          → full ticket detail
  *   GET  ?action=person_search&q=                    → person lookup
  *   GET  ?action=person&id=                          → person + accounts + tickets
- *   POST action=person_create                        → create person (registrar)
- *   POST action=person_update                        → edit person (registrar)
- *   POST action=ticket_create                       → submit ticket (registrar)
+ *   POST action=person_create                        → create person (office)
+ *   POST action=person_update                        → edit person (office)
+ *   POST action=ticket_create                       → submit ticket (office)
  *   POST action=claim | release | note               → queue ops
  *   POST action=decide&decision=approve|reject|request_changes
+ *   POST action=code_issue&id=                       → issue activation code (plaintext once)
+ *   GET  ?action=code_status&id=                     → code state (never secret/grant)
+ *   POST action=ticket_cancel&id=&reason=            → cancel + cascade revoke
+ *   GET  ?action=device_list&id=                     → ticket account devices (S4)
+ *   POST action=device_revoke&id=&device_uuid=&reason= → revoke + family cascade (S4)
+ *   GET  ?action=office_mode_get                     → mode + staffing + history
+ *   POST action=office_mode_set                      → switch mode (super_admin)
+ *   GET  ?action=approvers_list | reviewers_list     → active designations
+ *   POST action=approvers_designate | approvers_revoke      (super_admin)
+ *   POST action=reviewers_designate | reviewers_revoke      (super_admin)
+ *   GET  ?action=office_users&q=                     → user search (super_admin)
+ *   GET  ?action=office_audit&month=YYYY-MM          → monthly report + hash
+ *   POST action=office_attest                        → attest month (reviewer)
  *
  * Same JSON contract and security posture as api_identity.php:
  * session auth, ROLE_MAP guard, AcmPolicy per action, CSRF on
  * POST, prepared statements (in services), audit logging.
- * P0 roles: super_admin, registrar, account_activator.
+ * S1 roles: super_admin, accounts_office. Reviewers are a
+ * designation (AcmOfficeService), not a user role.
  * ============================================================
  */
 
 header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/backend/services/SecurityAuditService.php';
-require_once __DIR__ . '/backend/services/Acm/AcmPolicy.php';
-require_once __DIR__ . '/backend/services/Acm/AcmPersonService.php';
-require_once __DIR__ . '/backend/services/Acm/AcmTicketService.php';
+require_once __DIR__ . '/backend/services/RefreshTokenService.php';
+require_once __DIR__ . '/../acm/autoload.php';
 
-use App\Services\Acm\AcmPersonService;
-use App\Services\Acm\AcmPolicy;
-use App\Services\Acm\AcmTicketService;
+use SSMS\Acm\Accounts\AccountProvisioner;
+use SSMS\Acm\Accounts\AcmTicketService;
+use SSMS\Acm\Activation\ActivationService;
+use SSMS\Acm\Activation\CodeAlphabet;
+use SSMS\Acm\Contracts\AccountContext;
+use SSMS\Acm\Contracts\CodePurpose;
+use SSMS\Acm\Device\DeviceCrypto;
+use SSMS\Acm\Device\DeviceService;
+use SSMS\Acm\Identity\AcmPersonService;
+use SSMS\Acm\Office\AcmOfficeService;
+use SSMS\Acm\OfficeNetwork\OfficeNetworkSignal;
+use SSMS\Acm\Policy\AcmPolicy;
 use App\Services\SecurityAuditService;
 
 function acm_ok(array $data = []): void
@@ -66,6 +88,29 @@ if ($method === 'POST' && !validateCsrf($_POST['csrf_token'] ?? null)) {
 
 $persons = new AcmPersonService($pdo);
 $tickets = new AcmTicketService($pdo, $persons);
+$ceremony = new ActivationService($pdo, $tickets, $persons);
+$office = new AcmOfficeService($pdo);
+$provisioner = new AccountProvisioner($pdo);
+// S4 device registry (revoker mirrors the mobile route: mysqli-backed,
+// fails closed without a live handle).
+$consoleRevoker = null;
+if (isset($conn) && $conn instanceof \mysqli) {
+    $consoleRevoker = static function (int $deviceId) use ($conn): int {
+        static $refreshForRevoke = null;
+        if ($refreshForRevoke === null) {
+            $refreshForRevoke = new \App\Services\RefreshTokenService(
+                $conn,
+                static function (): string {
+                    throw new \RuntimeException('Refresh issuance is unavailable here.');
+                },
+                3600 // Unused on the revoke path (TTL applies to issuance only).
+            );
+        }
+        return $refreshForRevoke->revokeDeviceFamilies($deviceId);
+    };
+}
+$devices = new DeviceService($pdo, $tickets, $consoleRevoker);
+$isSuperAdmin = $role === 'super_admin';
 
 function acm_audit(PDO $pdo, string $action, array $details, ?string $entityType, ?int $entityId): void
 {
@@ -213,7 +258,7 @@ try {
             if (!AcmPolicy::can($role, AcmPolicy::RES_TICKET, 'claim')) {
                 acm_err('Access denied.', 403);
             }
-            $ticket = $tickets->release((int)($_POST['id'] ?? 0), $actorId, $role === 'super_admin');
+            $ticket = $tickets->release((int)($_POST['id'] ?? 0), $actorId, $isSuperAdmin);
             acm_audit($pdo, 'acm.ticket.released', [
                 'ticket_no' => (string)($ticket['ticket_no'] ?? ''),
             ], 'acm_ticket', (int)$ticket['id']);
@@ -247,19 +292,341 @@ try {
             if (!AcmPolicy::can($role, AcmPolicy::RES_TICKET, $needed)) {
                 acm_err('Access denied.', 403);
             }
+            $officeCtx = [
+                'mode' => $office->mode(),
+                // Solo mode is designee-only with no super_admin shortcut:
+                // the governed break-glass is a (reasoned, audited)
+                // self-designation first.
+                'is_designee' => $office->isActiveApprover($actorId),
+                'active_officers' => $office->countActiveOfficers(),
+            ];
             $ticket = $tickets->decide(
                 (int)($_POST['id'] ?? 0),
                 $actorId,
                 $decision,
                 (string)($_POST['note'] ?? ''),
-                !empty($_POST['verified_parent_id'])
+                !empty($_POST['verified_parent_id']),
+                $officeCtx
             );
             acm_audit($pdo, 'acm.ticket.' . $decision, [
                 'ticket_no' => (string)($ticket['ticket_no'] ?? ''),
                 'account_type' => (string)($ticket['account_type'] ?? ''),
                 'person_id' => (int)($ticket['person_id'] ?? 0),
+                'mode' => $officeCtx['mode'],
             ], 'acm_ticket', (int)$ticket['id']);
             acm_ok(['ticket' => $ticket]);
+            break;
+        }
+
+        case 'office_mode_get': {
+            acm_ok([
+                'mode' => $office->mode(),
+                'active_officers' => $office->countActiveOfficers(),
+                'is_designee' => $office->isActiveApprover($actorId),
+                'is_reviewer' => $office->isActiveReviewer($actorId),
+                'history' => $office->modeHistory(),
+            ]);
+            break;
+        }
+
+        case 'office_mode_set': {
+            if ($method !== 'POST') {
+                acm_err('Method not allowed.', 405);
+            }
+            $mode = $office->setMode(
+                (string)($_POST['mode'] ?? ''),
+                (string)($_POST['reason'] ?? ''),
+                (string)($_POST['effective_date'] ?? ''),
+                $actorId,
+                $isSuperAdmin
+            );
+            acm_audit($pdo, 'acm.office.mode_set', [
+                'mode' => $mode,
+            ], 'acm_office', null);
+            acm_ok(['mode' => $mode]);
+            break;
+        }
+
+        case 'approvers_list': {
+            acm_ok(['approvers' => $office->approvers()]);
+            break;
+        }
+
+        case 'reviewers_list': {
+            acm_ok(['reviewers' => $office->reviewers()]);
+            break;
+        }
+
+        case 'approvers_designate': {
+            if ($method !== 'POST') {
+                acm_err('Method not allowed.', 405);
+            }
+            $row = $office->designateApprover(
+                (int)($_POST['user_id'] ?? 0),
+                (string)($_POST['reason'] ?? ''),
+                (string)($_POST['effective'] ?? ''),
+                $actorId,
+                $isSuperAdmin
+            );
+            acm_audit($pdo, 'acm.office.approver_designated', [
+                'username' => $row['username'],
+            ], 'acm_office', (int)$row['id']);
+            acm_ok(['designation' => $row]);
+            break;
+        }
+
+        case 'approvers_revoke': {
+            if ($method !== 'POST') {
+                acm_err('Method not allowed.', 405);
+            }
+            $office->revokeApprover(
+                (int)($_POST['user_id'] ?? 0),
+                (string)($_POST['reason'] ?? ''),
+                (string)($_POST['effective'] ?? ''),
+                $actorId,
+                $isSuperAdmin
+            );
+            acm_audit($pdo, 'acm.office.approver_revoked', [
+                'user_id' => (int)($_POST['user_id'] ?? 0),
+            ], 'acm_office', null);
+            acm_ok([]);
+            break;
+        }
+
+        case 'reviewers_designate': {
+            if ($method !== 'POST') {
+                acm_err('Method not allowed.', 405);
+            }
+            $row = $office->designateReviewer(
+                (int)($_POST['user_id'] ?? 0),
+                (string)($_POST['reason'] ?? ''),
+                (string)($_POST['effective'] ?? ''),
+                $actorId,
+                $isSuperAdmin
+            );
+            acm_audit($pdo, 'acm.office.reviewer_designated', [
+                'username' => $row['username'],
+            ], 'acm_office', (int)$row['id']);
+            acm_ok(['designation' => $row]);
+            break;
+        }
+
+        case 'reviewers_revoke': {
+            if ($method !== 'POST') {
+                acm_err('Method not allowed.', 405);
+            }
+            $office->revokeReviewer(
+                (int)($_POST['user_id'] ?? 0),
+                (string)($_POST['reason'] ?? ''),
+                (string)($_POST['effective'] ?? ''),
+                $actorId,
+                $isSuperAdmin
+            );
+            acm_audit($pdo, 'acm.office.reviewer_revoked', [
+                'user_id' => (int)($_POST['user_id'] ?? 0),
+            ], 'acm_office', null);
+            acm_ok([]);
+            break;
+        }
+
+        case 'office_users': {
+            if (!$isSuperAdmin) {
+                acm_err('Access denied.', 403);
+            }
+            $q = trim((string)($_GET['q'] ?? ''));
+            if (mb_strlen($q) < 2) {
+                acm_ok(['users' => []]);
+                break;
+            }
+            $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], mb_substr($q, 0, 60)) . '%';
+            $stmt = $pdo->prepare(
+                'SELECT id, username, full_name, role FROM users'
+                . " WHERE is_active = 1 AND (username LIKE :q ESCAPE '\\'"
+                . " OR full_name LIKE :q ESCAPE '\\') ORDER BY username ASC LIMIT 20"
+            );
+            $stmt->execute([':q' => $like]);
+            acm_ok(['users' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
+            break;
+        }
+
+        case 'office_audit': {
+            if (!AcmPolicy::can($role, AcmPolicy::RES_AUDIT, 'view')) {
+                acm_err('Access denied.', 403);
+            }
+            $month = trim((string)($_GET['month'] ?? date('Y-m')));
+            acm_ok(['report' => $office->auditReport($month)]);
+            break;
+        }
+
+        case 'office_attest': {
+            if ($method !== 'POST') {
+                acm_err('Method not allowed.', 405);
+            }
+            $row = $office->attest(
+                trim((string)($_POST['month'] ?? '')),
+                (string)($_POST['note'] ?? ''),
+                (string)($_POST['report_fingerprint'] ?? ''),
+                $actorId
+            );
+            acm_audit($pdo, 'acm.office.attested', [
+                'month' => (string)($row['month'] ?? ''),
+                'kind' => (string)($row['kind'] ?? ''),
+                'attestation_id' => (int)($row['id'] ?? 0),
+            ], 'acm_office', (int)($row['id'] ?? 0));
+            acm_ok(['attestation' => $row]);
+            break;
+        }
+
+        case 'code_issue': {
+            if ($method !== 'POST') {
+                acm_err('Method not allowed.', 405);
+            }
+            if (!AcmPolicy::can($role, AcmPolicy::RES_CODE, 'issue')) {
+                acm_err('Access denied.', 403);
+            }
+            // Deploy-time policy (D3.7): issuance stays ungated by
+            // default; when acm.office_network_issue is '1' the
+            // issuing browser must also sit on an office network.
+            $signal = $ceremony->networkSignal();
+            if ($signal->gatesIssuance()
+                && !$signal->allows(OfficeNetworkSignal::resolveClientIp($_SERVER, $signal->trustedProxies()))) {
+                acm_err('Code issuance is not available from this network.', 403);
+            }
+            // S4: device_add issuance for add-a-device ceremonies
+            // (strict purpose vocabulary; reset stays closed).
+            $purposeRaw = (string)($_POST['purpose'] ?? 'activation');
+            if ($purposeRaw !== 'activation' && $purposeRaw !== 'device_add') {
+                acm_err('Unknown code purpose.', 400);
+            }
+            $issued = $ceremony->issueCode(
+                new AccountContext($actorId, $role),
+                (string)($_POST['id'] ?? ''),
+                $purposeRaw === 'device_add' ? CodePurpose::DeviceAdd : CodePurpose::Activation
+            );
+            $ticket = $tickets->get((int)($_POST['id'] ?? 0));
+            // Audit carries the public selector only — never the
+            // secret (pin-enforced, test_no_token_or_password_keys).
+            acm_audit($pdo, 'acm.code.issued', [
+                'ticket_no' => (string)($ticket['ticket_no'] ?? ''),
+                'selector' => $issued->selector,
+                'purpose' => $issued->purpose->value,
+                'expires_at' => $issued->expiresAt,
+            ], 'acm_ticket', (int)($ticket['id'] ?? 0));
+            // Plaintext travels ONLY in this response: the page shows
+            // it once, then masks it (D3.2). Never logged, never stored.
+            acm_ok(['code' => [
+                'display' => $issued->display(CodeAlphabet::prefixFor($issued->purpose)),
+                'selector' => $issued->selector,
+                'expires_at' => $issued->expiresAt,
+            ], 'ticket' => $ticket]);
+            break;
+        }
+
+        case 'code_status': {
+            if (!AcmPolicy::can($role, AcmPolicy::RES_CODE, 'view')) {
+                acm_err('Access denied.', 403);
+            }
+            acm_ok(['status' => $ceremony->codeStatus((int)($_GET['id'] ?? 0))]);
+            break;
+        }
+
+        case 'ticket_cancel': {
+            if ($method !== 'POST') {
+                acm_err('Method not allowed.', 405);
+            }
+            if (!AcmPolicy::can($role, AcmPolicy::RES_TICKET, 'cancel')) {
+                acm_err('Access denied.', 403);
+            }
+            $ticket = $tickets->cancel(
+                (int)($_POST['id'] ?? 0), $actorId, (string)($_POST['reason'] ?? '')
+            );
+            acm_audit($pdo, 'acm.ticket.canceled', [
+                'ticket_no' => (string)($ticket['ticket_no'] ?? ''),
+                'account_type' => (string)($ticket['account_type'] ?? ''),
+                'person_id' => (int)($ticket['person_id'] ?? 0),
+            ], 'acm_ticket', (int)$ticket['id']);
+            acm_ok(['ticket' => $ticket]);
+            break;
+        }
+
+        case 'device_list': {
+            if (!AcmPolicy::can($role, AcmPolicy::RES_DEVICE, 'manage')) {
+                acm_err('Access denied.', 403);
+            }
+            $ticket = $tickets->get((int)($_GET['id'] ?? 0));
+            if ($ticket === null) {
+                acm_err('Ticket was not found.', 404);
+            }
+            // Ticket-scoped: officers see only this ticket's account.
+            // Short fingerprints server-side (D4.6 minimalism).
+            $ticketUserId = $provisioner->userIdFor(
+                (int)$ticket['person_id'], (string)$ticket['account_type']
+            );
+            $rows = $ticketUserId === null ? [] : $devices->listForUser($ticketUserId);
+            acm_ok(['devices' => array_map(static function (array $row): array {
+                return [
+                    'device_uuid' => (string)$row['uuid'],
+                    'name' => $row['name'] !== null ? (string)$row['name'] : null,
+                    'fingerprint' => DeviceCrypto::shortFingerprint((string)$row['fingerprint']),
+                    'alg' => (string)$row['alg'],
+                    'status' => (string)$row['status'],
+                    'first_seen' => (string)$row['first_seen'],
+                    'last_seen' => $row['last_seen'] !== null ? (string)$row['last_seen'] : null,
+                    'installation' => substr((string)$row['installation_id'], 0, 8) . '...',
+                ];
+            }, $rows)]);
+            break;
+        }
+
+        case 'device_revoke': {
+            if ($method !== 'POST') {
+                acm_err('Method not allowed.', 405);
+            }
+            if (!AcmPolicy::can($role, AcmPolicy::RES_DEVICE, 'manage')) {
+                acm_err('Access denied.', 403);
+            }
+            $ticket = $tickets->get((int)($_POST['id'] ?? 0));
+            if ($ticket === null) {
+                acm_err('Ticket was not found.', 404);
+            }
+            $ticketUserId = $provisioner->userIdFor(
+                (int)$ticket['person_id'], (string)$ticket['account_type']
+            );
+            // Ticket scope enforced BEFORE the service call (officers
+            // bypass the owner check inside revoke, so the route pins
+            // the device to this ticket's account first).
+            $scopedFp = null;
+            if ($ticketUserId !== null) {
+                foreach ($devices->listForUser($ticketUserId) as $row) {
+                    if (hash_equals((string)$row['uuid'], (string)($_POST['device_uuid'] ?? ''))) {
+                        $scopedFp = (string)$row['fingerprint'];
+                        break;
+                    }
+                }
+            }
+            if ($scopedFp === null) {
+                acm_err('Device was not found for this ticket.', 404);
+            }
+            $report = $devices->revokeWithReport(
+                new AccountContext($actorId, $role),
+                (string)($_POST['device_uuid'] ?? ''),
+                (string)($_POST['reason'] ?? '')
+            );
+            $tickets->recordEvent(
+                (int)$ticket['id'], $actorId, 'device_revoked',
+                (string)($_POST['reason'] ?? ''),
+                [
+                    'device_fp' => DeviceCrypto::shortFingerprint($scopedFp),
+                    'families' => $report['families'],
+                ]
+            );
+            acm_audit($pdo, 'acm.device.revoked', [
+                'ticket_no' => (string)($ticket['ticket_no'] ?? ''),
+                'device_fp' => DeviceCrypto::shortFingerprint($scopedFp),
+                'families' => $report['families'],
+                'already' => $report['already'],
+            ], 'acm_ticket', (int)$ticket['id']);
+            acm_ok(['revoked' => true, 'families' => $report['families']]);
             break;
         }
 

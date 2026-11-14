@@ -5,6 +5,8 @@
  * The signed token format remains in API auth.php. This service owns session
  * persistence, atomic rotation, replay detection, account revalidation, legacy
  * one-time exchange, and family revocation.
+ * S4 adds an OPTIONAL device link (NULLABLE acm_device_id): linked families
+ * die on device revocation; legacy NULL families behave exactly as before.
  */
 namespace App\Services;
 
@@ -16,6 +18,12 @@ final class RefreshTokenService
     /** @var callable */
     private $tokenIssuer;
     private int $refreshTtl;
+    /**
+     * S4: memoized acm_device_id column probe (per request; PHP-FPM
+     * statics reset every request, so a mid-deploy migration flips
+     * safely). Null = not probed yet this request.
+     */
+    private static ?bool $deviceLinkAvailable = null;
 
     public function __construct(\mysqli $database, callable $tokenIssuer, int $refreshTtl)
     {
@@ -24,11 +32,14 @@ final class RefreshTokenService
         $this->refreshTtl = max(300, min($refreshTtl, 31536000));
     }
 
-    /** @param array{id:mixed,username:mixed,role:mixed,full_name:mixed,authorization_version:mixed} $user */
-    public function issue(array $user, string $clientIp, string $userAgent): string
+    /**
+     * @param array{id:mixed,username:mixed,role:mixed,full_name:mixed,authorization_version:mixed} $user
+     * @param int|null $acmDeviceId S4 device link for the new family (null = legacy unlinked).
+     */
+    public function issue(array $user, string $clientIp, string $userAgent, ?int $acmDeviceId = null): string
     {
         $familyId = bin2hex(random_bytes(32));
-        $issued = $this->issueWithinTransaction($user, $familyId, $clientIp, $userAgent);
+        $issued = $this->issueWithinTransaction($user, $familyId, $clientIp, $userAgent, $acmDeviceId);
         return $issued['token'];
     }
 
@@ -130,6 +141,78 @@ final class RefreshTokenService
         }
     }
 
+    /**
+     * S4: revoke every refresh family with at least one session
+     * linked to the device. Legacy (all-NULL) families never match.
+     * Atomic: all-or-nothing in one transaction. Idempotent: repeat
+     * calls revoke nothing new.
+     *
+     * Unlike revokePresented (logout UX, which swallows errors),
+     * failures PROPAGATE: the device row must not flip to revoked
+     * while sessions stay live (fail closed).
+     *
+     * @return int Distinct families revoked (0 if none / pre-084).
+     */
+    public function revokeDeviceFamilies(int $deviceId): int
+    {
+        if ($deviceId <= 0 || !$this->deviceLinkAvailable()) {
+            return 0;
+        }
+        try {
+            $this->database->begin_transaction();
+            $statement = $this->database->prepare(
+                'SELECT DISTINCT family_id FROM api_refresh_sessions WHERE acm_device_id=? FOR UPDATE'
+            );
+            $statement->bind_param('i', $deviceId);
+            $statement->execute();
+            $result = $statement->get_result();
+            $families = [];
+            while ($row = $result->fetch_assoc()) {
+                $families[] = (string)$row['family_id'];
+            }
+            $statement->close();
+            foreach ($families as $familyId) {
+                $this->revokeFamily($familyId);
+            }
+            $this->database->commit();
+            return count($families);
+        } catch (\Throwable $error) {
+            try {
+                $this->database->rollback();
+            } catch (\Throwable $ignored) {
+            }
+            throw $error;
+        }
+    }
+
+    /**
+     * S4: memoized pre-084 probe. Only consulted when a link was
+     * actually requested (or during rotation); unlinked logins pay
+     * zero extra queries.
+     */
+    private function deviceLinkAvailable(): bool
+    {
+        if (self::$deviceLinkAvailable !== null) {
+            return self::$deviceLinkAvailable;
+        }
+        try {
+            $result = $this->database->query(
+                "SHOW COLUMNS FROM api_refresh_sessions LIKE 'acm_device_id'"
+            );
+            self::$deviceLinkAvailable = $result && $result->num_rows === 1;
+            if ($result) {
+                $result->free();
+            }
+        } catch (\Throwable $ignored) {
+            // Probe failure reads as absent: the INSERT/SELECT right
+            // after is the loud gate for genuine database failures,
+            // so a down database still fails loudly there -- never
+            // as a silent unlinked session.
+            self::$deviceLinkAvailable = false;
+        }
+        return self::$deviceLinkAvailable ?? false;
+    }
+
     /** @return array{state:string,token?:string,user?:array<string,mixed>} */
     private function rotateTracked(
         string $presentedToken,
@@ -143,9 +226,13 @@ final class RefreshTokenService
 
         try {
             $this->database->begin_transaction();
+            // S4: select the device link when the 084 column exists
+            // (rotation inherits it below; pre-084 keeps the legacy
+            // shape so refresh never breaks on schema skew).
+            $linkSelect = $this->deviceLinkAvailable() ? ', acm_device_id' : '';
             $statement = $this->database->prepare(
                 'SELECT session_id, family_id, user_id, token_hash, consumed_at, revoked_at,
-                        expires_at
+                        expires_at' . $linkSelect . '
                  FROM api_refresh_sessions WHERE session_id=? LIMIT 1 FOR UPDATE'
             );
             $statement->bind_param('s', $sessionId);
@@ -184,11 +271,14 @@ final class RefreshTokenService
             }
             $user = $account['user'];
 
+            $inheritDevice = isset($session['acm_device_id']) && $session['acm_device_id'] !== null
+                ? (int)$session['acm_device_id'] : null;
             $issued = $this->issueWithinTransaction(
                 $user,
                 (string)$session['family_id'],
                 $clientIp,
-                $userAgent
+                $userAgent,
+                $inheritDevice
             );
             $statement = $this->database->prepare(
                 'UPDATE api_refresh_sessions
@@ -265,6 +355,7 @@ final class RefreshTokenService
                 return ['state' => (string)($account['state'] ?? 'account_removed')];
             }
             $user = $account['user'];
+            // Legacy families stay UNLINKED (S4/D3.8, test 10).
             $issued = $this->issueWithinTransaction($user, $familyId, $clientIp, $userAgent);
             $this->database->commit();
             return ['state' => 'rotated', 'token' => $issued['token'], 'user' => $user];
@@ -281,13 +372,15 @@ final class RefreshTokenService
      * Caller owns transaction boundaries when applicable.
      *
      * @param array{id:mixed,username:mixed,role:mixed,full_name:mixed,authorization_version:mixed} $user
+     * @param int|null $acmDeviceId S4 device link (null = legacy unlinked).
      * @return array{token:string,session_id:string}
      */
     private function issueWithinTransaction(
         array $user,
         string $familyId,
         string $clientIp,
-        string $userAgent
+        string $userAgent,
+        ?int $acmDeviceId = null
     ): array {
         $sessionId = bin2hex(random_bytes(32));
         $expiresAt = time() + $this->refreshTtl;
@@ -308,22 +401,49 @@ final class RefreshTokenService
         $tokenHash = hash('sha256', $token);
         $safeIp = substr($clientIp, 0, 45);
         $agentHash = hash('sha256', $userAgent);
-        $statement = $this->database->prepare(
-            'INSERT INTO api_refresh_sessions
-                (session_id, family_id, user_id, token_hash, expires_at, created_ip, user_agent_hash)
-             VALUES (?, ?, ?, ?, FROM_UNIXTIME(?), ?, ?)'
-        );
         $userId = (int)$user['id'];
-        $statement->bind_param(
-            'ssisiss',
-            $sessionId,
-            $familyId,
-            $userId,
-            $tokenHash,
-            $expiresAt,
-            $safeIp,
-            $agentHash
-        );
+        // S4: record the link only when one was requested AND the
+        // 084 column exists (pre-084 databases take the legacy shape
+        // so S4 code keeps working before the migration -- login must
+        // never break on schema skew; the INSERT itself stays the
+        // loud gate for genuine database failures).
+        $link = ($acmDeviceId !== null && $acmDeviceId > 0 && $this->deviceLinkAvailable())
+            ? $acmDeviceId : null;
+        if ($link !== null) {
+            $statement = $this->database->prepare(
+                'INSERT INTO api_refresh_sessions
+                    (session_id, family_id, user_id, token_hash, expires_at, created_ip,
+                     user_agent_hash, acm_device_id)
+                 VALUES (?, ?, ?, ?, FROM_UNIXTIME(?), ?, ?, ?)'
+            );
+            $statement->bind_param(
+                'ssisissi',
+                $sessionId,
+                $familyId,
+                $userId,
+                $tokenHash,
+                $expiresAt,
+                $safeIp,
+                $agentHash,
+                $link
+            );
+        } else {
+            $statement = $this->database->prepare(
+                'INSERT INTO api_refresh_sessions
+                    (session_id, family_id, user_id, token_hash, expires_at, created_ip, user_agent_hash)
+                 VALUES (?, ?, ?, ?, FROM_UNIXTIME(?), ?, ?)'
+            );
+            $statement->bind_param(
+                'ssisiss',
+                $sessionId,
+                $familyId,
+                $userId,
+                $tokenHash,
+                $expiresAt,
+                $safeIp,
+                $agentHash
+            );
+        }
         $statement->execute();
         $statement->close();
 

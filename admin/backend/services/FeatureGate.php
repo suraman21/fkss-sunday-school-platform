@@ -23,6 +23,8 @@ final class FeatureGate
         'attendance_v2' => 'FEATURE_ATTENDANCE_V2',
         'export_pdf' => 'FEATURE_EXPORT_PDF',
         'monitor' => 'FEATURE_MONITOR',
+        // Review-only Telegram registration. Default OFF; requires sql/080 and deployment-local secrets.
+        'telegram_registration' => 'FEATURE_TELEGRAM_REGISTRATION',
     ];
 
     /** @return list<string> */
@@ -33,6 +35,9 @@ final class FeatureGate
 
     public static function isEnabled(string $feature): bool
     {
+        if ($feature === 'telegram_registration' && defined('TELEGRAM_REGISTRATION_MANAGED_ENABLED')) {
+            return TELEGRAM_REGISTRATION_MANAGED_ENABLED === true;
+        }
         $constant = self::CONSTANTS[$feature] ?? null;
         if ($constant === null || !defined($constant)) {
             return false;

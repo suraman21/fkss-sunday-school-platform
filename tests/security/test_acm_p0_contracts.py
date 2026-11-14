@@ -8,7 +8,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SQL = ROOT / "sql" / "079_acm_p0_foundation.sql"
-SVC = ROOT / "admin" / "backend" / "services" / "Acm"
+SVC = ROOT / "admin" / "backend" / "services" / "Acm"  # S2: shims only
+ACMSRC = ROOT / "acm" / "src"  # S2: the implementation lives here
 API = ROOT / "admin" / "api_acm.php"
 PAGES = [ROOT / "admin" / n for n in (
     "acm_overview.php", "acm_queue.php", "acm_ticket.php", "acm_person.php",
@@ -46,37 +47,51 @@ def test_migration_touches_no_existing_table():
 # ---- policy ----
 
 def test_policy_deny_by_default_and_p0_roles():
-    s = read(SVC / "AcmPolicy.php")
+    s = read(ACMSRC / "Policy" / "AcmPolicy.php")
     assert "return false;" in s
-    assert "'registrar'" in s and "'account_activator'" in s
+    # S1: one accounts_office seat; old seat names are gone from policy.
+    assert "'accounts_office'" in s
+    assert "'registrar'" not in s and "'account_activator'" not in s
     assert "consoleRoles" in s
-    # maker-checker split: registrar creates, activator decides, never both
-    reg = s.split("'registrar'")[1].split("],")[0]
-    act = s.split("'account_activator'")[1].split("],")[0]
-    assert "'create'" in reg and "'approve'" not in reg
-    assert "'approve'" in act and "'create'" not in act
+    # Office holds the union of lifecycle rights (maker-checker moved to
+    # user-ID comparison in the ticket service, pinned in S1 tests).
+    assert "'create'" in s and "'approve'" in s
+    # Governance deny-list: office holds zero office/approver/reviewer/
+    # attest rights (empty sets, not missing keys).
+    for res in ("office", "approver", "reviewer", "attest"):
+        assert re.search(r"'" + res + r"'\s*=>\s*\[\]", s), res
 
 
 # ---- services ----
 
 def test_services_use_prepared_statements_only():
-    for name in ("AcmPersonService.php", "AcmTicketService.php"):
-        s = read(SVC / name)
-        assert "->prepare(" in s, name
-        assert "$_GET" not in s and "$_POST" not in s, name  # no superglobals
+    for path in (ACMSRC / "Identity" / "AcmPersonService.php",
+                 ACMSRC / "Accounts" / "AcmTicketService.php"):
+        s = read(path)
+        assert "->prepare(" in s, path.name
+        assert "$_GET" not in s and "$_POST" not in s, path.name  # no superglobals
         # No interpolated variables straight into SQL strings.
         for m in re.finditer(r"prepare\(\s*['\"](.*?)['\"]", s, re.S):
-            assert "$" not in m.group(1), f"{name}: {m.group(1)[:60]}"
+            assert "$" not in m.group(1), f"{path.name}: {m.group(1)[:60]}"
 
 
 def test_ticket_state_machine_pins():
-    s = read(SVC / "AcmTicketService.php")
+    s = read(ACMSRC / "Accounts" / "AcmTicketService.php")
     assert "FOR UPDATE" in s  # decide/claim are row-locked
     assert "beginTransaction" in s and "rollBack" in s
     assert "Maker-checker" in s or "maker-checker" in s
     assert "submitter_id'] === $userId" in s or 'submitter_id"] === $userId' in s
-    assert "password_hash(bin2hex(random_bytes(32))" in s  # unusable P0 credential
-    assert "acm_person_accounts" in s  # provision links person<->user
+    # S3 cutover: approve authorizes issuance, it no longer provisions.
+    assert "status = 'approved'" in s or "status = \\'approved\\'" in s
+    assert "addEvent($id, $userId, 'provisioned'" not in s
+    # S3: provisioning (users row + person link) moved to
+    # AccountProvisioner, called from grant-backed
+    # establishCredentials with the user's own password.
+    p = read(ACMSRC / "Accounts" / "AccountProvisioner.php")
+    assert "INSERT INTO users" in p
+    assert "acm_person_accounts" in p  # provision links person<->user
+    assert "is_active" in p and ", 0," in p  # created INACTIVE until S4
+    assert "23000" in p  # unique-constraint username retry (D3.4)
 
 
 def test_no_token_or_password_keys_in_audit_details():
@@ -145,44 +160,46 @@ def test_ticket_page_hides_decide_from_submitter():
 def test_role_map_covers_all_acm_scripts():
     s = read(GUARD)
     for name in ("api_acm.php", "acm_overview.php", "acm_queue.php",
-                 "acm_ticket.php", "acm_person.php", "acm_layout.php"):
+                 "acm_ticket.php", "acm_person.php", "acm_office.php",
+                 "acm_audit.php", "acm_layout.php"):
         pattern = re.compile(re.escape(f"'{name}'") + r"\s*=>\s*\[([^\]]+)\]")
         m = pattern.search(s)
         assert m, name
         roles = m.group(1)
         assert "'super_admin'" in roles, name
-        assert "'registrar'" in roles, name
-        assert "'account_activator'" in roles, name
+        assert "'accounts_office'" in roles, name
+        assert "'registrar'" not in roles and "'account_activator'" not in roles, name
         assert "'member'" not in roles and "'parent'" not in roles, name
 
 
 def test_dashboard_routes_new_roles_to_acm():
     s = read(ROUTER)
-    assert "case 'registrar':" in s
-    assert "case 'account_activator':" in s
+    assert "case 'accounts_office':" in s
+    assert "case 'registrar':" not in s
+    assert "case 'account_activator':" not in s
     assert "acm_overview.php" in s
 
 
 def test_seats_creatable_via_ui_but_member_parent_are_not():
     save = read(ROOT / "admin" / "backend" / "user-save.php")
     block = save.split("$validRoles = [")[1].split("];")[0]
-    assert "'registrar'" in block
-    assert "'account_activator'" in block
+    assert "'accounts_office'" in block
+    assert "'registrar'" not in block and "'account_activator'" not in block
     assert "'member'" not in block and "'parent'" not in block
     users = read(ROOT / "admin" / "users.php")
-    assert "'registrar' => 'Registrar (ACM)'" in users
-    assert "'account_activator' => 'Account Activator (ACM)'" in users
+    assert "'accounts_office' => 'Accounts Office (ACM)'" in users
 
 
 def test_inline_dashboard_dropdown_and_toggle_cover_acm_seats():
     dash = read(ROOT / "admin" / "dashboards" / "super-admin.php")
-    assert "'registrar' => 'Registrar (ACM)'" in dash
-    assert "'account_activator' => 'Account Activator (ACM)'" in dash
+    assert "'accounts_office' => 'Accounts Office (ACM)'" in dash
+    assert "'registrar'" not in dash and "'account_activator'" not in dash
     toggle = read(ROOT / "admin" / "backend" / "user-toggle.php")
     super_row = next(ln for ln in toggle.splitlines() if "'super_admin' =>" in ln)
-    assert "'registrar'" in super_row and "'account_activator'" in super_row
+    assert "'accounts_office'" in super_row
+    assert "'registrar'" not in toggle and "'account_activator'" not in toggle
     school_row = next(ln for ln in toggle.splitlines() if "'school_admin' =>" in ln)
-    assert "'registrar'" not in school_row and "'account_activator'" not in school_row
+    assert "'accounts_office'" not in school_row
 
 
 def test_console_uses_school_admin_theme_with_modes():
