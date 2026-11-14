@@ -51,7 +51,7 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn("private function editAnswer(", self.service)
         begin = self.service[self.service.index("private function begin"):self.service.index("private function profileChoice")]
         self.assertNotIn("cancelActive", begin)
-        self.assertIn("You already have an unfinished draft", begin)
+        self.assertIn("ያልተጠናቀቀ ምዝገባ አለ", begin)
         self.assertIn("edit_return_to_review=0", self.service)
         self.assertIn("TelegramFormRegistry::label($key)", self.service)
         self.assertIn("edit_return_to_review", self.phase2_migration)
@@ -200,6 +200,12 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn('id="sessionSort"', page)
         self.assertIn('id="sessionPrev"', page)
         self.assertIn('id="sessionNext"', page)
+
+    def test_bot_questions_do_not_duplicate_english_prompts(self):
+        self.assertNotIn("$field['prompt_en']", self.service)
+        self.assertNotIn("skip this optional question", self.service)
+        self.assertIn("ይህ ጥያቄ አማራጭ ነው", self.service)
+        self.assertIn("የምዝገባ ዓይነት ይምረጡ።", self.service)
 
     def test_submission_never_inserts_member(self):
         submit = self.service[self.service.index("private function submitReview"):]
@@ -379,7 +385,7 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         for key in ["full_name_am", "dob_ec", "phone_number", "baptismal_name", "gender"]:
             self.assertIn(key, registration)
         self.assertIn("More plausible candidates exist than the safe display limit", registration)
-        self.assertIn("/skip — ዝለል", registration)
+        self.assertIn("ይህ ጥያቄ አማራጭ ነው", registration)
         self.assertIn("candidate_cap_reached", api)
         self.assertIn("results are never silently expanded", page)
 
