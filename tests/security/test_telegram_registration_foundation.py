@@ -117,7 +117,7 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn("can_transfer", transfer)
         self.assertIn("'waiting','direct','transfer'", transfer)
         self.assertIn("$profile==='transfer'?'transfer':'direct'", approval)
-        self.assertIn("WHERE s.status IN ('submitted','approved')", api)
+        self.assertIn("s.status IN ('submitted','approved')", api)
         self.assertIn('data-profile="transfer"', page)
         self.assertIn("name=\"can_transfer\"", page)
         self.assertIn("dialog-close", page)
@@ -178,6 +178,17 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn("'❌ ሰርዝ'", self.service)
         self.assertIn("'▶️ ቀጥል'", self.service)
         self.assertNotIn("/new — start", self.service)
+
+    def test_approval_queue_filters_are_allowlisted_bounded_and_debounced(self):
+        api = (ROOT / "admin/api_telegram_registration.php").read_text(encoding="utf-8")
+        page = (ROOT / "admin/telegram_registration.php").read_text(encoding="utf-8")
+        self.assertIn("['waiting','direct','transfer']", api)
+        self.assertIn("['not_checked','none','possible','likely','error']", api)
+        self.assertIn("mb_substr($search,0,80", api)
+        self.assertIn("an.value_text LIKE ?", api)
+        self.assertIn('id="sessionProfile"', page)
+        self.assertIn('id="sessionDuplicate"', page)
+        self.assertIn("setTimeout(()=>loadSessions", page)
 
     def test_submission_never_inserts_member(self):
         submit = self.service[self.service.index("private function submitReview"):]
