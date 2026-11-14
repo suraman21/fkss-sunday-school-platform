@@ -99,7 +99,7 @@ final class TelegramRegistrationService
     private function begin(int $chatId, array $actor): array
     {
         $actorId=(int)$actor['id'];
-        if($this->activeSession($actorId,$chatId)!==null)return self::message($chatId,'You already have an unfinished draft. Use /resume to continue it, or /cancel before starting a new one.',self::homeKeyboard(true));
+        if($this->activeSession($actorId,$chatId)!==null)return self::message($chatId,'ያልተጠናቀቀ ምዝገባ አለ። «ቀጥል» የሚለውን ይጫኑ፤ አዲስ ለመጀመር የቀድሞውን ይሰርዙ።',self::homeKeyboard(true));
         $dailyLimit=max(1,min(200,(int)($actor['daily_registration_limit']??50)));
         $statement=$this->conn->prepare('SELECT COUNT(*) n FROM telegram_registration_sessions WHERE bot_user_id=? AND created_at>=CURRENT_DATE');$statement->bind_param('i',$actorId);$statement->execute();$used=(int)($statement->get_result()->fetch_assoc()['n']??0);$statement->close();
         if($used>=$dailyLimit){$this->audit('telegram',(int)$actor['telegram_user_id'],'daily_limit_reached','bot_user',$actorId,'denied');return self::message($chatId,'Daily registration draft limit reached. Contact an administrator if more capacity is required.');}
@@ -117,14 +117,14 @@ final class TelegramRegistrationService
         if ((int)$actor['can_direct']===1) $buttons[]=[['text'=>'⚡ ቀጥታ ምዝገባ']];
         if ((int)($actor['can_transfer']??0)===1) $buttons[]=[['text'=>'🔄 የዝውውር ምዝገባ']];
         $buttons[]=[['text'=>'❌ ሰርዝ']];
-        return self::message($chatId,'የምዝገባ ዓይነት ይምረጡ። / Choose registration type.', ['keyboard'=>$buttons,'resize_keyboard'=>true,'one_time_keyboard'=>true]);
+        return self::message($chatId,'የምዝገባ ዓይነት ይምረጡ።', ['keyboard'=>$buttons,'resize_keyboard'=>true,'one_time_keyboard'=>true]);
     }
 
     private function chooseProfile(array $session,array $actor,string $text): array
     {
         $profile = str_contains(strtolower($text),'transfer') || str_contains($text,'ዝውውር') ? 'transfer' : (str_contains(strtolower($text),'direct') || str_contains($text,'ቀጥታ') ? 'direct' : (str_contains(strtolower($text),'temporary') || str_contains($text,'ጊዜያዊ') ? 'waiting' : ''));
         if ($profile==='' || ($profile==='direct' && (int)$actor['can_direct']!==1) || ($profile==='transfer' && (int)($actor['can_transfer']??0)!==1) || ($profile==='waiting' && (int)$actor['can_waiting']!==1)) {
-            return self::message((int)$session['telegram_chat_id'],'Choose one of the allowed registration types.');
+            return self::message((int)$session['telegram_chat_id'],'ከተፈቀዱት የምዝገባ ዓይነቶች አንዱን ይምረጡ።');
         }
         $statement=$this->conn->prepare("SELECT id,version FROM telegram_form_profiles WHERE profile_key=? AND status='published' ORDER BY version DESC LIMIT 1");
         $statement->bind_param('s',$profile); $statement->execute(); $form=$statement->get_result()->fetch_assoc(); $statement->close();
@@ -181,7 +181,7 @@ final class TelegramRegistrationService
         $lines[]=$state==='none'?'✅ No indexed duplicate candidate found.':($state==='likely'?'🚨 Likely duplicate candidate found — HR must review.':($state==='possible'?'⚠️ Possible duplicate candidate found — HR must review.':'ℹ️ Duplicate check: '.$state));
         $duplicateMeta=json_decode((string)($fresh['duplicate_summary']??''),true);if(is_array($duplicateMeta)&&!empty($duplicateMeta['capped']))$lines[]='More plausible candidates exist than the safe display limit. Add or verify date of birth and phone so HR can refine the result.';
         $editable=array_keys($answers);if($editable!==[])$lines[]='Edit one answer: /edit '.implode(', /edit ',$editable);
-        $lines[]='No member will be created now. Submit this draft to HR for review.';
+        $lines[]='አሁን የአባል መዝገብ አይፈጠርም። መረጃውን ለሰው ኃይል ግምገማ ይላኩ።';
         return self::message((int)$session['telegram_chat_id'],implode("\n",$lines),['keyboard'=>[[['text'=>'✅ ላክ'],['text'=>'✏️ አርም']],[['text'=>'❌ ሰርዝ']]],'resize_keyboard'=>true]);
     }
 
@@ -243,7 +243,7 @@ final class TelegramRegistrationService
         $text=$this->promptText($field); if($prefix)$text=$prefix."\n\n".$text;
         return self::message((int)$session['telegram_chat_id'],$text,$keyboard);
     }
-    private function promptText(array $field): string { $text=(string)$field['prompt_am']."\n".(string)$field['prompt_en'].((string)($field['help_am']??'')!==''?"\n\nℹ️ ".$field['help_am']." / ".$field['help_en']:'');if((int)($field['is_required']??0)!==1)$text.="\n\n/skip — ዝለል / skip this optional question";return $text; }
+    private function promptText(array $field): string { $text=(string)$field['prompt_am'].((string)($field['help_am']??'')!==''?"\n\nℹ️ ".$field['help_am']:'');if((int)($field['is_required']??0)!==1)$text.="\n\nይህ ጥያቄ አማራጭ ነው፤ «ዝለል» የሚለውን መጫን ይችላሉ።";return $text; }
 
     /** @return array<string,string> */
     private function sectionOptions(): array
