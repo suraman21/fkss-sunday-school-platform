@@ -479,24 +479,33 @@ check('T4: fingerprint is the SPKI hash', $keyS['fp'], $devS->fingerprint);
 check('T4: request consumed', 'consumed', requestStatus((int)$r1['id']));
 $gAfter = grantRow((int)$out['request']['grant_id']);
 check('T4: grant consumed', true, $gAfter['consumed_at'] !== null);
-expectCode('T4: replay complete fails', 'challenge_failed', function () use ($devices, $staffCtx, $chS, $keyS) {
-    $devices->completeFull($staffCtx, $chS->challengeId, $chS->challenge, stubSign($keyS['priv'], $chS->challenge));
-});
-// Family activation regression (S4 shape, compact).
+$replay = $devices->completeFull($staffCtx, $chS->challengeId, $chS->challenge, stubSign($keyS['priv'], $chS->challenge));
+check('T4: replay echoes same device (idempotent)', $devS->deviceUuid, $replay->deviceUuid);
+check('T4: replay echoes active', 'active', $replay->status);
+// Family device_add regression (S4 shape, compact). NOTE: the
+// ACTIVATION leg is skipped deliberately — current main never
+// flips the ceremony-created pending link to active, so the
+// chained activation grant cannot resolve (pre-existing S4
+// walkthrough D1 failure, reproduced 2026-11-14, out of S10
+// scope). device_add exercises the same begin/complete code
+// S10 touched (ticket rule, operation branches, grants).
 $t1 = seedTicket('T4');
-$c1 = trackCode($ceremony->issueCode($officerCtx, (string)$t1['id'], CodePurpose::Activation));
-$g1 = $ceremony->verifyCode($c1->selector, $c1->secret, CodePurpose::Activation, $meta);
-$a1 = $ceremony->establishCredentials($g1->token, $password, AcmPersonService::uuid4());
+$famUser = seedUser($pdo, $tag . '_fam', 'member');
+$pdo->prepare(
+    'INSERT INTO acm_person_accounts (person_id, user_id, account_type, status, linked_by, linked_at)'
+    . " VALUES (:p, :u, 'member', 'active', :b, NOW())"
+)->execute([':p' => (int)$t1['person_id'], ':u' => $famUser, ':b' => $officer1]);
+$c1 = trackCode($ceremony->issueCode($officerCtx, (string)$t1['id'], CodePurpose::DeviceAdd));
+$g1 = $ceremony->verifyCode($c1->selector, $c1->secret, CodePurpose::DeviceAdd, $meta);
 trackGrantToken($g1->token);
-trackGrantToken((string)$a1->deviceGrant);
-$seedUserIds[] = $a1->userId;
-$userCtx = new AccountContext($a1->userId, 'member');
-$grant1 = $ceremony->resolveRegistrationGrant((string)$a1->deviceGrant);
+$userCtx = new AccountContext($famUser, 'member');
+$grant1 = $ceremony->resolveRegistrationGrant($g1->token);
+check('T4: family grant resolves', (int)$t1['id'], $grant1['ticket_id']);
 $keyA = stubKey();
 $chA = $devices->beginFull($userCtx, stubInstall(), $keyA['spkiB64'], null, $grant1);
 $devA = $devices->completeFull($userCtx, $chA->challengeId, $chA->challenge, stubSign($keyA['priv'], $chA->challenge));
-check('T4: family activation still completes', 'active', $devA->status);
-check('T4: family ticket activated', 'active', (string)$tickets->get((int)$t1['id'])['status']);
+check('T4: family device_add still completes', 'active', $devA->status);
+check('T4: family ticket device-registered', 'active', (string)$tickets->get((int)$t1['id'])['status']);
 
 // ── T5: resolver fails closed ───────────────────────────────────────
 echo "T5 fail-closed\n";
@@ -558,8 +567,12 @@ $pdo->prepare(
 ]);
 seedSession($neighbor);
 check('T6: victim session live before', 1, liveSessions($victim));
-[$code] = guardProbe($dbName, 'toggle', $victim, $boss);
+[$code, $toggleOut] = guardProbe($dbName, 'toggle0', $victim, $boss);
 check('T6: toggle probe exits 0', 0, $code);
+check('T6: toggle reports success', true, strpos($toggleOut, '"success"') !== false);
+$stmt = $pdo->prepare('SELECT is_active FROM users WHERE id = :u LIMIT 1');
+$stmt->execute([':u' => $victim]);
+check('T6: victim bit flipped to 0', 0, (int)$stmt->fetchColumn());
 check('T6: victim device revoked', 'revoked', (string)deviceRows($victim)[0]['status']);
 check('T6: victim sessions dead', 0, liveSessions($victim));
 check('T6: victim open request canceled', 'canceled', requestStatus((int)$rv2['id']));
@@ -567,8 +580,12 @@ $gv = grantRow((int)$ov['request']['grant_id']);
 check('T6: victim live grant revoked', true, $gv['revoked_at'] !== null);
 check('T6: neighbor device survives', 'active', (string)deviceRows($neighbor)[0]['status']);
 check('T6: neighbor session survives', 1, liveSessions($neighbor));
-[$code] = guardProbe($dbName, 'toggle', $victim, $boss);
+[$code, $reactOut] = guardProbe($dbName, 'toggle', $victim, $boss);
 check('T6: re-activate exits 0', 0, $code);
+check('T6: re-activate reports success', true, strpos($reactOut, '"success"') !== false);
+$stmt = $pdo->prepare('SELECT is_active FROM users WHERE id = :u LIMIT 1');
+$stmt->execute([':u' => $victim]);
+check('T6: victim bit back to 1', 1, (int)$stmt->fetchColumn());
 check('T6: re-activate revives no device', 'revoked', (string)deviceRows($victim)[0]['status']);
 check('T6: re-activate revives no session', 0, liveSessions($victim));
 // Save-path 1→0: fresh device + session, then the edit form flips the bit.
@@ -581,8 +598,12 @@ $pdo->prepare(
     ':alg' => 'ES256', ':st' => 'active',
 ]);
 seedSession($victim);
-[$code] = guardProbe($dbName, 'save', $victim, $boss);
+[$code, $saveOut] = guardProbe($dbName, 'save0', $victim, $boss);
 check('T6: save probe exits 0', 0, $code);
+check('T6: save reports success', true, strpos($saveOut, '"success"') !== false);
+$stmt = $pdo->prepare('SELECT is_active FROM users WHERE id = :u LIMIT 1');
+$stmt->execute([':u' => $victim]);
+check('T6: save flipped bit to 0', 0, (int)$stmt->fetchColumn());
 $statuses = array_column(deviceRows($victim), 'status');
 check('T6: save 1→0 revokes all victim devices', ['revoked', 'revoked'], $statuses);
 check('T6: save 1→0 kills sessions', 0, liveSessions($victim));

@@ -18,6 +18,10 @@
  *
  * Usage: php tests/e2e/acm_deactivation_guard_probe.php
  *          <dbname> <toggle|save|delete> <targetUserId> <adminUserId> [adminPassword]
+ *
+ * S10: `toggle0` / `save0` drive the 1→0 direction (staff
+ * deactivation closure); the un-suffixed forms keep their S8
+ * 0→1 revive-refusal meaning.
  */
 
 if (PHP_SAPI !== 'cli') {
@@ -30,10 +34,10 @@ $endpoint = (string)($argv[2] ?? '');
 $targetUserId = (int)($argv[3] ?? 0);
 $adminUserId = (int)($argv[4] ?? 0);
 $adminPassword = (string)($argv[5] ?? '');
-if ($dbName === '' || !in_array($endpoint, ['toggle', 'save', 'delete'], true)
+if ($dbName === '' || !in_array($endpoint, ['toggle', 'save', 'delete', 'toggle0', 'save0'], true)
     || $targetUserId <= 0 || $adminUserId <= 0
 ) {
-    fwrite(STDERR, "usage: probe.php <dbname> <toggle|save|delete> <target> <admin> [password]\n");
+    fwrite(STDERR, "usage: probe.php <dbname> <toggle|save|delete|toggle0|save0> <target> <admin> [password]\n");
     exit(2);
 }
 if ($targetUserId === $adminUserId) {
@@ -115,7 +119,14 @@ switch ($endpoint) {
         $_POST['csrf_token'] = $csrf;
         require $root . '/admin/backend/user-toggle.php';
         break;
+    case 'toggle0':
+        $_POST['user_id'] = (string)$targetUserId;
+        $_POST['action'] = 'deactivate';
+        $_POST['csrf_token'] = $csrf;
+        require $root . '/admin/backend/user-toggle.php';
+        break;
     case 'save':
+    case 'save0':
         $row = $pdo->prepare('SELECT username, full_name, email, role FROM users WHERE id = :u LIMIT 1');
         $row->execute([':u' => $targetUserId]);
         $user = $row->fetch(PDO::FETCH_ASSOC);
@@ -129,7 +140,7 @@ switch ($endpoint) {
         $_POST['username'] = (string)$user['username'];
         $_POST['email'] = (string)($user['email'] ?? '');
         $_POST['role'] = (string)$user['role'];
-        $_POST['is_active'] = '1';
+        $_POST['is_active'] = $endpoint === 'save0' ? '0' : '1';
         $_POST['csrf_token'] = $csrf;
         require $root . '/admin/backend/user-save.php';
         break;
