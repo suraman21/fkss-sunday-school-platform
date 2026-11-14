@@ -84,6 +84,17 @@ final class RefreshTokenService
            AND revoked_at IS NULL AND expires_at>CURRENT_TIMESTAMP
          LIMIT 2';
 
+    // S9: same bounded row + the S5 binding columns (one lookup feeds
+    // the liveness verdict AND the proof requirement -- no TOCTOU
+    // between a check and a re-check, no second query per request).
+    private const ACCESS_SESSION_PROOF_SQL =
+        'SELECT session_id, acm_bound, acm_device_id FROM api_refresh_sessions
+         WHERE session_id=? AND family_id=? AND user_id=?
+           AND revoked_at IS NULL AND expires_at>CURRENT_TIMESTAMP
+         LIMIT 2';
+
+    private static ?bool $proofBindingAvailable = null;
+
     /**
      * The signed access token's issuing refresh session must still exist,
      * match owner/family, be unrevoked and unexpired. Consumption is NOT
@@ -116,6 +127,83 @@ final class RefreshTokenService
         } finally {
             $statement->close();
         }
+    }
+
+    /**
+     * S9: liveness + proof binding in one bounded read. Null when the
+     * session is inactive (same verdict set as accessSessionIsActive:
+     * malformed identifiers, missing/revoked/expired row); otherwise
+     * ['bound' => bool, 'device_id' => int]. Bound-without-link is
+     * corrupt (issue() makes it impossible): reads INACTIVE, never
+     * silently unbound (S5 rotateTracked precedent). Pre-086 schema
+     * reads as unbound -- bound families cannot exist without the
+     * column, so that is ground truth, not a downgrade (login's
+     * pre-migration probe philosophy).
+     *
+     * @return array{bound:bool,device_id:int}|null
+     */
+    public static function accessSessionProofBinding(\mysqli $database, int $userId, string $familyId, string $sessionId): ?array
+    {
+        if ($userId <= 0 || !preg_match('/^[a-f0-9]{64}$/D', $familyId)
+            || !preg_match('/^[a-f0-9]{64}$/D', $sessionId)) {
+            return null;
+        }
+        if (!self::proofBindingAvailable($database)) {
+            // Column missing: fall back to the liveness-only read so
+            // pre-086 deployments keep today's behavior exactly.
+            return self::accessSessionIsActive($database, $userId, $familyId, $sessionId)
+                ? ['bound' => false, 'device_id' => 0]
+                : null;
+        }
+        $statement = $database->prepare(self::ACCESS_SESSION_PROOF_SQL);
+        if (!$statement) throw new \RuntimeException('Refresh-family lookup unavailable.');
+        try {
+            if (!$statement->bind_param('ssi', $sessionId, $familyId, $userId) || !$statement->execute()) {
+                throw new \RuntimeException('Refresh-family lookup failed.');
+            }
+            $result = $statement->get_result();
+            if (!$result) throw new \RuntimeException('Refresh-family result unavailable.');
+            try {
+                $row = $result->fetch_assoc();
+                if ($result->num_rows !== 1 || ($row['session_id'] ?? null) !== $sessionId) {
+                    return null;
+                }
+                $bound = (int)($row['acm_bound'] ?? 0) === 1;
+                $deviceId = (int)($row['acm_device_id'] ?? 0);
+                if ($bound && $deviceId <= 0) {
+                    return null;
+                }
+                return ['bound' => $bound, 'device_id' => $deviceId];
+            } finally {
+                $result->free();
+            }
+        } finally {
+            $statement->close();
+        }
+    }
+
+    /**
+     * Memoized pre-086 probe (deviceLinkAvailable() precedent):
+     * probe failure reads as absent, and the SELECT right after
+     * is the loud gate for a genuinely down database.
+     */
+    private static function proofBindingAvailable(\mysqli $database): bool
+    {
+        if (self::$proofBindingAvailable !== null) {
+            return self::$proofBindingAvailable;
+        }
+        try {
+            $result = $database->query(
+                "SHOW COLUMNS FROM api_refresh_sessions LIKE 'acm_bound'"
+            );
+            self::$proofBindingAvailable = $result && $result->num_rows === 1;
+            if ($result) {
+                $result->free();
+            }
+        } catch (\Throwable $ignored) {
+            self::$proofBindingAvailable = false;
+        }
+        return self::$proofBindingAvailable ?? false;
     }
 
     /** @param array<string,mixed> $payload */

@@ -30,6 +30,14 @@
  * RESULT_REPLAY); throws RuntimeException only when ext-openssl
  * is missing or the database fails -- the caller maps both to
  * 'unavailable' (503, fail closed: verification is never skipped).
+ *
+ * S9 adds per-request proofs (verifyForRequest): the same
+ * parse/validate/verify/claim pipeline with (method, request
+ * path, token hash) claims instead of the rotation's fixed
+ * (POST, refresh route). It runs OUTSIDE any ambient
+ * transaction (each API request is its own autocommit unit);
+ * replay atomicity comes from the jti PRIMARY KEY, not from a
+ * shared commit. The rotation entry point is untouched.
  */
 
 namespace SSMS\Acm\Device;
@@ -86,6 +94,91 @@ final class DeviceRefreshProofs
     }
 
     /**
+     * Verify a bound-family per-request proof (S9). Same pipeline
+     * as rotation -- active key, parse, claims, signature,
+     * single-use jti -- with the request's own (method, path,
+     * token hash). The $htuPath is the server-reconstructed
+     * request path (query already stripped by the caller).
+     *
+     * @param \mysqli $db       Caller handle (NO ambient
+     *                         transaction; the jti claim is its own
+     *                         autocommit unit, atomic via PRIMARY KEY).
+     * @param int     $deviceId Family's linked device id (> 0).
+     * @param string  $proof    Raw DPoP compact JWT from the header.
+     * @param string  $accessToken Presented Bearer token (for ath).
+     * @param int     $now      Server unix time (single clock read).
+     * @param string  $htm      Request method (uppercase).
+     * @param string  $htuPath  Request path (no query).
+     * @param int     $skewSeconds   Accepted iat drift either way.
+     * @param int     $jtiTtlSeconds Replay-store TTL (covers 2x skew).
+     */
+    public function verifyForRequest(
+        \mysqli $db,
+        int $deviceId,
+        string $proof,
+        string $accessToken,
+        int $now,
+        string $htm,
+        string $htuPath,
+        int $skewSeconds,
+        int $jtiTtlSeconds
+    ): string {
+        if ($deviceId <= 0 || $proof === '' || $accessToken === ''
+            || $htm === '' || $skewSeconds < 0 || $jtiTtlSeconds <= 0
+        ) {
+            return self::RESULT_INVALID;
+        }
+        $device = $this->activeDeviceKey($db, $deviceId);
+        if ($device === null) {
+            // Same no-oracle shape as rotation: unknown, revoked,
+            // or unreadable key is one generic failure.
+            return self::RESULT_INVALID;
+        }
+        $parsed = DeviceCrypto::parseDpopProof($proof, $device['alg']);
+        if ($parsed === null) {
+            return self::RESULT_INVALID;
+        }
+        $expectedAth = DeviceCrypto::base64UrlEncode(hash('sha256', $accessToken, true));
+        if (!DeviceCrypto::validateDpopRequestClaims(
+            $parsed, $now, $skewSeconds, $htm, $htuPath, $expectedAth
+        )) {
+            return self::RESULT_INVALID;
+        }
+        if (!DeviceCrypto::verifyDpopSignature($device['spki'], $parsed['signingInput'], $parsed['signature'])) {
+            return self::RESULT_INVALID;
+        }
+        $result = $this->claimJti($db, $parsed['jti'], $deviceId, $jtiTtlSeconds);
+        if ($result === self::RESULT_OK) {
+            $this->sweepExpiredJtis($db);
+        }
+        return $result;
+    }
+
+    /**
+     * Sampled, bounded replay-store sweep (S9): per-request proofs
+     * claim ~10-50k jtis/day, which the rotation-piggybacked
+     * 1/1000 sweep provably cannot drain (rotations are only
+     * hundreds/day). 1/100 of verified requests delete up to
+     * 1000 expired rows -- 10x headroom at peak (see plan §3).
+     * Same contract as the 086 sweep: bounded, and a failure
+     * NEVER changes the current auth decision.
+     */
+    private function sweepExpiredJtis(\mysqli $db): void
+    {
+        if (random_int(1, 100) !== 1) {
+            return;
+        }
+        try {
+            $db->query(
+                'DELETE FROM acm_refresh_proof_jtis'
+                . ' WHERE expires_at < CURRENT_TIMESTAMP LIMIT 1000'
+            );
+        } catch (\Throwable $ignored) {
+            // Cleanup is bounded and never changes the auth decision.
+        }
+    }
+
+    /**
      * Build the rotation verifier closure for the refresh route.
      * Resolves the proof windows once (ops-tunable seeds, compiled
      * defaults on ANY read failure -- the seeds tune timing only,
@@ -100,6 +193,31 @@ final class DeviceRefreshProofs
         $proofs = new self();
         return static function (\mysqli $rotDb, int $deviceId, string $proof) use ($proofs, $skew, $ttl): string {
             return $proofs->verifyForRotation($rotDb, $deviceId, $proof, time(), $skew, $ttl);
+        };
+    }
+
+    /**
+     * Build the per-request verifier closure for apiRequireAuth
+     * (S9). Same windows as rotation (uniformity, #16); returns
+     * fn($db, $deviceId, $proof, $accessToken, $htm, $htuPath).
+     *
+     * @return callable(\mysqli,int,string,string,string,string):string 'ok' on success.
+     */
+    public static function requestVerifier(\mysqli $db): callable
+    {
+        [$skew, $ttl] = self::proofWindows($db);
+        $proofs = new self();
+        return static function (
+            \mysqli $reqDb,
+            int $deviceId,
+            string $proof,
+            string $accessToken,
+            string $htm,
+            string $htuPath
+        ) use ($proofs, $skew, $ttl): string {
+            return $proofs->verifyForRequest(
+                $reqDb, $deviceId, $proof, $accessToken, time(), $htm, $htuPath, $skew, $ttl
+            );
         };
     }
 

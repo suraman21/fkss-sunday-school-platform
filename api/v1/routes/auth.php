@@ -150,6 +150,10 @@ if ($action === 'login' && $method === 'POST') {
         'expires_in' => $accessTokenExpiry,
         // S5: true when this family is device-bound (the app must
         // attach a DPoP proof to every refresh of this family).
+        // S9: bound families ALSO attach a per-request DPoP proof
+        // (method + path + token hash) to every API call made with
+        // this family's access tokens (missing/invalid/replayed ->
+        // ACCESS_PROOF_REQUIRED / ACCESS_PROOF_INVALID, 401).
         'device_bound' => $acmDeviceId !== null,
         'user' => [
             'id' => (int)$user['id'],

@@ -311,7 +311,11 @@ final class DeviceCrypto
      * REGISTERED device key, so no attacker-supplied key material
      * can cause key confusion. A `d` (private) member is rejected.
      *
-     * @return array{signingInput:string,signature:string,htm:string,htu:string,iat:int,jti:string}|null
+     * S9: an OPTIONAL `ath` (access-token hash, RFC 9449) is
+     * extracted when present (shape-validated, never trusted
+     * here); rotation proofs carry none and ignore it.
+     *
+     * @return array{signingInput:string,signature:string,htm:string,htu:string,iat:int,jti:string,ath:string|null}|null
      *         Null on ANY malformed input.
      */
     public static function parseDpopProof(string $proof, string $expectedAlg): ?array
@@ -382,6 +386,16 @@ final class DeviceCrypto
         ) {
             return null;
         }
+        // S9: optional ath (base64url, sha256 => 43 chars; the cap
+        // is generous-but-bounded like the jti's). Absent in
+        // rotation proofs; REQUIRED by per-request validation.
+        $ath = $payload['ath'] ?? null;
+        if ($ath !== null
+            && (!is_string($ath) || $ath === '' || strlen($ath) > 128
+                || !preg_match('/^[A-Za-z0-9_-]+$/D', $ath))
+        ) {
+            return null;
+        }
         return [
             'signingInput' => $headerPart . '.' . $payloadPart,
             'signature' => $signature,
@@ -389,6 +403,7 @@ final class DeviceCrypto
             'htu' => $htu,
             'iat' => $iat,
             'jti' => $jti,
+            'ath' => $ath,
         ];
     }
 
@@ -433,6 +448,76 @@ final class DeviceCrypto
             return false;
         }
         return abs($delta) <= $skewSeconds;
+    }
+
+    /**
+     * Validate parsed DPoP claims for a per-request proof (S9):
+     * htm is the actual request method; htu is an http(s) URL
+     * whose path EQUALS the request path (host deliberately NOT
+     * pinned -- S5 precedent: proxies rewrite hosts; path +
+     * ath + single-use jti is the binding story); ath equals
+     * base64url(sha256(access token as presented)); iat is
+     * within $skewSeconds of $now either way. The iat window
+     * mirrors validateDpopClaims deliberately: rotation stays
+     * character-identical.
+     */
+    public static function validateDpopRequestClaims(
+        array $parsed,
+        int $now,
+        int $skewSeconds,
+        string $expectedHtm,
+        string $expectedHtuPath,
+        string $expectedAth
+    ): bool {
+        if ($skewSeconds < 0 || $expectedHtm === '' || $expectedAth === '') {
+            return false;
+        }
+        if (($parsed['htm'] ?? null) !== $expectedHtm) {
+            return false;
+        }
+        $htu = $parsed['htu'] ?? null;
+        if (!is_string($htu)) {
+            return false;
+        }
+        $parts = parse_url($htu);
+        if (!is_array($parts)) {
+            return false;
+        }
+        $scheme = strtolower((string)($parts['scheme'] ?? ''));
+        if ($scheme !== 'http' && $scheme !== 'https') {
+            return false;
+        }
+        if (self::normalizeDpopPath((string)($parts['path'] ?? ''))
+            !== self::normalizeDpopPath($expectedHtuPath)
+        ) {
+            return false;
+        }
+        $ath = $parsed['ath'] ?? null;
+        if (!is_string($ath) || !hash_equals($expectedAth, $ath)) {
+            return false;
+        }
+        $iat = $parsed['iat'] ?? null;
+        if (!is_int($iat) || $iat <= 0) {
+            return false;
+        }
+        $delta = $now - $iat;
+        if (!is_int($delta)) {
+            return false;
+        }
+        return abs($delta) <= $skewSeconds;
+    }
+
+    /**
+     * Trailing-slash-insensitive request-path fold for htu
+     * comparison ('' and '/' are the same empty path).
+     */
+    public static function normalizeDpopPath(string $path): string
+    {
+        $folded = '/' . ltrim($path, '/');
+        if (strlen($folded) > 1) {
+            $folded = rtrim($folded, '/');
+        }
+        return $folded === '' ? '/' : $folded;
     }
 
     /**
