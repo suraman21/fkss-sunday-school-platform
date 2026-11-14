@@ -33,11 +33,25 @@ class AccountProvisioner
      * one: nothing changes, no history row.
      */
     private $sessionRevoker;
+    /**
+     * @var callable|null (int $userId, string $reason): int.
+     * Revokes ALL devices of a user (families cascade each),
+     * injected by the console over the S4 DeviceService --
+     * the ACM package stays PDO-only (S4 familyRevoker
+     * precedent). Returns the devices processed (revoked +
+     * already-revoked: the loop is idempotent, retries
+     * converge). Deactivate FAILS CLOSED without one.
+     */
+    private $deviceRevoker;
 
-    public function __construct(PDO $pdo, ?callable $sessionRevoker = null)
-    {
+    public function __construct(
+        PDO $pdo,
+        ?callable $sessionRevoker = null,
+        ?callable $deviceRevoker = null
+    ) {
         $this->pdo = $pdo;
         $this->sessionRevoker = $sessionRevoker;
+        $this->deviceRevoker = $deviceRevoker;
     }
 
     /**
@@ -260,6 +274,92 @@ class AccountProvisioner
             'account_type' => (string)$target['account_type'],
             'person_id' => (int)$target['person_id'],
         ];
+    }
+
+    // ------------------------------------------------------------
+    // S8: terminal deactivation (baseline step 13). The LINK dies
+    // (revoked); the users row survives gated (history keeps its
+    // author's name; re-entry is a FRESH activation ticket, never
+    // a revive -- reactivate refuses revoked links). Devices die
+    // FIRST (terminal: no orphaned live devices), then sessions,
+    // then one transaction (link flip + bit flip + history row).
+    // ------------------------------------------------------------
+
+    /**
+     * Deactivate an account: active/suspended/drifted links all
+     * converge to revoked. Pending links refuse (cancel the
+     * ticket instead); revoked links refuse (already terminal).
+     *
+     * @return array{user_id:int,username:string,account_type:string,person_id:int,devices:int}
+     */
+    public function deactivate(int $userId, string $reason, AccountContext $ctx): array
+    {
+        $this->requireLifecycleVerb($ctx, 'deactivate');
+        $reason = $this->cleanReason($reason);
+        if ($this->sessionRevoker === null || $this->deviceRevoker === null) {
+            // Fail closed BEFORE anything changes (S7 precedent):
+            // a deactivation that cannot kill devices+sessions
+            // must error, never half-deactivate.
+            throw new \RuntimeException('Account deactivation is unavailable.');
+        }
+        $target = $this->suspendableTarget($userId);
+        $this->requireDeactivatable((string)$target['status']);
+        // Devices BEFORE sessions BEFORE the transaction: families
+        // cascade per device; a crash here leaves the link live,
+        // so retry re-revokes idempotently (`already`) and
+        // proceeds. The reverse order would strand live sessions
+        // or live devices behind a state error on retry.
+        $devices = (int)($this->deviceRevoker)($userId, $reason);
+        ($this->sessionRevoker)($userId);
+        $this->pdo->beginTransaction();
+        try {
+            $locked = $this->lockedLink($userId);
+            if ($locked === null) {
+                throw new \InvalidArgumentException('Unknown account.');
+            }
+            $this->requireDeactivatable((string)$locked['status']);
+            $this->pdo->prepare(
+                "UPDATE acm_person_accounts SET status = 'revoked'"
+                . " WHERE user_id = :u AND status IN ('active','suspended')"
+            )->execute([':u' => $userId]);
+            $this->pdo->prepare(
+                'UPDATE users SET is_active = 0 WHERE id = :u AND is_active = 1'
+            )->execute([':u' => $userId]);
+            $this->insertHistory($userId, $locked, 'deactivated', $reason, $ctx->userId);
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+        return [
+            'user_id' => $userId,
+            'username' => (string)$target['username'],
+            'account_type' => (string)$target['account_type'],
+            'person_id' => (int)$target['person_id'],
+            'devices' => $devices,
+        ];
+    }
+
+    /**
+     * Active/suspended links (any bit: drifted converges too)
+     * may deactivate. Pending and revoked refuse with their
+     * owning lifecycle named. Anything else is not live.
+     */
+    private function requireDeactivatable(string $status): void
+    {
+        if ($status === 'revoked') {
+            throw new \InvalidArgumentException('Account is already deactivated.');
+        }
+        if ($status === 'pending') {
+            throw new \InvalidArgumentException(
+                'Pending accounts finish activation or cancel first.'
+            );
+        }
+        if ($status !== 'active' && $status !== 'suspended') {
+            throw new \InvalidArgumentException('Account is not active.');
+        }
     }
 
     /**

@@ -95,6 +95,28 @@ if ((int)$targetUser['is_active'] === $newStatus) {
     exit;
 }
 
+// S8: never resurrect a revoked (deactivated) ACM link. All
+// three login gates read only the bit, so a 0→1 flip would
+// let a dead account log in. 1→0 flips stay unguarded
+// (gating is always safe; S7 converges the drift). Re-entry
+// is a FRESH activation ticket, never a revive.
+if ($newStatus === 1) {
+    try {
+        $acmGuard = $pdo->prepare('SELECT status FROM acm_person_accounts WHERE user_id = ? LIMIT 1');
+        $acmGuard->execute([$userId]);
+        if ($acmGuard->fetchColumn() === 'revoked') {
+            echo json_encode(['status' => 'error', 'message' => 'This account was deactivated and cannot be re-enabled; start a fresh activation.']);
+            exit;
+        }
+    } catch (PDOException $e) {
+        // 42S02/42S22: pre-ACM deployment, no link table — proceed.
+        if ($e->getCode() !== '42S02' && $e->getCode() !== '42S22') {
+            echo json_encode(['status' => 'error', 'message' => 'Could not verify account links.']);
+            exit;
+        }
+    }
+}
+
 try {
     $stmt = $pdo->prepare("UPDATE users SET is_active = ? WHERE id = ?");
     $stmt->execute([$newStatus, $userId]);

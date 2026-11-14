@@ -32,7 +32,10 @@ $canTicket = AcmPolicy::can($role, 'ticket', 'create');
 // convenience, never security).
 $canSuspend = AcmPolicy::can($role, 'account', 'suspend');
 $canReactivate = AcmPolicy::can($role, 'account', 'reactivate');
-$canLifecycle = $canSuspend || $canReactivate;
+// S8: deactivation is super_admin-only (#25); the matrix
+// deliberately lacks the verb, so only the bypass grants it.
+$canDeactivate = AcmPolicy::can($role, 'account', 'deactivate');
+$canLifecycle = $canSuspend || $canReactivate || $canDeactivate;
 $mode = 'search';
 $personId = (int)($_GET['id'] ?? 0);
 if ($personId > 0) {
@@ -172,7 +175,10 @@ acm_chrome_open('persons', 'Persons & accounts', 'One human, independently manag
         <?php else: ?>
         <?php if ($canLifecycle): ?>
         <div class="acm-btn-row" style="margin:.4rem 0">
-            <input class="inp" id="acmLifecycleReason" maxlength="2000" placeholder="Reason for suspend / reactivate (required)" style="flex:1;min-width:12rem" aria-label="Lifecycle reason">
+            <input class="inp" id="acmLifecycleReason" maxlength="2000" placeholder="Reason for suspend / reactivate / deactivate (required)" style="flex:1;min-width:12rem" aria-label="Lifecycle reason">
+            <?php if ($canDeactivate): ?>
+            <input class="inp" id="acmDeactivateConfirm" maxlength="100" placeholder="Type username to confirm deactivation" style="flex:1;min-width:10rem" aria-label="Deactivation confirm" autocomplete="off">
+            <?php endif; ?>
         </div>
         <?php endif; ?>
         <div class="tw"><table>
@@ -191,6 +197,9 @@ acm_chrome_open('persons', 'Persons & accounts', 'One human, independently manag
                             <button class="btn bd" data-acm-lifecycle="account_suspend" data-acm-user="<?= (int)($acc['user_id'] ?? 0) ?>">Suspend</button>
                             <?php elseif ((($acc['status'] ?? '') === 'suspended' || ((string)($acc['status'] ?? '') === 'active' && (int)($acc['is_active'] ?? 1) !== 1)) && $canReactivate): ?>
                             <button class="btn bp" data-acm-lifecycle="account_reactivate" data-acm-user="<?= (int)($acc['user_id'] ?? 0) ?>">Reactivate</button>
+                            <?php endif; ?>
+                            <?php if ($canDeactivate && in_array((string)($acc['status'] ?? ''), ['active', 'suspended'], true)): ?>
+                            <button class="btn bd" data-acm-lifecycle="account_deactivate" data-acm-user="<?= (int)($acc['user_id'] ?? 0) ?>" data-acm-confirm="<?= e((string)($acc['username'] ?? '')) ?>">Deactivate</button>
                             <?php endif; ?>
                         <?php endif; ?>
                     </td>
@@ -255,6 +264,14 @@ acm_chrome_open('persons', 'Persons & accounts', 'One human, independently manag
             var reason = document.getElementById('acmLifecycleReason');
             var text = reason ? reason.value.trim() : '';
             if (text === '') { acmToast('Reason is required.', false); return; }
+            // S8: terminal deactivation needs the username
+            // re-typed (user-delete's phrase-dialog precedent,
+            // inline; the service re-validates everything).
+            var need = btn.getAttribute('data-acm-confirm');
+            if (need !== null) {
+                var c = document.getElementById('acmDeactivateConfirm');
+                if (!c || c.value.trim() !== need) { acmToast('Type the username to confirm deactivation.', false); return; }
+            }
             btn.disabled = true;
             try {
                 await acmApi(btn.getAttribute('data-acm-lifecycle'), {

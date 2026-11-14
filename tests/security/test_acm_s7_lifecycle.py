@@ -89,7 +89,9 @@ def test_s7_suspend_fails_closed_without_a_revoker():
     # Console wires the mysqli revoker (fails closed without $conn).
     s = read(API)
     assert "$consoleSessionRevoker = null" in s
-    assert "new AccountProvisioner($pdo, $consoleSessionRevoker)" in s
+    # S8 appends the device revoker (3rd arg); the session revoker
+    # wiring this pin guards is unchanged.
+    assert "new AccountProvisioner($pdo, $consoleSessionRevoker, $consoleDeviceRevoker)" in s
     assert "MysqliCredentialRepository($conn))->revokeAllRefreshSessions($userId)" in s
 
 

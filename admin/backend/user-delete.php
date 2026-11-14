@@ -107,6 +107,26 @@ try {
         exit;
     }
 
+    // S8: never hard-delete an ACM-managed account. The cleanup
+    // below is staff-domain only and would orphan the ACM link,
+    // devices, sessions, and ceremony history. Deactivate in the
+    // ACM console instead (terminal, attribution-preserving).
+    // Runs after the password step-up (auth first), before the
+    // transaction (refuse without touching anything).
+    try {
+        $acmLink = $pdo->prepare('SELECT status FROM acm_person_accounts WHERE user_id = :uid LIMIT 1');
+        $acmLink->execute([':uid' => $deleteUserId]);
+        if ($acmLink->fetchColumn() !== false) {
+            header('Location: ' . ssms_app_url('admin/users.php') . '?error=' . urlencode('Deactivate this account in the ACM console first — hard delete would orphan its devices, sessions, and ceremony history.') . '&delete_id=' . $deleteUserId);
+            exit;
+        }
+    } catch (PDOException $e) {
+        // 42S02/42S22: pre-ACM deployment, no link table — proceed.
+        if ($e->getCode() !== '42S02' && $e->getCode() !== '42S22') {
+            throw $e;
+        }
+    }
+
     // Everything below is all-or-nothing.
     $pdo->beginTransaction();
 

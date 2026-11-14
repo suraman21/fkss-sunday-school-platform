@@ -100,7 +100,6 @@ if (isset($conn) && $conn instanceof \mysqli) {
         (new \App\Services\MysqliCredentialRepository($conn))->revokeAllRefreshSessions($userId);
     };
 }
-$provisioner = new AccountProvisioner($pdo, $consoleSessionRevoker);
 // S4 device registry (revoker mirrors the mobile route: mysqli-backed,
 // fails closed without a live handle).
 $consoleRevoker = null;
@@ -120,6 +119,22 @@ if (isset($conn) && $conn instanceof \mysqli) {
     };
 }
 $devices = new DeviceService($pdo, $tickets, $consoleRevoker);
+// S8 deactivation (device kill loop over the S4 service: the
+// revoke is idempotent, so a crash mid-loop converges on
+// retry. Fails closed without a live handle, like S4/S7).
+$consoleDeviceRevoker = null;
+if ($consoleRevoker !== null) {
+    $consoleDeviceRevoker = function (int $userId, string $reason) use ($devices, $actorId, $role): int {
+        $officer = new AccountContext($actorId, $role);
+        $processed = 0;
+        foreach ($devices->listForUser($userId) as $device) {
+            $devices->revokeWithReport($officer, (string)$device['uuid'], $reason);
+            $processed++;
+        }
+        return $processed;
+    };
+}
+$provisioner = new AccountProvisioner($pdo, $consoleSessionRevoker, $consoleDeviceRevoker);
 $isSuperAdmin = $role === 'super_admin';
 
 function acm_audit(PDO $pdo, string $action, array $details, ?string $entityType, ?int $entityId): void
@@ -688,6 +703,29 @@ try {
                 'link' => 'suspended->active',
             ], 'user', $result['user_id']);
             acm_ok(['reactivated' => true, 'account' => $result]);
+            break;
+        }
+
+        case 'account_deactivate': {
+            if ($method !== 'POST') {
+                acm_err('Method not allowed.', 405);
+            }
+            if (!AcmPolicy::can($role, AcmPolicy::RES_ACCOUNT, 'deactivate')) {
+                acm_err('Access denied.', 403);
+            }
+            $result = $provisioner->deactivate(
+                (int)($_POST['id'] ?? 0),
+                (string)($_POST['reason'] ?? ''),
+                new AccountContext($actorId, $role)
+            );
+            acm_audit($pdo, 'acm.account.deactivated', [
+                'username' => $result['username'],
+                'account_type' => $result['account_type'],
+                'reason' => trim((string)($_POST['reason'] ?? '')),
+                'devices' => $result['devices'],
+                'link' => 'active/suspended->revoked',
+            ], 'user', $result['user_id']);
+            acm_ok(['deactivated' => true, 'account' => $result]);
             break;
         }
 
