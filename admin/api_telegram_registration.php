@@ -37,7 +37,7 @@ $method=strtoupper((string)($_SERVER['REQUEST_METHOD']??'GET'));
 $input=$method==='POST'?$_POST:$_GET;
 $action=trim((string)($input['action']??'overview'));
 $superActions=['overview','bot_config','bot_config_save','feature_toggle','bot_verify','webhook_status','webhook_set','canonical_backfill'];
-$hrActions=['overview','operators','eligible_users','forms','form_registry','form_detail','form_create','form_save','form_publish','sessions','session_detail','review_decide','review_approve','audit','operator_save'];
+$hrActions=['overview','operators','eligible_users','forms','form_registry','form_detail','form_create','form_save','form_publish','sessions','analytics','session_detail','review_decide','review_approve','audit','operator_save'];
 if(($role==='super_admin'&&!in_array($action,$superActions,true))||($role==='hr_dept'&&!in_array($action,$hrActions,true)))tg_admin_error('This function belongs to the other administration area.',403);
 if($method==='POST'&&!validateCsrf($input['csrf_token']??($_SERVER['HTTP_X_CSRF_TOKEN']??null)))tg_admin_error('Invalid session token.',403);
 $schema=tg_admin_tables($conn);
@@ -86,6 +86,8 @@ case 'form_save':
 case 'form_publish':
     if($method!=='POST'||$role!=='hr_dept')tg_admin_error('Only HR may publish forms.',403);
     $forms=new TelegramFormAdminService($conn);$form=$forms->publish((int)($input['id']??0),$actor);tg_admin_audit($conn,$actor,'form_published','form_profile',(int)$form['id'],['profile_key'=>$form['profile_key'],'version'=>$form['version']]);tg_admin_ok(['form'=>$form]);
+case 'analytics':
+    $days=max(7,min(365,(int)($input['days']??30)));$summary=[];$q=$conn->query("SELECT COUNT(*) total,COALESCE(SUM(status='submitted'),0) pending,COALESCE(SUM(status='approved'),0) approved,COALESCE(SUM(duplicate_state IN ('possible','likely')),0) duplicate_attention FROM telegram_registration_sessions WHERE created_at>=DATE_SUB(NOW(),INTERVAL {$days} DAY)");$summary=$q?$q->fetch_assoc():[];$types=[];$q=$conn->query("SELECT COALESCE(profile_key,'unselected') label,COUNT(*) total FROM telegram_registration_sessions WHERE created_at>=DATE_SUB(NOW(),INTERVAL {$days} DAY) GROUP BY profile_key ORDER BY total DESC");if($q)while($row=$q->fetch_assoc())$types[]=$row;$operators=[];$q=$conn->query("SELECT COALESCE(tb.display_name,CAST(tb.telegram_user_id AS CHAR)) label,COUNT(*) total FROM telegram_registration_sessions s JOIN telegram_bot_users tb ON tb.id=s.bot_user_id WHERE s.created_at>=DATE_SUB(NOW(),INTERVAL {$days} DAY) GROUP BY s.bot_user_id,tb.display_name,tb.telegram_user_id ORDER BY total DESC LIMIT 20");if($q)while($row=$q->fetch_assoc())$operators[]=$row;tg_admin_ok(['days'=>$days,'summary'=>$summary,'registration_types'=>$types,'operators'=>$operators]);
 case 'sessions':
     $limit=tg_admin_limit($input['limit']??50);$status=trim((string)($input['status']??''));$allowed=['choosing','collecting','review','submitted','approved','cancelled','expired','failed'];
     if($status!==''&&!in_array($status,$allowed,true))tg_admin_error('Invalid session status.');
