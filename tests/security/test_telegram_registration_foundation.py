@@ -146,6 +146,13 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
             self.assertIn(alias, api)
         self.assertIn("an.field_key='full_name_am'", api)
 
+    def test_analytics_are_bounded_and_aggregated(self):
+        api = (ROOT / "admin/api_telegram_registration.php").read_text(encoding="utf-8")
+        self.assertIn("case 'analytics'", api)
+        self.assertIn("max(7,min(365", api)
+        self.assertIn("GROUP BY profile_key", api)
+        self.assertIn("ORDER BY total DESC LIMIT 20", api)
+
     def test_submission_never_inserts_member(self):
         submit = self.service[self.service.index("private function submitReview"):]
         self.assertIn("status='submitted'", submit)
