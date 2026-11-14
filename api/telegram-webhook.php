@@ -22,6 +22,8 @@ require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../admin/backend/services/AmharicIdentityNormalizer.php';
 require_once __DIR__ . '/../admin/backend/services/TelegramFormRegistry.php';
 require_once __DIR__ . '/../admin/backend/services/TelegramDuplicateCandidateService.php';
+require_once __DIR__ . '/../admin/backend/services/TelegramBotApiService.php';
+require_once __DIR__ . '/../admin/backend/services/TelegramAttachmentService.php';
 require_once __DIR__ . '/../admin/backend/services/TelegramRegistrationService.php';
 
 if (!feature_enabled('telegram_registration') || !defined('TELEGRAM_WEBHOOK_SECRET') || !defined('TELEGRAM_BOT_TOKEN')) {
@@ -48,7 +50,7 @@ $insert->bind_param('ii',$updateId,$userId);$insert->execute();$owned=$insert->a
 if(!$owned) telegram_reply(200);
 $started=microtime(true);
 try {
-    if ($message===null || ($message['chat']['type']??'')!=='private' || !isset($message['text'])) {
+    if ($message===null || ($message['chat']['type']??'')!=='private' || (!isset($message['text'])&&!isset($message['document'])&&!isset($message['photo']))) {
         $status='ignored';
     } else {
         $service=new \App\Services\TelegramRegistrationService($conn);

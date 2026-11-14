@@ -63,7 +63,7 @@ final class TelegramRegistrationService
             if (in_array($text, ['✏️ አርም','✏️ Edit'], true)) return $this->restartFields($session);
             return $this->review($session);
         }
-        if ($session['status'] === 'collecting') return $this->acceptAnswer($session, $text);
+        if ($session['status'] === 'collecting') { $field=$this->field((int)$session['form_profile_id'],(string)$session['current_field_key']);if($field&&(TelegramFormRegistry::definitions()[$field['field_key']]['input']??'')==='file')return $this->acceptAttachment($session,$field,$message);return $this->acceptAnswer($session, $text); }
         return $this->home($chatId, $actor);
     }
 
@@ -160,6 +160,11 @@ final class TelegramRegistrationService
         $statement=$this->conn->prepare('UPDATE telegram_registration_sessions SET current_field_key=?,lock_version=lock_version+1 WHERE id=?');
         $statement->bind_param('si',$nextKey,$sessionId); $statement->execute(); $statement->close(); $session['current_field_key']=$nextKey;
         return $this->prompt($session,$next);
+    }
+
+    private function acceptAttachment(array $session,array $field,array $message): array
+    {
+        $file=null;if(is_array($message['document']??null))$file=$message['document'];elseif(is_array($message['photo']??null)&&$message['photo']!==[])$file=end($message['photo']);if(!is_array($file)||empty($file['file_id'])||empty($file['file_unique_id']))return self::message((int)$session['telegram_chat_id'],'ፎቶውን ወይም ሰነዱን በቴሌግራም የማያያዣ አዝራር ይላኩ።');$tmp=(new TelegramBotApiService())->downloadFile((string)$file['file_id']);try{$stored=(new TelegramAttachmentService($this->conn))->store((int)$session['id'],(string)$field['field_key'],(string)$file['file_id'],(string)$file['file_unique_id'],$tmp);}finally{if(is_file($tmp))@unlink($tmp);}$id=(int)$session['id'];$key=(string)$field['field_key'];$display='ፋይል ተቀምጧል';$normal=(string)$stored['path'];$q=$this->conn->prepare('INSERT INTO telegram_registration_answers(session_id,field_key,value_text,value_normalized) VALUES(?,?,?,?) ON DUPLICATE KEY UPDATE value_text=VALUES(value_text),value_normalized=VALUES(value_normalized),updated_at=NOW()');$q->bind_param('isss',$id,$key,$display,$normal);$q->execute();$q->close();$next=$this->nextField((int)$session['form_profile_id'],(int)$field['sort_order'],(int)$field['id']);if(!$next){$q=$this->conn->prepare("UPDATE telegram_registration_sessions SET status='review',current_field_key=NULL WHERE id=?");$q->bind_param('i',$id);$q->execute();$q->close();$session['status']='review';return $this->review($session);}$nextKey=(string)$next['field_key'];$q=$this->conn->prepare('UPDATE telegram_registration_sessions SET current_field_key=? WHERE id=?');$q->bind_param('si',$nextKey,$id);$q->execute();$q->close();$session['current_field_key']=$nextKey;return $this->prompt($session,$next);
     }
 
     private function refreshDuplicates(array $session): void
