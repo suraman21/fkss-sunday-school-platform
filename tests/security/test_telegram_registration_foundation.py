@@ -161,6 +161,16 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn("registration_types", page)
         self.assertIn("duplicate_attention", page)
 
+    def test_batch_approval_is_bounded_and_reports_skips(self):
+        api = (ROOT / "admin/api_telegram_registration.php").read_text(encoding="utf-8")
+        page = (ROOT / "admin/telegram_registration.php").read_text(encoding="utf-8")
+        self.assertIn("case 'review_batch_approve'", api)
+        self.assertIn("count($ids)>50", api)
+        self.assertIn("'approved'=>$approved,'skipped'=>$skipped", api)
+        self.assertIn('id="batchApprove"', page)
+        self.assertIn('id="batchDialog"', page)
+        self.assertIn("review_batch_approve", page)
+
     def test_submission_never_inserts_member(self):
         submit = self.service[self.service.index("private function submitReview"):]
         self.assertIn("status='submitted'", submit)
