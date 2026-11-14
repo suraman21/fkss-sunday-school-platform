@@ -24,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_attendance_phase1 import (  # noqa: E402
     BASE, WebSession, db, mobile, mobile_token, _live_ready,
 )
+from attendance_test_dates import ec_label, recent  # noqa: E402
 
 
 def _mobile_token(role):
@@ -199,15 +200,17 @@ class Phase2LiveGuards(unittest.TestCase):
     MID = 900001          # class 1 (seed)
     ROLLOUT_MID = 900010  # fixture for the rollout script
     CLASS_ID = 1
-    # Tikimt 2019 EC, all in the past relative to the sandbox date (2026-10-19)
-    DATES = ["2026-10-12", "2026-10-13", "2026-10-14", "2026-10-15", "2026-10-16"]
-    MOBILE_DATE = "2026-10-17"
+    # Rolling band (attendance_test_dates): 5 consecutive web saves + mobile
+    # draft + mobile submit, always inside the 45-day backdate window.
+    DATES = [recent(29), recent(28), recent(27), recent(26), recent(25)]
+    MOBILE_DATE = recent(24)
+    SUBMIT_DATE = recent(23)
     _sessions = {}
 
     @classmethod
     def _clean(cls):
         ids = f"{cls.MID}, {cls.ROLLOUT_MID}"
-        dates = "','".join(cls.DATES + [cls.MOBILE_DATE, "2026-10-18"])
+        dates = "','".join(cls.DATES + [cls.MOBILE_DATE, cls.SUBMIT_DATE])
         db(f"DELETE FROM attendance WHERE member_id IN ({ids}) AND attendance_date BETWEEN '2026-09-01' AND CURDATE()")
         db(f"DELETE FROM attendance WHERE class_id={cls.CLASS_ID} AND attendance_date IN ('{dates}')")
         db(f"DELETE FROM grade_submissions WHERE submission_type='attendance' AND class_id={cls.CLASS_ID} AND attendance_date IN ('{dates}')")
@@ -273,7 +276,7 @@ class Phase2LiveGuards(unittest.TestCase):
         self.assertEqual(bells.count("\n") + 1, 1, bells)
         self.assertTrue(bells.startswith("edu_dept,hr_dept,info_dept\thigh\t"), bells)
         self.assertIsNone(GREG.search(bells), bells)
-        self.assertIn("Tikimt 2, 2019", bells)
+        self.assertIn(ec_label(self.DATES[0]), bells)
         # idempotent re-save: no duplicate row, no second bell
         self._web_save(self.DATES[4], {self.MID})
         self.assertEqual(self._warnings(self.MID).count("\n"), 0)
@@ -361,7 +364,7 @@ class Phase2LiveGuards(unittest.TestCase):
     def test_04_mobile_submit_triggers_evaluation_draft_does_not(self):
         teacher = _mobile_token("teacher")
         roster = self._roster(self.MOBILE_DATE)
-        # draft for 10-17: rows + incomplete packet => NOT eligible
+        # draft for MOBILE_DATE: rows + incomplete packet => NOT eligible
         records = [{"member_id": m, "status": "absent" if m == self.MID else "present"} for m in roster]
         status, data = mobile(teacher, "POST", "/api/v1/attendance", {"class_id": self.CLASS_ID, "date": self.MOBILE_DATE, "records": records})
         self.assertIn(status, (200, 201), data)
@@ -371,11 +374,11 @@ class Phase2LiveGuards(unittest.TestCase):
         self.assertEqual(status, 200, data)
         streak_before = data["data"]["risk"]["edu"]["streak"]["length"]
         self.assertNotIn(self.MOBILE_DATE, json.dumps(data["data"]["risk"]["edu"]["streak"]["dates"]), "draft day must not count")
-        # submit 10-18 (teacher may write: no packet yet) => eligible
-        status, data = mobile(teacher, "POST", "/api/v1/attendance/submit", {"class_id": self.CLASS_ID, "date": "2026-10-18", "records": [{"member_id": m, "status": "absent" if m == self.MID else "present"} for m in self._roster("2026-10-18")]})
+        # submit SUBMIT_DATE (teacher may write: no packet yet) => eligible
+        status, data = mobile(teacher, "POST", "/api/v1/attendance/submit", {"class_id": self.CLASS_ID, "date": self.SUBMIT_DATE, "records": [{"member_id": m, "status": "absent" if m == self.MID else "present"} for m in self._roster(self.SUBMIT_DATE)]})
         self.assertEqual(status, 201, data)
         status, data = mobile(hr, "GET", f"/api/v1/members/{self.MID}/attendance-risk?department=edu")
-        self.assertIn("2026-10-18", json.dumps(data["data"]["risk"]["edu"]["streak"]["dates"]))
+        self.assertIn(self.SUBMIT_DATE, json.dumps(data["data"]["risk"]["edu"]["streak"]["dates"]))
         self.assertEqual(data["data"]["risk"]["edu"]["streak"]["length"], streak_before + 1)
 
     # ── 5. rollout script ─────────────────────────────────────────
@@ -383,6 +386,8 @@ class Phase2LiveGuards(unittest.TestCase):
         php = shutil.which("php")
         if php is None:
             self.skipTest("PHP CLI is not installed")
+        # Direct-DB fixture (no save path, no backdate window); the rollout
+        # evaluates the academic-year window, which always covers these rows.
         for d in ["2026-10-05", "2026-10-06", "2026-10-07", "2026-10-08", "2026-10-09", "2026-10-12"]:
             db(f"INSERT IGNORE INTO attendance (member_id,class_id,attendance_date,status,recorded_by) VALUES ({self.ROLLOUT_MID},1,'{d}','absent',1)")
         env = dict(os.environ, SSMS_AUDIT_TESTING="1", SSMS_DB_NAME="ssms_test")

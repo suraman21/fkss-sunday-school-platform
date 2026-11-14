@@ -30,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_attendance_phase1 import (  # noqa: E402
     BASE, WebSession, db, mobile, mobile_token, _live_ready,
 )
+from attendance_test_dates import recent  # noqa: E402
 
 
 def read(rel):
@@ -238,9 +239,10 @@ def _phase3_ready():
 class Phase3LiveGuards(unittest.TestCase):
     MID = 900002          # class 1 (seed); Phase 2 uses 900001 on other dates
     CLASS_ID = 1
-    # Meskerem/Tikimt 2019 EC — all before the Phase 2 window (2026-10-12..18)
-    DATES = ["2026-09-28", "2026-09-29", "2026-09-30", "2026-10-01", "2026-10-02"]
-    MEZ_DATE = "2026-09-27"
+    # Rolling band (attendance_test_dates), older than the Phase 2 band:
+    # mezmur packet + 5 consecutive web saves, always inside the window.
+    DATES = [recent(38), recent(37), recent(36), recent(35), recent(34)]
+    MEZ_DATE = recent(39)
     MEZ_SECTION = "children"
     _sessions = {}
 

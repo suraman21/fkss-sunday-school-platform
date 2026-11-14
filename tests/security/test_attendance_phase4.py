@@ -229,8 +229,8 @@ def _phase4_ready():
 
 @unittest.skipUnless(_phase4_ready(), "local test server / sql 074 not available")
 class Phase4LiveGuards(unittest.TestCase):
-    """Fixture: Meskerem 2019 EC (2026-09-11 .. 2026-10-10) — dates that no other
-    suite uses (Phase 2: 2026-10-12..18, Phase 3: 2026-09-27..10-02)."""
+    """Fixture: Meskerem 2019 EC (2026-09-11 .. 2026-10-10) — fixed direct-DB
+    dates, always older than the rolling Phase 2/3/6 bands (attendance_test_dates)."""
     CLASS_ID = 1
     EDU_A = 900000      # class 1 (seed)
     EDU_B = 900001      # class 1 (seed)
