@@ -467,6 +467,26 @@ class DeviceService implements DeviceRegistry
                         'UPDATE users SET is_active = 1 WHERE id = :u AND is_active = 0'
                     );
                     $flip->execute([':u' => (int)$challenge['user_id']]);
+                    // Pending-link fix: the ceremony ENDS here, so the
+                    // provision-time `pending` link becomes `active`
+                    // (same transaction as the bit flip + ticket
+                    // transition). Without this, userIdFor (active-only)
+                    // and every lifecycle guard refuse the account
+                    // forever. Lenient by design: bookkeeping must
+                    // never brick a completed ceremony — a 0-row flip
+                    // only error_logs for observability.
+                    $linkFlip = $this->pdo->prepare(
+                        "UPDATE acm_person_accounts SET status = 'active'"
+                        . " WHERE user_id = :u AND status = 'pending'"
+                    );
+                    $linkFlip->execute([':u' => (int)$challenge['user_id']]);
+                    if ($linkFlip->rowCount() !== 1) {
+                        error_log(
+                            'ACM link flip skipped: user_id='
+                            . (int)$challenge['user_id']
+                            . ' had no pending link at activation.'
+                        );
+                    }
                     $this->tickets->markActivated($ticketId, $meta);
                 } elseif ($operation === 'device_add' && $ticketId !== null) {
                     $this->tickets->markDeviceRegistered($ticketId, $meta);

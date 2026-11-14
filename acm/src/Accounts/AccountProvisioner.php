@@ -141,7 +141,14 @@ class AccountProvisioner
     {
         $stmt = $this->pdo->prepare(
             'SELECT user_id FROM acm_person_accounts'
-            . ' WHERE person_id = :p AND account_type = :at AND status = \'active\''
+            // Pending-link fix: pending accounts MUST resolve (the
+            // registration ceremony runs on pending links by design;
+            // active-only here deadlocked every activation grant).
+            // Lifecycle safety is unchanged: S6 additionally requires
+            // the live user bit, suspend/deactivate/recovery read link
+            // status directly (never through here), and the console
+            // device panels just list (empty for deviceless accounts).
+            . " WHERE person_id = :p AND account_type = :at AND status IN ('pending','active')"
             . ' ORDER BY id DESC LIMIT 1'
         );
         $stmt->execute([':p' => $personId, ':at' => $accountType]);
