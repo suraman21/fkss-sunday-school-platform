@@ -241,7 +241,9 @@ def test_existing_account_blocks_without_merge_or_duplicate():
 
 def test_provisioning_commits_with_grant_and_transition():
     s = read(SVC)
-    body = s.split("public function establishCredentials")[1].split("public function codeStatus")[0]
+    # S6: completeRecovery sits between establishCredentials and
+    # codeStatus; the single-txn pin covers establishCredentials only.
+    body = s.split("public function establishCredentials")[1].split("public function completeRecovery")[0]
     assert body.count("beginTransaction") == 1
     assert "->provision(" in body
     assert "markAccountPendingDevice" in body
@@ -311,7 +313,15 @@ def test_reject_revokes_ceremony_material():
 def test_no_secret_logging_or_persistence():
     for path in (SVC, MOBILE, API):
         s = read(path)
-        assert "error_log" not in s or path == API  # API logs messages only
+        assert "error_log" not in s or path in (MOBILE, API)
+    # S6: the mobile route's error_log calls are static secret-free
+    # text only (audit-failure notice) -- no variables, no secret words.
+    for line in read(MOBILE).splitlines():
+        if "error_log(" in line:
+            assert "$" not in line.split("error_log(", 1)[1]
+            lowered = line.lower()
+            assert "password" not in lowered and "secret" not in lowered
+            assert "grant" not in lowered and "token" not in lowered
     s = read(SVC)
     assert "var_dump" not in s and "print_r" not in s
     # Event/audit metadata carries selectors + truncated fingerprints only.

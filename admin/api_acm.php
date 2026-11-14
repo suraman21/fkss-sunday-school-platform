@@ -492,16 +492,21 @@ try {
                 && !$signal->allows(OfficeNetworkSignal::resolveClientIp($_SERVER, $signal->trustedProxies()))) {
                 acm_err('Code issuance is not available from this network.', 403);
             }
-            // S4: device_add issuance for add-a-device ceremonies
-            // (strict purpose vocabulary; reset stays closed).
+            // S6: reset issuance for credential-recovery
+            // ceremonies (strict purpose vocabulary).
             $purposeRaw = (string)($_POST['purpose'] ?? 'activation');
-            if ($purposeRaw !== 'activation' && $purposeRaw !== 'device_add') {
+            if ($purposeRaw !== 'activation'
+                && $purposeRaw !== 'device_add'
+                && $purposeRaw !== 'reset'
+            ) {
                 acm_err('Unknown code purpose.', 400);
             }
             $issued = $ceremony->issueCode(
                 new AccountContext($actorId, $role),
                 (string)($_POST['id'] ?? ''),
-                $purposeRaw === 'device_add' ? CodePurpose::DeviceAdd : CodePurpose::Activation
+                $purposeRaw === 'device_add'
+                    ? CodePurpose::DeviceAdd
+                    : ($purposeRaw === 'reset' ? CodePurpose::Reset : CodePurpose::Activation)
             );
             $ticket = $tickets->get((int)($_POST['id'] ?? 0));
             // Audit carries the public selector only — never the

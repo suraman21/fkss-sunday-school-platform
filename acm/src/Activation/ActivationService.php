@@ -16,6 +16,16 @@
  *                the ticket to account_pending_device. The
  *                account waits for S4 device proof (resume path
  *                documented on markActivated()).
+ *   completeRecovery (S6: purpose `reset`)
+ *                grant + new password + confirmation + idem key;
+ *                PDO-A consumes the grant + saves idem, mysqli
+ *                runs the shared administrator reset (new hash +
+ *                ALL sessions revoked), PDO-B closes
+ *                grant_verified -> active with a `recovered`
+ *                event. ACTIVE accounts only; devices untouched
+ *                (owner D10 #18); crash windows converge via idem
+ *                continuation (same key + same grant replays or
+ *                resumes, never double-recovers).
  * Hashing: PASSWORD_DEFAULT (bcrypt today — the same recorded
  * assumption PasswordPolicy's 72-byte cap already documents).
  * User passwords match the shared AccountCredentialService
@@ -69,12 +79,24 @@ class ActivationService implements ActivationServiceContract
     private AccountProvisioner $provisioner;
     private IdempotencyStore $idempotency;
     private OfficeNetworkSignal $network;
+    /**
+     * @var callable|null (int $officerId, int $userId, string $newPassword): void.
+     * Mysqli-backed, injected by the route (the ACM package stays
+     * PDO-only -- S4 familyRevoker precedent). Recovery FAILS
+     * CLOSED without one: the grant is never consumed.
+     */
+    private $passwordResetter;
 
-    public function __construct(PDO $pdo, AcmTicketService $tickets, AcmPersonService $persons)
-    {
+    public function __construct(
+        PDO $pdo,
+        AcmTicketService $tickets,
+        AcmPersonService $persons,
+        ?callable $passwordResetter = null
+    ) {
         $this->pdo = $pdo;
         $this->tickets = $tickets;
         $this->persons = $persons;
+        $this->passwordResetter = $passwordResetter;
         $this->provisioner = new AccountProvisioner($pdo);
         $this->idempotency = new IdempotencyStore($pdo);
         $this->network = new OfficeNetworkSignal($pdo);
@@ -93,10 +115,12 @@ class ActivationService implements ActivationServiceContract
         if (!AcmPolicy::can($ctx->role, AcmPolicy::RES_CODE, 'issue')) {
             throw new InvalidArgumentException('Access denied.');
         }
-        if ($purpose !== CodePurpose::Activation && $purpose !== CodePurpose::DeviceAdd) {
-            // S4 opens device_add; reset (recovery) is a later
-            // increment. The purpose machinery below is already
-            // purpose-bound.
+        if ($purpose !== CodePurpose::Activation
+            && $purpose !== CodePurpose::DeviceAdd
+            && $purpose !== CodePurpose::Reset
+        ) {
+            // S6 opened reset (credential recovery). Unknown future
+            // purposes stay closed until their own increment.
             throw new InvalidArgumentException('This code purpose is not available in this increment.');
         }
         if (!ctype_digit($ticketId) || (int)$ticketId <= 0) {
@@ -487,6 +511,349 @@ class ActivationService implements ActivationServiceContract
             throw $e;
         }
         return new AccountRef($userId, $username, $accountType, $deviceGrantToken);
+    }
+
+    // ------------------------------------------------------------
+    // S6: completeRecovery (credential recovery for ACTIVE
+    // accounts). A reset grant (operation = reset, minted by
+    // verifyCode from an officer-issued R-code) authorizes ONE
+    // password reset through the shared administrator primitive.
+    // Crash order (mysqli password+sessions vs PDO grants+tickets
+    // share no transaction -- safe direction, password first):
+    //   PDO-A: consume grant + save idempotency row;
+    //   MYSQL: lock user, set hash, revoke ALL sessions;
+    //   PDO-B: markRecovered (grant_verified -> active).
+    // Any crash leaves a state from which the same key + same
+    // grant converges: idem row + recovered event replays, idem
+    // row without the event resumes with the retry's params.
+    // Policy is validated FIRST: a weak password never burns a
+    // grant. Devices are untouched (owner D10 #18).
+    //
+    // @return array{user_id:int,ticket_id:int,username:string,
+    //   officer_id:int,officer_username:string,replayed:bool}
+    // ------------------------------------------------------------
+    public function completeRecovery(
+        string $grantToken,
+        string $newPassword,
+        string $confirmPassword,
+        string $idempotencyKey
+    ): array {
+        if (!preg_match('/^[A-Za-z0-9_-]{20,128}$/', $grantToken)) {
+            throw new ActivationException(
+                ActivationException::GRANT_INVALID, 401,
+                'The recovery session is invalid.'
+            );
+        }
+        if (!preg_match(
+            '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i',
+            $idempotencyKey
+        )) {
+            throw new ActivationException(
+                ActivationException::INVALID_REQUEST, 400,
+                'The idempotency key must be a UUID.'
+            );
+        }
+        // Confirmation + policy BEFORE any grant verdict: a
+        // mistyped or weak password never burns a grant.
+        if (!hash_equals($newPassword, $confirmPassword)) {
+            throw new ActivationException(
+                ActivationException::INVALID_REQUEST, 400,
+                'The password confirmation does not match.'
+            );
+        }
+        $policyErrors = PasswordPolicy::errors($newPassword);
+        if ($policyErrors !== []) {
+            throw new ActivationException(
+                ActivationException::WEAK_PASSWORD, 422,
+                implode(' ', $policyErrors)
+            );
+        }
+        $fingerprint = substr(hash('sha256', $grantToken), 0, 12);
+        $grant = $this->grantByFingerprint($fingerprint);
+        if ($grant === null || !password_verify($grantToken, (string)$grant['grant_hash'])) {
+            throw new ActivationException(
+                ActivationException::GRANT_INVALID, 401,
+                'The recovery session is invalid.'
+            );
+        }
+        if ($grant['operation'] !== CodePurpose::Reset->value) {
+            // Operation binding (D3.3), mirrored from
+            // establishCredentials: an activation/device_add grant
+            // can never satisfy recovery. Generic message -- no
+            // oracle (same code + text as a wrong secret).
+            throw new ActivationException(
+                ActivationException::GRANT_INVALID, 401,
+                'The recovery session is invalid.'
+            );
+        }
+        if ($grant['revoked_at'] !== null) {
+            throw new ActivationException(
+                ActivationException::GRANT_REVOKED, 403,
+                'The recovery session was revoked. Ask the office to reissue a code.'
+            );
+        }
+        $ticketId = (int)$grant['ticket_id'];
+        $fpShort = substr($fingerprint, 0, 6) . '...';
+        // Idempotency BEFORE the consumed/expired checks (S3 W3
+        // precedent): after a success the grant IS consumed, so an
+        // uncertain-response retry (same key + same grant) must
+        // replay-or-resume, never report grant_consumed.
+        $prior = $this->idempotency->findValid($idempotencyKey);
+        $resuming = false;
+        if ($prior !== null) {
+            if (!hash_equals((string)$prior['grant_fingerprint'], $fingerprint)) {
+                throw new ActivationException(
+                    ActivationException::IDEMPOTENT_CONFLICT, 409,
+                    'This idempotency key was already used with a different session.'
+                );
+            }
+            if ($this->hasRecoveredEvent($ticketId, $fpShort)) {
+                return $this->recoveryResult($grant, $prior, true);
+            }
+            // Same key + same grant, no recovered event: a crash
+            // (or a mysqli failure) interrupted the first attempt.
+            // Resume below: skip consume + idem save, re-resolve,
+            // re-run the reset, then close. Consumed/expired
+            // verdicts are skipped too -- the grant was live when
+            // first consumed (consume requires it), and S3 replays
+            // skip verdicts the same way.
+            $resuming = true;
+        }
+        if (!$resuming) {
+            if ($grant['consumed_at'] !== null) {
+                throw new ActivationException(
+                    ActivationException::GRANT_CONSUMED, 409,
+                    'The recovery session was already used.'
+                );
+            }
+            if ((int)$grant['live'] !== 1) {
+                throw new ActivationException(
+                    ActivationException::GRANT_EXPIRED, 410,
+                    'The recovery session expired. Ask the office to reissue a code.'
+                );
+            }
+        }
+        if ($this->passwordResetter === null) {
+            // Fail closed BEFORE consuming anything (S4 revoker
+            // precedent): recovery without the password writer
+            // must 503, never half-complete.
+            throw new RuntimeException('Credential recovery is unavailable.');
+        }
+        // Officer attribution (honest audit): the officer who
+        // issued the code authorized this recovery after the
+        // in-person ID check. A code without an issuer fails
+        // closed -- never attributed to a substitute.
+        $issuer = $this->codeIssuer((int)$grant['code_id']);
+        if ($issuer === null) {
+            throw new RuntimeException('Recovery authorization is unavailable.');
+        }
+        // PDO-A (+ retry net for a same-key concurrent winner):
+        // conditional grant consume, ticket lock + state, ACTIVE
+        // account resolution, idem save -- one transaction.
+        $resolution = null;
+        for ($attempt = 0; $attempt < 2 && $resolution === null; $attempt++) {
+            $this->pdo->beginTransaction();
+            try {
+                if (!$resuming) {
+                    $consume = $this->pdo->prepare(
+                        'UPDATE acm_activation_grants SET consumed_at = NOW()'
+                        . ' WHERE id = :id AND consumed_at IS NULL'
+                        . ' AND revoked_at IS NULL AND expires_at > NOW()'
+                    );
+                    $consume->execute([':id' => (int)$grant['id']]);
+                    if ($consume->rowCount() !== 1) {
+                        throw new ActivationException(
+                            ActivationException::GRANT_CONSUMED, 409,
+                            'The recovery session was already used.'
+                        );
+                    }
+                }
+                $ticket = $this->tickets->getForUpdate($ticketId);
+                if ($ticket === null || $ticket['status'] !== 'grant_verified') {
+                    throw new ActivationException(
+                        ActivationException::TICKET_STATE, 409,
+                        'The ticket is not awaiting recovery.'
+                    );
+                }
+                $accountType = (string)$ticket['account_type'];
+                $userId = $this->provisioner->userIdFor((int)$ticket['person_id'], $accountType);
+                if ($userId === null || !$this->userIsActive($userId)) {
+                    // Recovery is for ACTIVE accounts only: pending
+                    // accounts finish activation first; suspended
+                    // or deactivated accounts go through the
+                    // reactivation lifecycle, never this ceremony.
+                    throw new ActivationException(
+                        ActivationException::TICKET_STATE, 409,
+                        'This account cannot be recovered from this ticket.'
+                    );
+                }
+                $username = $this->provisioner->usernameForUser($userId);
+                if ($username === null) {
+                    throw new RuntimeException('Account was resolved but could not be reloaded.');
+                }
+                if (!$resuming) {
+                    $this->idempotency->save(
+                        $idempotencyKey, $fingerprint, $userId, $username, $accountType,
+                        self::IDEMPOTENCY_TTL_H
+                    );
+                }
+                $this->pdo->commit();
+                $resolution = ['user_id' => $userId, 'username' => $username];
+            } catch (\PDOException $e) {
+                if ($this->pdo->inTransaction()) {
+                    $this->pdo->rollBack();
+                }
+                if ($e->getCode() !== '23000' || $resuming) {
+                    throw $e;
+                }
+                // Same-key concurrent winner committed first: roll
+                // back (grant unconsumed, nothing written) and
+                // replay-or-resume from the winner's row (a resumed
+                // attempt saves nothing, so the loop below ends).
+                $winner = $this->idempotency->findValid($idempotencyKey);
+                if ($winner === null
+                    || !hash_equals((string)$winner['grant_fingerprint'], $fingerprint)
+                ) {
+                    throw new ActivationException(
+                        ActivationException::IDEMPOTENT_CONFLICT, 409,
+                        'This idempotency key was already used with a different session.'
+                    );
+                }
+                if ($this->hasRecoveredEvent($ticketId, $fpShort)) {
+                    return $this->recoveryResult($grant, $winner, true);
+                }
+                $resuming = true;
+            } catch (ActivationException $e) {
+                if ($this->pdo->inTransaction()) {
+                    $this->pdo->rollBack();
+                }
+                throw $e;
+            } catch (\Throwable $e) {
+                if ($this->pdo->inTransaction()) {
+                    $this->pdo->rollBack();
+                }
+                throw $e;
+            }
+        }
+        if ($resolution === null) {
+            // Unreachable (a resumed attempt saves nothing and so
+            // never 23000s) -- fail loud, never half-complete.
+            throw new RuntimeException('Recovery could not begin.');
+        }
+        // MYSQL (outside every PDO txn -- the connections cannot
+        // share one): lock the users row, set the hash, revoke ALL
+        // refresh sessions. Repeat-safe: the same password
+        // re-hashed, revocation COALESCE-guarded.
+        ($this->passwordResetter)(
+            (int)$issuer['id'], (int)$resolution['user_id'], $newPassword
+        );
+        // PDO-B: close the ceremony. markRecovered is idempotent
+        // for this fingerprint (a same-fp double-submit that lost
+        // the race converges here instead of 409ing).
+        $this->pdo->beginTransaction();
+        try {
+            $this->tickets->markRecovered($ticketId, [
+                'user_id' => (int)$resolution['user_id'],
+                'grant_fp' => $fpShort,
+            ]);
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+        return [
+            'user_id' => (int)$resolution['user_id'],
+            'ticket_id' => $ticketId,
+            'username' => (string)$resolution['username'],
+            'officer_id' => (int)$issuer['id'],
+            'officer_username' => (string)$issuer['username'],
+            'replayed' => false,
+        ];
+    }
+
+    /**
+     * S6 replay shape: the idem row carries the user, the loaded
+     * grant carries the ticket, the code row carries the
+     * officer. $row is an idempotency row (prior or winner).
+     *
+     * @return array{user_id:int,ticket_id:int,username:string,
+     *   officer_id:int,officer_username:string,replayed:bool}
+     */
+    private function recoveryResult(array $grant, array $row, bool $replayed): array
+    {
+        $issuer = $this->codeIssuer((int)$grant['code_id']);
+        if ($issuer === null) {
+            throw new RuntimeException('Recovery authorization is unavailable.');
+        }
+        return [
+            'user_id' => (int)$row['user_id'],
+            'ticket_id' => (int)$grant['ticket_id'],
+            'username' => (string)$row['username'],
+            'officer_id' => (int)$issuer['id'],
+            'officer_username' => (string)$issuer['username'],
+            'replayed' => $replayed,
+        ];
+    }
+
+    /**
+     * S6: the officer who issued a code (honest audit
+     * attribution). Null when the code or its issuer is gone --
+     * callers fail closed, never substitute.
+     *
+     * @return array{id:int,username:string}|null
+     */
+    private function codeIssuer(int $codeId): ?array
+    {
+        if ($codeId <= 0) {
+            return null;
+        }
+        $stmt = $this->pdo->prepare(
+            'SELECT c.issued_by AS id, u.username AS username'
+            . ' FROM acm_activation_codes c LEFT JOIN users u ON u.id = c.issued_by'
+            . ' WHERE c.id = :id LIMIT 1'
+        );
+        $stmt->execute([':id' => $codeId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!is_array($row) || (int)$row['id'] <= 0) {
+            return null;
+        }
+        return ['id' => (int)$row['id'], 'username' => (string)($row['username'] ?? '')];
+    }
+
+    /**
+     * S6: has this ticket recorded a `recovered` event for this
+     * grant fingerprint? Same truncated shape markRecovered()
+     * writes (LOCATE = literal match, no LIKE semantics).
+     */
+    private function hasRecoveredEvent(int $ticketId, string $fpShort): bool
+    {
+        if ($ticketId <= 0 || $fpShort === '') {
+            return false;
+        }
+        $stmt = $this->pdo->prepare(
+            "SELECT 1 FROM acm_ticket_events"
+            . " WHERE ticket_id = :t AND event = 'recovered'"
+            . ' AND LOCATE(:m, meta) > 0 LIMIT 1'
+        );
+        $stmt->execute([':t' => $ticketId, ':m' => '"grant_fp":"' . $fpShort . '"']);
+        return $stmt->fetchColumn() !== false;
+    }
+
+    /**
+     * S6: the users row must be live (is_active = 1). Recovery
+     * never revives deactivated accounts -- that is the
+     * reactivation lifecycle, not this ceremony.
+     */
+    private function userIsActive(int $userId): bool
+    {
+        if ($userId <= 0) {
+            return false;
+        }
+        $stmt = $this->pdo->prepare('SELECT is_active FROM users WHERE id = :u LIMIT 1');
+        $stmt->execute([':u' => $userId]);
+        return (int)$stmt->fetchColumn() === 1;
     }
 
     // ------------------------------------------------------------
