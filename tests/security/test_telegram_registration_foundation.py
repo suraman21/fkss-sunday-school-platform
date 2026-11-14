@@ -265,6 +265,18 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn("attachment_cleanup','attachment'", api)
         self.assertIn("cleanupSession((int)$id)", self.service)
 
+    def test_attachment_download_is_hr_only_and_path_safe(self):
+        endpoint = (ROOT / "admin/telegram_attachment.php").read_text(encoding="utf-8")
+        page = (ROOT / "admin/telegram_registration.php").read_text(encoding="utf-8")
+        attachments = (ROOT / "admin/backend/services/TelegramAttachmentService.php").read_text(encoding="utf-8")
+        self.assertIn("admin_role']??'')!=='hr_dept'", endpoint)
+        self.assertIn("FILTER_VALIDATE_INT", endpoint)
+        self.assertIn("status IN ('stored','attached')", endpoint)
+        self.assertIn("X-Content-Type-Options: nosniff", endpoint)
+        self.assertIn("Cache-Control: private, no-store", endpoint)
+        self.assertIn("public static function resolve", attachments)
+        self.assertIn('rel="noopener"', page)
+
     def test_submission_never_inserts_member(self):
         submit = self.service[self.service.index("private function submitReview"):]
         self.assertIn("status='submitted'", submit)
