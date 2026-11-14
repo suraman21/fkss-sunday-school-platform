@@ -20,6 +20,10 @@ final class TelegramAttachmentService
     {
         $limit=max(1,min(200,$limit));$q=$this->conn->query("SELECT DISTINCT a.session_id FROM telegram_registration_attachments a JOIN telegram_registration_sessions s ON s.id=a.session_id WHERE a.status IN ('pending','stored','rejected') AND s.status IN ('cancelled','expired','failed') ORDER BY a.session_id LIMIT {$limit}");$ids=$q?$q->fetch_all(MYSQLI_ASSOC):[];foreach($ids as $row)$this->cleanupSession((int)$row['session_id']);return count($ids);
     }
+    public static function resolve(string $stored): ?string
+    {
+        if(!preg_match('#^private://telegram_quarantine/([a-f0-9]{32}\.(?:jpg|png|webp|pdf))$#D',$stored,$m))return null;$root=(defined('ROOT_PATH')?dirname(ROOT_PATH):dirname(__DIR__,4)).'/ssms_private/telegram_quarantine';$path=$root.'/'.$m[1];return is_file($path)?$path:null;
+    }
     private static function discard(string $stored): void
     {
         if(!preg_match('#^private://telegram_quarantine/([a-f0-9]{32}\.(?:jpg|png|webp|pdf))$#D',$stored,$m))return;$root=(defined('ROOT_PATH')?dirname(ROOT_PATH):dirname(__DIR__,4)).'/ssms_private/telegram_quarantine';$path=$root.'/'.$m[1];if(is_file($path))@unlink($path);
