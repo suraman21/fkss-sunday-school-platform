@@ -10,20 +10,34 @@
  * allocation retries on unique-constraint collisions (D3.4).
  * Runs inside the caller's transaction (grant consumption +
  * provisioning commit atomically).
+ * S7 adds suspend/reactivate (temporary suspension lifecycle):
+ * revoke-first, then ONE transaction owned HERE (link flip +
+ * users.is_active flip + history row). State is verified under
+ * lock, so concurrent losers get honest state errors.
  */
 
 namespace SSMS\Acm\Accounts;
 
 use PDO;
+use SSMS\Acm\Contracts\AccountContext;
 use SSMS\Acm\Identity\AcmPersonService;
+use SSMS\Acm\Policy\AcmPolicy;
 
 class AccountProvisioner
 {
     private PDO $pdo;
+    /**
+     * @var callable|null (int $userId): void. Mysqli-backed,
+     * injected by the console (the ACM package stays PDO-only --
+     * S4 familyRevoker precedent). Suspend FAILS CLOSED without
+     * one: nothing changes, no history row.
+     */
+    private $sessionRevoker;
 
-    public function __construct(PDO $pdo)
+    public function __construct(PDO $pdo, ?callable $sessionRevoker = null)
     {
         $this->pdo = $pdo;
+        $this->sessionRevoker = $sessionRevoker;
     }
 
     /**
@@ -127,6 +141,232 @@ class AccountProvisioner
         $stmt->execute([':u' => $userId]);
         $name = $stmt->fetchColumn();
         return $name === false ? null : (string)$name;
+    }
+
+    // ------------------------------------------------------------
+    // S7: temporary suspension lifecycle (member/parent only).
+    // Suspend is revoke-FIRST, then one transaction owned here
+    // (link flip + is_active flip + history row). Reactivate is
+    // link-first inside one transaction. State is verified under
+    // lock (FOR UPDATE): concurrent losers get honest state
+    // errors, never half-writes or duplicate history rows.
+    // ------------------------------------------------------------
+
+    /**
+     * Suspend an ACTIVE account. Guards (policy, target role,
+     * reason) run before the revoker fires; the revoker fires
+     * before the transaction opens.
+     *
+     * @return array{user_id:int,username:string,account_type:string,person_id:int}
+     */
+    public function suspend(int $userId, string $reason, AccountContext $ctx): array
+    {
+        $this->requireLifecycleVerb($ctx, 'suspend');
+        $reason = $this->cleanReason($reason);
+        if ($this->sessionRevoker === null) {
+            // Fail closed BEFORE anything changes (S4/S6
+            // precedent): a suspend that cannot revoke sessions
+            // must error, never half-suspend.
+            throw new \RuntimeException('Account suspension is unavailable.');
+        }
+        $target = $this->suspendableTarget($userId);
+        if ($target['status'] !== 'active' || (int)$target['is_active'] !== 1) {
+            // Fail fast (no pointless revoke); the transaction
+            // re-verifies under lock -- this read is advisory.
+            throw new \InvalidArgumentException('Account is not active.');
+        }
+        // Revoke FIRST (#24): a crash here leaves sessions dead +
+        // account active -- the user re-logs in (self-healing)
+        // and a retry proceeds normally. The reverse order would
+        // strand live sessions behind a state error on retry.
+        ($this->sessionRevoker)($userId);
+        $this->pdo->beginTransaction();
+        try {
+            $locked = $this->lockedLink($userId);
+            if ($locked === null
+                || $locked['status'] !== 'active'
+                || (int)$locked['is_active'] !== 1
+            ) {
+                throw new \InvalidArgumentException('Account is not active.');
+            }
+            $this->pdo->prepare(
+                "UPDATE acm_person_accounts SET status = 'suspended'"
+                . ' WHERE user_id = :u AND status = \'active\''
+            )->execute([':u' => $userId]);
+            $this->pdo->prepare(
+                'UPDATE users SET is_active = 0 WHERE id = :u AND is_active = 1'
+            )->execute([':u' => $userId]);
+            $this->insertHistory($userId, $locked, 'suspended', $reason, $ctx->userId);
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+        return [
+            'user_id' => $userId,
+            'username' => (string)$target['username'],
+            'account_type' => (string)$target['account_type'],
+            'person_id' => (int)$target['person_id'],
+        ];
+    }
+
+    /**
+     * Reactivate a suspended account. Accepts the suspended link
+     * AND the drifted state (active link + gated bit: staff
+     * flipped is_active directly via user administration) --
+     * converge, don't strand. Pending/revoked links refuse: the
+     * ceremony (S3/S4) and deactivation (step 13) own those.
+     *
+     * @return array{user_id:int,username:string,account_type:string,person_id:int}
+     */
+    public function reactivate(int $userId, string $reason, AccountContext $ctx): array
+    {
+        $this->requireLifecycleVerb($ctx, 'reactivate');
+        $reason = $this->cleanReason($reason);
+        $target = $this->suspendableTarget($userId);
+        if (!$this->isSuspendedState($target)) {
+            throw new \InvalidArgumentException('Account is not suspended.');
+        }
+        $this->pdo->beginTransaction();
+        try {
+            $locked = $this->lockedLink($userId);
+            if ($locked === null || !$this->isSuspendedState($locked)) {
+                throw new \InvalidArgumentException('Account is not suspended.');
+            }
+            // Link-first order: a crash leaves the account gated;
+            // retry converges (both UPDATEs are conditional and
+            // repeat-safe). No revoker: sessions were revoked at
+            // suspend time; the user logs in fresh.
+            $this->pdo->prepare(
+                "UPDATE acm_person_accounts SET status = 'active'"
+                . ' WHERE user_id = :u AND status = \'suspended\''
+            )->execute([':u' => $userId]);
+            $this->pdo->prepare(
+                'UPDATE users SET is_active = 1 WHERE id = :u AND is_active = 0'
+            )->execute([':u' => $userId]);
+            $this->insertHistory($userId, $locked, 'reactivated', $reason, $ctx->userId);
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+        return [
+            'user_id' => $userId,
+            'username' => (string)$target['username'],
+            'account_type' => (string)$target['account_type'],
+            'person_id' => (int)$target['person_id'],
+        ];
+    }
+
+    /**
+     * Suspended = suspended link (any bit) OR drifted (active
+     * link + gated bit). Pending/revoked links are never
+     * suspended -- other lifecycles own them.
+     */
+    private function isSuspendedState(array $row): bool
+    {
+        if (($row['status'] ?? '') === 'suspended') {
+            return true;
+        }
+        return ($row['status'] ?? '') === 'active' && (int)($row['is_active'] ?? 1) !== 1;
+    }
+
+    /**
+     * Policy + existence + target-role guards. State checks stay
+     * with the callers (advisory pre-read, authoritative lock).
+     *
+     * @return array{person_id:int,account_type:string,status:string,
+     *   username:string,role:string,is_active:int}
+     */
+    private function suspendableTarget(int $userId): array
+    {
+        $row = $this->linkRow($userId, false);
+        if ($row === null) {
+            throw new \InvalidArgumentException('Unknown account.');
+        }
+        if ($row['role'] !== 'member' && $row['role'] !== 'parent') {
+            // v2 D1.1: the office suspends non-officer accounts.
+            // Staff and officers stay in user administration
+            // (super_admin-only, separate audit trail).
+            throw new \InvalidArgumentException(
+                'Staff and officer accounts are managed in user administration.'
+            );
+        }
+        return $row;
+    }
+
+    private function requireLifecycleVerb(AccountContext $ctx, string $verb): void
+    {
+        if (!AcmPolicy::can($ctx->role, AcmPolicy::RES_ACCOUNT, $verb)) {
+            throw new \InvalidArgumentException('Access denied.');
+        }
+    }
+
+    private function cleanReason(string $reason): string
+    {
+        $reason = trim($reason);
+        if ($reason === '') {
+            throw new \InvalidArgumentException('Reason is required.');
+        }
+        if (mb_strlen($reason) > 2000) {
+            throw new \InvalidArgumentException(
+                'Reason is too long (2000 characters maximum).'
+            );
+        }
+        return $reason;
+    }
+
+    /**
+     * The users row + person link, optionally locked. Null when
+     * the user or the link is missing (never suspended here).
+     */
+    private function linkRow(int $userId, bool $forUpdate): ?array
+    {
+        if ($userId <= 0) {
+            return null;
+        }
+        $stmt = $this->pdo->prepare(
+            'SELECT pa.person_id, pa.account_type, pa.status,'
+            . ' u.username, u.role, u.is_active'
+            . ' FROM acm_person_accounts pa JOIN users u ON u.id = pa.user_id'
+            . ' WHERE pa.user_id = :u LIMIT 1'
+            . ($forUpdate ? ' FOR UPDATE' : '')
+        );
+        $stmt->execute([':u' => $userId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return is_array($row) ? $row : null;
+    }
+
+    private function lockedLink(int $userId): ?array
+    {
+        return $this->linkRow($userId, true);
+    }
+
+    private function insertHistory(
+        int $userId,
+        array $locked,
+        string $action,
+        string $reason,
+        int $actorId
+    ): void {
+
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO acm_account_suspensions'
+            . ' (user_id, person_id, account_type, action, reason, actor_id)'
+            . ' VALUES (:u, :p, :at, :a, :r, :by)'
+        );
+        $stmt->execute([
+            ':u' => $userId,
+            ':p' => (int)$locked['person_id'],
+            ':at' => (string)$locked['account_type'],
+            ':a' => $action,
+            ':r' => $reason,
+            ':by' => $actorId > 0 ? $actorId : null,
+        ]);
     }
 
     private function buildUsername(string $accountType, array $ticket, array $person): string
