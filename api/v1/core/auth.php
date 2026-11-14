@@ -323,18 +323,67 @@ function apiRequireAuth() {
             if (!isset($conn) || !($conn instanceof mysqli)) {
                 throw new RuntimeException('API session database unavailable.');
             }
-            $familyActive = is_string($payload['fid'] ?? null) && is_string($payload['rsid'] ?? null)
-                && \App\Services\RefreshTokenService::accessSessionIsActive(
+            // S9: one bounded read feeds liveness AND proof binding
+            // (no TOCTOU, no second query). Null = inactive (the same
+            // verdict set the bool produced: malformed, missing,
+            // revoked, and expired rows all land on SESSION_REVOKED).
+            $sessionBinding = is_string($payload['fid'] ?? null) && is_string($payload['rsid'] ?? null)
+                ? \App\Services\RefreshTokenService::accessSessionProofBinding(
                     $conn, (int)$payload['uid'], $payload['fid'], $payload['rsid']
-                );
+                )
+                : null;
         } catch (Throwable $error) {
             error_log('API refresh-family revalidation unavailable.');
             err('Session could not be revalidated. Please try again.', 503,
                 ['code' => 'AUTH_SESSION_REVALIDATION_UNAVAILABLE']);
         }
-        if (!$familyActive) {
+        if ($sessionBinding === null) {
             err('This session is no longer active. Please sign in again.', 401,
                 ['code' => 'SESSION_REVOKED']);
+        }
+        // S9: bound families prove possession of the registered
+        // device key on EVERY call -- the token alone is useless
+        // without it (closes the S5 §9 residual). Unbound rows
+        // fall through EXACTLY as before (bearer + session check).
+        // S9: the proof header is read unconditionally (a $_SERVER
+        // lookup -- free, and observably nothing for unbound rows);
+        // enforcement below is iff-bound.
+        $dpopProof = isset($_SERVER['HTTP_DPOP']) && is_string($_SERVER['HTTP_DPOP'])
+            ? trim($_SERVER['HTTP_DPOP']) : '';
+        if ($sessionBinding['bound']) {
+            require_once __DIR__ . '/../../../acm/autoload.php';
+            if ($dpopProof === '') {
+                err('This session requires a device proof. Please login again.', 401,
+                    ['code' => 'ACCESS_PROOF_REQUIRED']);
+            }
+            try {
+                $requestVerifier = \SSMS\Acm\Device\DeviceRefreshProofs::requestVerifier($conn);
+                $htuPath = (string)(parse_url((string)($_SERVER['REQUEST_URI'] ?? '/'), PHP_URL_PATH) ?? '/');
+                $proofVerdict = $requestVerifier(
+                    $conn,
+                    (int)$sessionBinding['device_id'],
+                    $dpopProof,
+                    $token,
+                    // Wire method (tunneled PUT/DELETE/PATCH sign the
+                    // POST on the wire): the proof binds to what is
+                    // actually transported; override routing is
+                    // app-level and replay-safe via the jti anyway.
+                    strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? '')),
+                    $htuPath === '' ? '/' : $htuPath
+                );
+            } catch (Throwable $error) {
+                error_log('API access proof verification unavailable.');
+                err('Authentication service is temporarily unavailable.', 503,
+                    ['code' => 'AUTH_SERVICE_UNAVAILABLE']);
+            }
+            if ($proofVerdict !== 'ok') {
+                // Invalid and replay collapse to ONE generic failure
+                // (S5 no-oracle precedent, #33); the internal split
+                // is logged, never exposed.
+                error_log('API access proof rejected: ' . $proofVerdict);
+                err('Invalid device proof. Please login again.', 401,
+                    ['code' => 'ACCESS_PROOF_INVALID']);
+            }
         }
     }
     return apiRevalidateAuthorizationScope($payload);

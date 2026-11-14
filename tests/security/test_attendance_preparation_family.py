@@ -36,7 +36,10 @@ def test_binding_is_signed_optional_and_unconditional_for_bound_tokens():
     assert route.count('apiRefreshAccessBinding(') == 2 and route.count('            $accessFamily') == 2
     guard = core.split('function apiRequireAuth()', 1)[1].split('function apiRequireRole(', 1)[0]
     assert "array_key_exists('fid', $payload) || array_key_exists('rsid', $payload)" in guard
-    assert 'accessSessionIsActive(' in guard and 'HTTP_X_APP_BUILD' not in guard
+    # S9: the triple accessor supersedes the bool (same bounded liveness
+    # read + verdict set, one query, no TOCTOU); intent unchanged.
+    assert ('accessSessionIsActive(' in guard or 'accessSessionProofBinding(' in guard) \
+        and 'HTTP_X_APP_BUILD' not in guard
     assert "['code' => 'AUTH_SESSION_REVALIDATION_UNAVAILABLE']" in guard
     assert "['code' => 'SESSION_REVOKED']" in guard
     assert 'return apiRevalidateAuthorizationScope($payload);' in guard
