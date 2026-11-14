@@ -39,6 +39,7 @@ header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/backend/services/SecurityAuditService.php';
 require_once __DIR__ . '/backend/services/RefreshTokenService.php';
+require_once __DIR__ . '/backend/services/AccountCredentialService.php';
 require_once __DIR__ . '/../acm/autoload.php';
 
 use SSMS\Acm\Accounts\AccountProvisioner;
@@ -90,7 +91,16 @@ $persons = new AcmPersonService($pdo);
 $tickets = new AcmTicketService($pdo, $persons);
 $ceremony = new ActivationService($pdo, $tickets, $persons);
 $office = new AcmOfficeService($pdo);
-$provisioner = new AccountProvisioner($pdo);
+// S7 suspension (revoker mirrors the S4 shape: mysqli-backed,
+// fails closed without a live handle -- suspend refuses rather
+// than half-suspending).
+$consoleSessionRevoker = null;
+if (isset($conn) && $conn instanceof \mysqli) {
+    $consoleSessionRevoker = static function (int $userId) use ($conn): void {
+        (new \App\Services\MysqliCredentialRepository($conn))->revokeAllRefreshSessions($userId);
+    };
+}
+$provisioner = new AccountProvisioner($pdo, $consoleSessionRevoker);
 // S4 device registry (revoker mirrors the mobile route: mysqli-backed,
 // fails closed without a live handle).
 $consoleRevoker = null;
@@ -632,6 +642,52 @@ try {
                 'already' => $report['already'],
             ], 'acm_ticket', (int)$ticket['id']);
             acm_ok(['revoked' => true, 'families' => $report['families']]);
+            break;
+        }
+
+        case 'account_suspend': {
+            if ($method !== 'POST') {
+                acm_err('Method not allowed.', 405);
+            }
+            if (!AcmPolicy::can($role, AcmPolicy::RES_ACCOUNT, 'suspend')) {
+                acm_err('Access denied.', 403);
+            }
+            $result = $provisioner->suspend(
+                (int)($_POST['id'] ?? 0),
+                (string)($_POST['reason'] ?? ''),
+                new AccountContext($actorId, $role)
+            );
+            // Reviewer-visible: the office report only lists
+            // `acm.`-prefixed actions (LIKE 'acm.%').
+            acm_audit($pdo, 'acm.account.suspended', [
+                'username' => $result['username'],
+                'account_type' => $result['account_type'],
+                'reason' => trim((string)($_POST['reason'] ?? '')),
+                'link' => 'active->suspended',
+            ], 'user', $result['user_id']);
+            acm_ok(['suspended' => true, 'account' => $result]);
+            break;
+        }
+
+        case 'account_reactivate': {
+            if ($method !== 'POST') {
+                acm_err('Method not allowed.', 405);
+            }
+            if (!AcmPolicy::can($role, AcmPolicy::RES_ACCOUNT, 'reactivate')) {
+                acm_err('Access denied.', 403);
+            }
+            $result = $provisioner->reactivate(
+                (int)($_POST['id'] ?? 0),
+                (string)($_POST['reason'] ?? ''),
+                new AccountContext($actorId, $role)
+            );
+            acm_audit($pdo, 'acm.account.reactivated', [
+                'username' => $result['username'],
+                'account_type' => $result['account_type'],
+                'reason' => trim((string)($_POST['reason'] ?? '')),
+                'link' => 'suspended->active',
+            ], 'user', $result['user_id']);
+            acm_ok(['reactivated' => true, 'account' => $result]);
             break;
         }
 
