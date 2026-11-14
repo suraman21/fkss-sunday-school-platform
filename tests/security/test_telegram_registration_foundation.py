@@ -255,6 +255,16 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn("telegram_quarantine/([a-f0-9]{32}", attachments)
         self.assertIn("cleanupSession((int)$id)", self.service)
 
+    def test_expired_and_failed_attachment_cleanup_is_bounded_and_audited(self):
+        attachments = (ROOT / "admin/backend/services/TelegramAttachmentService.php").read_text(encoding="utf-8")
+        api = (ROOT / "admin/api_telegram_registration.php").read_text(encoding="utf-8")
+        self.assertIn("public function cleanupStale", attachments)
+        self.assertIn("max(1,min(200", attachments)
+        self.assertIn("s.status IN ('cancelled','expired','failed')", attachments)
+        self.assertIn("case 'attachment_cleanup'", api)
+        self.assertIn("attachment_cleanup','attachment'", api)
+        self.assertIn("cleanupSession((int)$id)", self.service)
+
     def test_submission_never_inserts_member(self):
         submit = self.service[self.service.index("private function submitReview"):]
         self.assertIn("status='submitted'", submit)
