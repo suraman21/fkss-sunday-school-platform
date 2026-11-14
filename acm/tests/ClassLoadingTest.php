@@ -32,6 +32,8 @@ final class ClassLoadingTest extends TestCase
         // S4 device registry travels with the same manifest.
         $this->assertTrue(class_exists(\SSMS\Acm\Device\DeviceCrypto::class));
         $this->assertTrue(class_exists(\SSMS\Acm\Device\DeviceService::class));
+        // S5 refresh-time proof verifier travels with the same manifest.
+        $this->assertTrue(class_exists(\SSMS\Acm\Device\DeviceRefreshProofs::class));
     }
 
     public function testContractsResolve(): void

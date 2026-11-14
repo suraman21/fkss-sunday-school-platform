@@ -99,6 +99,9 @@ $showCeremony = $codeInfo !== null && in_array($status, [
 $canManageDevices = AcmPolicy::can($role, 'device', 'manage');
 $deviceRows = null;
 $deviceUserId = null;
+// S5: live bound-family counts per device uuid. Separate try: a
+// counts failure (pre-086) hides the BADGES, never the S4 rows.
+$boundFamilyCounts = null;
 if ($ticket !== null && $canManageDevices) {
     try {
         $deviceUserId = (new AccountProvisioner($pdo))->userIdFor(
@@ -109,6 +112,13 @@ if ($ticket !== null && $canManageDevices) {
         );
     } catch (\Throwable $e) {
         $deviceRows = null;
+    }
+    if ($deviceRows !== null && $deviceUserId !== null) {
+        try {
+            $boundFamilyCounts = (new DeviceService($pdo, $tickets))->boundFamilyCounts($deviceUserId);
+        } catch (\Throwable $e) {
+            $boundFamilyCounts = null;
+        }
     }
 }
 $showDevices = $canManageDevices && $deviceUserId !== null;
@@ -306,7 +316,7 @@ acm_chrome_open('queue', (string)($ticket['ticket_no'] ?? 'Ticket'), 'Activation
     <?php else: ?>
     <dl class="acm-kv">
         <?php foreach ($deviceRows as $dr): ?>
-        <dt><?= e((string)($dr['name'] ?? 'Unnamed device')) ?> <span class="bg bg-n"><?= e((string)($dr['status'] ?? '')) ?></span></dt>
+        <dt><?= e((string)($dr['name'] ?? 'Unnamed device')) ?> <span class="bg bg-n"><?= e((string)($dr['status'] ?? '')) ?></span><?php if (is_array($boundFamilyCounts)): ?> <span class="bg bg-n" title="Live refresh families requiring a device proof"><?= (int)($boundFamilyCounts[(string)($dr['uuid'] ?? '')] ?? 0) ?> bound</span><?php endif; ?></dt>
         <dd><?= e(DeviceCrypto::shortFingerprint((string)($dr['fingerprint'] ?? ''))) ?> · <?= e((string)($dr['alg'] ?? '')) ?> · last seen <?= e((string)($dr['last_seen'] ?? 'never')) ?>
             <?php if (($dr['status'] ?? '') !== 'revoked'): ?>
             <button class="btn bd" data-revoke="<?= e((string)($dr['uuid'] ?? '')) ?>" style="margin-left:.6rem">Revoke</button>

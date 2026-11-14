@@ -57,5 +57,7 @@ if (!defined('SSMS_ACM_AUTOLOAD')) {
     // S4 device registry.
     require_once __DIR__ . '/src/Device/DeviceCrypto.php';
     require_once __DIR__ . '/src/Device/DeviceService.php';
+    // S5 refresh-time proof verifier (mysqli, injected into rotation).
+    require_once __DIR__ . '/src/Device/DeviceRefreshProofs.php';
     require_once __DIR__ . '/src/Office/AcmOfficeService.php';
 }

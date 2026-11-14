@@ -42,6 +42,20 @@ final class DeviceCrypto
     public const RSA_MIN_BITS = 2048;
     /** The only EC curve we accept (OpenSSL short name). */
     public const EC_CURVE = 'prime256v1';
+    // --- S5 refresh-time DPoP proofs (design D3.8; RFC 9449 shape). ---
+    /** Largest DPoP proof (compact JWT) accepted on the refresh route. */
+    public const MAX_DPOP_PROOF_BYTES = 4096;
+    /** Largest decoded DPoP header/payload JSON accepted. */
+    public const MAX_DPOP_JSON_BYTES = 2048;
+    /** DPoP jti budget (mirrors the 086 VARCHAR(128)). */
+    public const DPOP_JTI_MAX_CHARS = 128;
+    /** Refresh route path a DPoP htu must end with (host not pinned). */
+    public const DPOP_HTU_PATH_SUFFIX = '/auth/refresh-token';
+    /** The only htm a refresh proof may carry. */
+    public const DPOP_HTM = 'POST';
+    /** Compiled-default freshness + replay windows (seeds override). */
+    public const DEFAULT_PROOF_SKEW_SECONDS = 300;
+    public const DEFAULT_PROOF_JTI_TTL_SECONDS = 900;
 
     /**
      * Parse + validate a client-submitted SPKI DER key.
@@ -260,6 +274,195 @@ final class DeviceCrypto
             return null;
         }
         return mb_substr($clean, 0, 2000);
+    }
+
+    /**
+     * Strict base64url decode with a caller-chosen output cap (the
+     * fixed-cap base64UrlDecode stays challenge-sized for S4).
+     */
+    public static function base64UrlDecodeCapped(string $text, int $maxBytes): ?string
+    {
+        if ($text === '' || $maxBytes <= 0) {
+            return null;
+        }
+        if (!preg_match('/^[A-Za-z0-9_-]+$/D', $text)) {
+            return null;
+        }
+        if (strlen($text) > (int)ceil($maxBytes / 3) * 4 + 4) {
+            return null;
+        }
+        $padded = $text . str_repeat('=', (4 - strlen($text) % 4) % 4);
+        $bytes = base64_decode(strtr($padded, '-_', '+/'), true);
+        if ($bytes === false || $bytes === '' || strlen($bytes) > $maxBytes) {
+            return null;
+        }
+        return $bytes;
+    }
+
+    /**
+     * Parse a refresh-time DPoP proof (compact JWT). Shape + header
+     * policy only -- claims (htm/htu/iat) are validated separately
+     * so tests can distinguish malformed proofs from stale ones; on
+     * the wire both are the ONE generic proof failure (no oracle).
+     *
+     * The embedded `jwk` must be present with the shape of the
+     * registered algorithm (catches confused clients loudly) but is
+     * NEVER trusted: the caller verifies the signature against the
+     * REGISTERED device key, so no attacker-supplied key material
+     * can cause key confusion. A `d` (private) member is rejected.
+     *
+     * @return array{signingInput:string,signature:string,htm:string,htu:string,iat:int,jti:string}|null
+     *         Null on ANY malformed input.
+     */
+    public static function parseDpopProof(string $proof, string $expectedAlg): ?array
+    {
+        if ($proof === '' || strlen($proof) > self::MAX_DPOP_PROOF_BYTES) {
+            return null;
+        }
+        if ($expectedAlg !== self::ALG_ES256 && $expectedAlg !== self::ALG_RS256) {
+            return null;
+        }
+        if (substr_count($proof, '.') !== 2) {
+            return null;
+        }
+        [$headerPart, $payloadPart, $sigPart] = explode('.', $proof, 3);
+        if ($headerPart === '' || $payloadPart === '' || $sigPart === '') {
+            return null;
+        }
+        $headerJson = self::base64UrlDecodeCapped($headerPart, self::MAX_DPOP_JSON_BYTES);
+        $payloadJson = self::base64UrlDecodeCapped($payloadPart, self::MAX_DPOP_JSON_BYTES);
+        $signature = self::base64UrlDecodeCapped($sigPart, self::MAX_SIGNATURE_BYTES);
+        if ($headerJson === null || $payloadJson === null || $signature === null) {
+            return null;
+        }
+        $header = json_decode($headerJson, true);
+        if (!is_array($header)) {
+            return null;
+        }
+        $typ = $header['typ'] ?? null;
+        if (!is_string($typ) || strtolower($typ) !== 'dpop+jwt') {
+            return null;
+        }
+        $alg = $header['alg'] ?? null;
+        if (!is_string($alg) || $alg !== $expectedAlg) {
+            return null;
+        }
+        $jwk = $header['jwk'] ?? null;
+        if (!is_array($jwk) || array_key_exists('d', $jwk)) {
+            return null;
+        }
+        $kty = $jwk['kty'] ?? null;
+        if ($expectedAlg === self::ALG_ES256) {
+            if ($kty !== 'EC' || ($jwk['crv'] ?? null) !== 'P-256') {
+                return null;
+            }
+        } elseif ($kty !== 'RSA') {
+            return null;
+        }
+        $payload = json_decode($payloadJson, true);
+        if (!is_array($payload)) {
+            return null;
+        }
+        $htm = $payload['htm'] ?? null;
+        $htu = $payload['htu'] ?? null;
+        $iat = $payload['iat'] ?? null;
+        $jti = $payload['jti'] ?? null;
+        if (!is_string($htm) || $htm === '' || strlen($htm) > 16) {
+            return null;
+        }
+        if (!is_string($htu) || $htu === '' || strlen($htu) > 2048) {
+            return null;
+        }
+        if (!is_int($iat)) {
+            return null;
+        }
+        if (!is_string($jti)
+            || strlen($jti) > self::DPOP_JTI_MAX_CHARS
+            || !preg_match('/^[\x20-\x7E]+$/D', $jti)
+        ) {
+            return null;
+        }
+        return [
+            'signingInput' => $headerPart . '.' . $payloadPart,
+            'signature' => $signature,
+            'htm' => $htm,
+            'htu' => $htu,
+            'iat' => $iat,
+            'jti' => $jti,
+        ];
+    }
+
+    /**
+     * Validate parsed DPoP claims against the refresh route: htm is
+     * POST; htu is an http(s) URL whose path ends with the refresh
+     * route (host deliberately NOT pinned -- beta/prod/test bases
+     * differ and proxies rewrite hosts; route-pinning is what binds
+     * the proof); iat is within $skewSeconds of $now either way.
+     */
+    public static function validateDpopClaims(array $parsed, int $now, int $skewSeconds): bool
+    {
+        if ($skewSeconds < 0) {
+            return false;
+        }
+        if (($parsed['htm'] ?? null) !== self::DPOP_HTM) {
+            return false;
+        }
+        $htu = $parsed['htu'] ?? null;
+        if (!is_string($htu)) {
+            return false;
+        }
+        $parts = parse_url($htu);
+        if (!is_array($parts)) {
+            return false;
+        }
+        $scheme = strtolower((string)($parts['scheme'] ?? ''));
+        if ($scheme !== 'http' && $scheme !== 'https') {
+            return false;
+        }
+        $path = (string)($parts['path'] ?? '');
+        $suffix = self::DPOP_HTU_PATH_SUFFIX;
+        if ($path === '' || substr($path, -strlen($suffix)) !== $suffix) {
+            return false;
+        }
+        $iat = $parsed['iat'] ?? null;
+        if (!is_int($iat) || $iat <= 0) {
+            return false;
+        }
+        $delta = $now - $iat;
+        if (!is_int($delta)) {
+            return false;
+        }
+        return abs($delta) <= $skewSeconds;
+    }
+
+    /**
+     * Verify a DPoP proof signature against the REGISTERED device
+     * key (never the proof's embedded jwk). Same fail-closed shape
+     * as verify(): true ONLY on openssl 1; every other outcome is
+     * false so callers emit the ONE generic proof failure.
+     */
+    public static function verifyDpopSignature(
+        string $spkiDer,
+        string $signingInput,
+        string $signature
+    ): bool {
+        self::requireOpenSsl();
+        if ($spkiDer === '' || strlen($spkiDer) > self::MAX_SPKI_BYTES) {
+            return false;
+        }
+        if ($signingInput === '' || strlen($signingInput) > self::MAX_DPOP_PROOF_BYTES) {
+            return false;
+        }
+        if ($signature === '' || strlen($signature) > self::MAX_SIGNATURE_BYTES) {
+            return false;
+        }
+        try {
+            $parsed = self::parsePublicKey($spkiDer);
+        } catch (InvalidArgumentException $e) {
+            return false;
+        }
+        $result = openssl_verify($signingInput, $signature, $parsed['pem'], OPENSSL_ALGO_SHA256);
+        return $result === 1;
     }
 
     private static function requireOpenSsl(): void

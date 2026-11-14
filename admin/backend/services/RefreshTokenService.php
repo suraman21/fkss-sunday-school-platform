@@ -7,6 +7,8 @@
  * one-time exchange, and family revocation.
  * S4 adds an OPTIONAL device link (NULLABLE acm_device_id): linked families
  * die on device revocation; legacy NULL families behave exactly as before.
+ * S5 adds OPTIONAL binding (acm_bound, default 0): bound families require a
+ * DPoP proof at every rotation; unbound families rotate exactly as before.
  */
 namespace App\Services;
 
@@ -24,6 +26,12 @@ final class RefreshTokenService
      * safely). Null = not probed yet this request.
      */
     private static ?bool $deviceLinkAvailable = null;
+    /**
+     * S5: memoized acm_bound column probe (same per-request semantics
+     * as the S4 link probe). Pre-086 databases read every family
+     * unbound so refresh never bricks on schema skew.
+     */
+    private static ?bool $boundAvailable = null;
 
     public function __construct(\mysqli $database, callable $tokenIssuer, int $refreshTtl)
     {
@@ -35,24 +43,32 @@ final class RefreshTokenService
     /**
      * @param array{id:mixed,username:mixed,role:mixed,full_name:mixed,authorization_version:mixed} $user
      * @param int|null $acmDeviceId S4 device link for the new family (null = legacy unlinked).
+     * @param bool $bound S5 binding: bound families require a DPoP proof at
+     *        every rotation. Bound REQUIRES a link (InvalidArgumentException
+     *        otherwise -- a silent downgrade to unbound would lie to the
+     *        caller about the family's protection).
      */
-    public function issue(array $user, string $clientIp, string $userAgent, ?int $acmDeviceId = null): string
+    public function issue(array $user, string $clientIp, string $userAgent, ?int $acmDeviceId = null, bool $bound = false): string
     {
         $familyId = bin2hex(random_bytes(32));
-        $issued = $this->issueWithinTransaction($user, $familyId, $clientIp, $userAgent, $acmDeviceId);
+        $issued = $this->issueWithinTransaction($user, $familyId, $clientIp, $userAgent, $acmDeviceId, $bound);
         return $issued['token'];
     }
 
     /**
      * @param array<string,mixed> $payload Verified signed refresh payload
+     * @param string|null $dpopProof S5 raw DPoP header value (bound families only).
+     * @param callable(\mysqli,int,string):string|null $proofVerifier S5 verifier,
+     *        invoked as ($db, $deviceId, $proof) inside the rotation transaction;
+     *        returns 'ok' on success. Null = no verifier (bound rotation fails).
      * @return array{state:string,token?:string,user?:array<string,mixed>}
      */
-    public function rotate(string $presentedToken, array $payload, string $clientIp, string $userAgent): array
+    public function rotate(string $presentedToken, array $payload, string $clientIp, string $userAgent, ?string $dpopProof = null, ?callable $proofVerifier = null): array
     {
         $sessionId = (string)($payload['jti'] ?? '');
         $familyId = (string)($payload['fid'] ?? '');
         if ($this->isIdentifier($sessionId) && $this->isIdentifier($familyId)) {
-            return $this->rotateTracked($presentedToken, $payload, $clientIp, $userAgent);
+            return $this->rotateTracked($presentedToken, $payload, $clientIp, $userAgent, $dpopProof, $proofVerifier);
         }
 
         // Compatibility adapter: pre-rotation tokens had no jti/fid. They may
@@ -213,12 +229,35 @@ final class RefreshTokenService
         return self::$deviceLinkAvailable ?? false;
     }
 
+    private function boundColumnAvailable(): bool
+    {
+        if (self::$boundAvailable !== null) {
+            return self::$boundAvailable;
+        }
+        try {
+            $result = $this->database->query(
+                "SHOW COLUMNS FROM api_refresh_sessions LIKE 'acm_bound'"
+            );
+            self::$boundAvailable = $result && $result->num_rows === 1;
+            if ($result) {
+                $result->free();
+            }
+        } catch (\Throwable $ignored) {
+            // Same contract as the S4 probe: reads as absent, and the
+            // write/read right after stays the loud gate.
+            self::$boundAvailable = false;
+        }
+        return self::$boundAvailable ?? false;
+    }
+
     /** @return array{state:string,token?:string,user?:array<string,mixed>} */
     private function rotateTracked(
         string $presentedToken,
         array $payload,
         string $clientIp,
-        string $userAgent
+        string $userAgent,
+        ?string $dpopProof = null,
+        ?callable $proofVerifier = null
     ): array {
         $sessionId = (string)$payload['jti'];
         $claimedFamily = (string)$payload['fid'];
@@ -230,9 +269,12 @@ final class RefreshTokenService
             // (rotation inherits it below; pre-084 keeps the legacy
             // shape so refresh never breaks on schema skew).
             $linkSelect = $this->deviceLinkAvailable() ? ', acm_device_id' : '';
+            // S5: select the binding flag when the 086 column exists
+            // (pre-086 reads every family unbound -- same precedent).
+            $boundSelect = $this->boundColumnAvailable() ? ', acm_bound' : '';
             $statement = $this->database->prepare(
                 'SELECT session_id, family_id, user_id, token_hash, consumed_at, revoked_at,
-                        expires_at' . $linkSelect . '
+                        expires_at' . $linkSelect . $boundSelect . '
                  FROM api_refresh_sessions WHERE session_id=? LIMIT 1 FOR UPDATE'
             );
             $statement->bind_param('s', $sessionId);
@@ -273,12 +315,45 @@ final class RefreshTokenService
 
             $inheritDevice = isset($session['acm_device_id']) && $session['acm_device_id'] !== null
                 ? (int)$session['acm_device_id'] : null;
+            // S5: bound families require a DPoP proof, verified INSIDE
+            // this transaction AFTER all pre-existing checks (reuse,
+            // revoked, expired, account) and BEFORE consume. Unbound
+            // sessions skip this block entirely (legacy path below,
+            // byte-identical to before). Proof failure NEVER revokes
+            // the family (anti-DoS, owner decision #17): a stolen
+            // refresh token must not become a remote-bricking weapon.
+            $boundFlag = isset($session['acm_bound']) && (int)$session['acm_bound'] === 1;
+            if ($boundFlag && $inheritDevice === null) {
+                // Bound flag without a link is corrupt (issue() makes
+                // it impossible): fail closed, never silently unbound.
+                $this->database->rollback();
+                return ['state' => 'proof_invalid'];
+            }
+            $inheritBound = $boundFlag && $inheritDevice !== null;
+            if ($inheritBound) {
+                if ($dpopProof === null || $dpopProof === '' || $proofVerifier === null) {
+                    $this->database->rollback();
+                    return ['state' => 'proof_required'];
+                }
+                $verdict = $proofVerifier($this->database, $inheritDevice, $dpopProof);
+                // The verifier throws RuntimeException only for
+                // openssl-missing/database failure; the outer catch
+                // maps those to 'unavailable' (503, fail closed:
+                // verification is never skipped). Any other verdict
+                // besides 'ok' (invalid, replay) is the ONE generic
+                // proof failure with no oracle.
+                if ($verdict !== 'ok') {
+                    $this->database->rollback();
+                    return ['state' => 'proof_invalid'];
+                }
+            }
             $issued = $this->issueWithinTransaction(
                 $user,
                 (string)$session['family_id'],
                 $clientIp,
                 $userAgent,
-                $inheritDevice
+                $inheritDevice,
+                $inheritBound
             );
             $statement = $this->database->prepare(
                 'UPDATE api_refresh_sessions
@@ -294,6 +369,23 @@ final class RefreshTokenService
             }
             $statement->close();
             $this->database->commit();
+            if ($inheritBound) {
+                // S5: a bound rotation proves live possession -- refresh
+                // last_seen for revoke-this-device UX. Post-commit and
+                // best-effort: a touch failure must never undo rotation.
+                // Unbound sessions never touch (no proof was presented).
+                try {
+                    $touch = $this->database->prepare(
+                        'UPDATE acm_devices SET last_seen = CURRENT_TIMESTAMP WHERE id = ? LIMIT 1'
+                    );
+                    if ($touch) {
+                        $touch->bind_param('i', $inheritDevice);
+                        $touch->execute();
+                        $touch->close();
+                    }
+                } catch (\Throwable $ignored) {
+                }
+            }
             $this->cleanupExpiredSessions();
 
             return ['state' => 'rotated', 'token' => $issued['token'], 'user' => $user];
@@ -373,6 +465,7 @@ final class RefreshTokenService
      *
      * @param array{id:mixed,username:mixed,role:mixed,full_name:mixed,authorization_version:mixed} $user
      * @param int|null $acmDeviceId S4 device link (null = legacy unlinked).
+     * @param bool $bound S5 binding (requires a link; see issue()).
      * @return array{token:string,session_id:string}
      */
     private function issueWithinTransaction(
@@ -380,7 +473,8 @@ final class RefreshTokenService
         string $familyId,
         string $clientIp,
         string $userAgent,
-        ?int $acmDeviceId = null
+        ?int $acmDeviceId = null,
+        bool $bound = false
     ): array {
         $sessionId = bin2hex(random_bytes(32));
         $expiresAt = time() + $this->refreshTtl;
@@ -402,6 +496,12 @@ final class RefreshTokenService
         $safeIp = substr($clientIp, 0, 45);
         $agentHash = hash('sha256', $userAgent);
         $userId = (int)$user['id'];
+        // S5: bound REQUIRES a link, enforced LOUDLY (a silent
+        // downgrade to unbound would lie about the family's
+        // protection -- owner decision #15).
+        if ($bound && ($acmDeviceId === null || $acmDeviceId <= 0)) {
+            throw new \InvalidArgumentException('Bound families require a device link.');
+        }
         // S4: record the link only when one was requested AND the
         // 084 column exists (pre-084 databases take the legacy shape
         // so S4 code keeps working before the migration -- login must
@@ -409,7 +509,33 @@ final class RefreshTokenService
         // loud gate for genuine database failures).
         $link = ($acmDeviceId !== null && $acmDeviceId > 0 && $this->deviceLinkAvailable())
             ? $acmDeviceId : null;
-        if ($link !== null) {
+        // S5: bind only when requested AND linked AND the 086 column
+        // exists. A bound request on a pre-086 database degrades to
+        // linked-unbound (loud in the error log): login/rotation must
+        // never break on schema skew (S4 precedent).
+        $bind = $bound && $link !== null && $this->boundColumnAvailable();
+        if ($bound && !$bind) {
+            error_log('API refresh family requested bound but issued unbound (086 column missing or link lost).');
+        }
+        if ($bind && $link !== null) {
+            $statement = $this->database->prepare(
+                'INSERT INTO api_refresh_sessions
+                    (session_id, family_id, user_id, token_hash, expires_at, created_ip,
+                     user_agent_hash, acm_device_id, acm_bound)
+                 VALUES (?, ?, ?, ?, FROM_UNIXTIME(?), ?, ?, ?, 1)'
+            );
+            $statement->bind_param(
+                'ssisissi',
+                $sessionId,
+                $familyId,
+                $userId,
+                $tokenHash,
+                $expiresAt,
+                $safeIp,
+                $agentHash,
+                $link
+            );
+        } elseif ($link !== null) {
             $statement = $this->database->prepare(
                 'INSERT INTO api_refresh_sessions
                     (session_id, family_id, user_id, token_hash, expires_at, created_ip,
@@ -506,6 +632,13 @@ final class RefreshTokenService
             $this->database->query(
                 'DELETE FROM api_refresh_legacy_exchanges
                  WHERE exchanged_at < DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 120 DAY) LIMIT 1000'
+            );
+            // S5: sweep expired DPoP replay claims (same sampled,
+            // bounded, never-breaks-auth contract; pre-086 the table
+            // is missing and the failure is swallowed like the rest).
+            $this->database->query(
+                'DELETE FROM acm_refresh_proof_jtis
+                 WHERE expires_at < CURRENT_TIMESTAMP LIMIT 1000'
             );
         } catch (\Throwable $error) {
             // Cleanup is bounded and never changes the current auth decision.
