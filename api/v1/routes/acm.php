@@ -31,6 +31,7 @@ use SSMS\Acm\Contracts\CodePurpose;
 use SSMS\Acm\Contracts\RequestMeta;
 use SSMS\Acm\Device\DeviceCrypto;
 use SSMS\Acm\Device\DeviceService;
+use SSMS\Acm\Enrollment\StaffEnrollmentRequestService;
 use SSMS\Acm\Identity\AcmPersonService;
 use SSMS\Acm\OfficeNetwork\OfficeNetworkSignal;
 
@@ -497,4 +498,36 @@ if ($acmPath === 'devices/revoke' && $method === 'POST') {
         'families ' . $report['families'] . ($report['already'] ? ' (already revoked)' : '')
     );
     ok(['revoked' => true, 'families' => $report['families']]);
+}
+
+// ============================================================
+// S10: POST /acm/staff/enroll/request — session-authed staffer
+// files an enrollment request for THEMSELF. An officer decides
+// it in the console; approval mints the `staff_enroll` grant.
+// ============================================================
+if ($acmPath === 'staff/enroll/request' && $method === 'POST') {
+    if (isApiRateLimited('acm_staff_req', 30)) {
+        err('Too many attempts. Wait a while and try again.', 429, ['code' => 'rate_limited']);
+    }
+    $auth = apiRequireAuth();
+    $staffReqCtx = new AccountContext(
+        (int)($auth['uid'] ?? 0),
+        (string)($auth['rol'] ?? $auth['role'] ?? '')
+    );
+    $body = acmStrictBody(['operation'], 64);
+    $requests = new StaffEnrollmentRequestService($pdo);
+    try {
+        $row = $requests->request(
+            $staffReqCtx->userId,
+            $staffReqCtx->userId,
+            $body['operation'] !== '' ? $body['operation'] : 'activation'
+        );
+    } catch (InvalidArgumentException $e) {
+        err('The request is invalid.', 400, ['code' => 'invalid_request']);
+    }
+    ok([
+        'request_id' => (int)$row['id'],
+        'status' => (string)$row['status'],
+        'expires_at' => (string)$row['expires_at'],
+    ]);
 }

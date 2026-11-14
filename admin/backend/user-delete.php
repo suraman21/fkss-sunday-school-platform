@@ -156,6 +156,18 @@ try {
     _cleanupExec($pdo, "UPDATE department_tasks SET to_user_id   = NULL WHERE to_user_id   = :uid", $deleteUserId);
     _cleanupExec($pdo, "UPDATE department_tasks SET completed_by = NULL WHERE completed_by = :uid", $deleteUserId);
 
+    // S10 (#38): staff device/session closure. ACM-linked accounts
+    // were refused above (ACM console owns those); a STAFF target
+    // can still hold enrolled devices + refresh sessions + an open
+    // enrollment request — all die here so nothing outlives the
+    // users row. Devices first, then sessions (S8 order), then the
+    // request queue + its live grants. _cleanupExec keeps each
+    // statement a no-op on pre-ACM/pre-S10 deployments.
+    _cleanupExec($pdo, "UPDATE acm_devices SET status = 'revoked' WHERE user_id = :uid AND status IN ('pending','active')", $deleteUserId);
+    _cleanupExec($pdo, "UPDATE api_refresh_sessions SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP) WHERE user_id = :uid", $deleteUserId);
+    _cleanupExec($pdo, "UPDATE acm_staff_enrollment_requests SET status = 'canceled' WHERE user_id = :uid AND status = 'requested'", $deleteUserId);
+    _cleanupExec($pdo, "UPDATE acm_activation_grants g JOIN acm_staff_enrollment_requests r ON r.grant_id = g.id SET g.revoked_at = COALESCE(g.revoked_at, NOW()), g.revocation_reason = 'staff account deleted' WHERE r.user_id = :uid AND g.revoked_at IS NULL AND g.consumed_at IS NULL", $deleteUserId);
+
     // 4. Finally remove the user.
     $del = $pdo->prepare("DELETE FROM users WHERE id = :id LIMIT 1");
     $del->execute([':id' => $deleteUserId]);

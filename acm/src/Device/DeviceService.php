@@ -61,7 +61,7 @@ class DeviceService implements DeviceRegistry
     public const DEFAULT_MAX_ACCOUNTS_PER_DEVICE = 5;
     public const DEFAULT_MAX_DEVICES_PER_ACCOUNT = 5;
     /** Grant operations that may authorize registration (never reset). */
-    public const REGISTRATION_OPERATIONS = ['activation', 'device_add'];
+    public const REGISTRATION_OPERATIONS = ['activation', 'device_add', 'staff_enroll'];
 
     private PDO $pdo;
     private AcmTicketService $tickets;
@@ -142,8 +142,14 @@ class DeviceService implements DeviceRegistry
         $label = DeviceCrypto::cleanName($name);
         $grantId = null;
         if ($grant !== null) {
+            // S10: staff_enroll grants carry ticket_id 0 (staff have
+            // no tickets); every other operation still needs a live
+            // ticket link.
+            $staffGrant = ($grant['operation'] ?? '') === 'staff_enroll';
             if (!isset($grant['id'], $grant['ticket_id'], $grant['operation'])
-                || (int)$grant['id'] <= 0 || (int)$grant['ticket_id'] <= 0
+                || (int)$grant['id'] <= 0
+                || (!$staffGrant && (int)$grant['ticket_id'] <= 0)
+                || ($staffGrant && (int)$grant['ticket_id'] !== 0)
                 || !in_array($grant['operation'], self::REGISTRATION_OPERATIONS, true)) {
                 throw new InvalidArgumentException('The registration grant is invalid.');
             }
@@ -368,14 +374,29 @@ class DeviceService implements DeviceRegistry
                             'The registration session is invalid.'
                         );
                     }
-                    $ticketId = (int)$grant['ticket_id'];
-                    $ticket = $this->tickets->getForUpdate($ticketId);
-                    $expected = $operation === 'activation' ? 'account_pending_device' : 'grant_verified';
-                    if ($ticket === null || $ticket['status'] !== $expected) {
-                        throw new ActivationException(
-                            ActivationException::TICKET_STATE, 409,
-                            'The ticket is not awaiting device registration.'
-                        );
+                    // S10: staff grants carry no ticket — the approved
+                    // request row is the authorization (locked: an
+                    // officer may have canceled/expired mid-flight).
+                    if ($operation === 'staff_enroll') {
+                        $req = $this->lockedStaffRequest((int)$grant['id']);
+                        if ($req === null
+                            || (int)$req['user_id'] !== (int)$challenge['user_id']
+                            || (int)$req['live'] !== 1) {
+                            throw new ActivationException(
+                                ActivationException::GRANT_INVALID, 401,
+                                'The registration session is invalid.'
+                            );
+                        }
+                    } else {
+                        $ticketId = (int)$grant['ticket_id'];
+                        $ticket = $this->tickets->getForUpdate($ticketId);
+                        $expected = $operation === 'activation' ? 'account_pending_device' : 'grant_verified';
+                        if ($ticket === null || $ticket['status'] !== $expected) {
+                            throw new ActivationException(
+                                ActivationException::TICKET_STATE, 409,
+                                'The ticket is not awaiting device registration.'
+                            );
+                        }
                     }
                 }
 
@@ -449,6 +470,20 @@ class DeviceService implements DeviceRegistry
                     $this->tickets->markActivated($ticketId, $meta);
                 } elseif ($operation === 'device_add' && $ticketId !== null) {
                     $this->tickets->markDeviceRegistered($ticketId, $meta);
+                } elseif ($operation === 'staff_enroll' && $grant !== null) {
+                    // S10: no ticket, no is_active flip (staff logins
+                    // are always live) — the request is consumed.
+                    $consumeReq = $this->pdo->prepare(
+                        "UPDATE acm_staff_enrollment_requests SET status = 'consumed'"
+                        . " WHERE grant_id = :g AND status = 'approved'"
+                    );
+                    $consumeReq->execute([':g' => (int)$grant['id']]);
+                    if ($consumeReq->rowCount() !== 1) {
+                        throw new ActivationException(
+                            ActivationException::GRANT_CONSUMED, 409,
+                            'The registration session was already used.'
+                        );
+                    }
                 }
                 if ($grant !== null) {
                     $consumeGrant = $this->pdo->prepare(
@@ -751,6 +786,23 @@ class DeviceService implements DeviceRegistry
         $inc->execute([':id' => $challengeId]);
         $this->pdo->commit();
         throw ActivationException::challengeFailed();
+    }
+
+    /**
+     * S10: lock the staff request behind a `staff_enroll` grant.
+     * Only approved rows qualify; anything else fails closed.
+     */
+    private function lockedStaffRequest(int $grantId): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT id, user_id, status,'
+            . ' (expires_at > NOW()) AS live'
+            . " FROM acm_staff_enrollment_requests WHERE grant_id = :g AND status = 'approved'"
+            . ' LIMIT 1 FOR UPDATE'
+        );
+        $stmt->execute([':g' => $grantId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return is_array($row) ? $row : null;
     }
 
     private function lockedGrant(int $grantId): ?array
