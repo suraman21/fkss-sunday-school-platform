@@ -48,7 +48,7 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn("$text === '/resume'", self.service)
         self.assertIn("private function resume(", self.service)
         self.assertIn("private function editAnswer(", self.service)
-        self.assertIn("/edit field_key", self.service)
+        self.assertIn("private function editAnswer(", self.service)
         begin = self.service[self.service.index("private function begin"):self.service.index("private function profileChoice")]
         self.assertNotIn("cancelActive", begin)
         self.assertIn("You already have an unfinished draft", begin)
@@ -170,6 +170,14 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn('id="batchApprove"', page)
         self.assertIn('id="batchDialog"', page)
         self.assertIn("review_batch_approve", page)
+
+    def test_bot_primary_flow_is_button_driven_and_amharic(self):
+        self.assertIn("'⏭️ ዝለል'", self.service)
+        self.assertIn("'⬅️ ወደ ኋላ'", self.service)
+        self.assertIn("'📋 መረጃውን አሳይ'", self.service)
+        self.assertIn("'❌ ሰርዝ'", self.service)
+        self.assertIn("'▶️ ቀጥል'", self.service)
+        self.assertNotIn("/new — start", self.service)
 
     def test_submission_never_inserts_member(self):
         submit = self.service[self.service.index("private function submitReview"):]
