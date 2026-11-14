@@ -207,6 +207,14 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn("ይህ ጥያቄ አማራጭ ነው", self.service)
         self.assertIn("የምዝገባ ዓይነት ይምረጡ።", self.service)
 
+    def test_attachment_schema_is_quarantined_and_bounded(self):
+        migration = (ROOT / "sql/087_telegram_registration_attachments.sql").read_text(encoding="utf-8")
+        self.assertIn("telegram_registration_attachments", migration)
+        self.assertIn("UNIQUE KEY uniq_tg_attachment_field", migration)
+        self.assertIn("status ENUM('pending','stored','attached','rejected','deleted')", migration)
+        for key in ["student_photo", "guardian_photo", "doc_school_records", "doc_spiritual", "doc_signed_form"]:
+            self.assertIn(f"'{key}'", self.registry)
+
     def test_submission_never_inserts_member(self):
         submit = self.service[self.service.index("private function submitReview"):]
         self.assertIn("status='submitted'", submit)

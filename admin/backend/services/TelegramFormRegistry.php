@@ -33,6 +33,11 @@ final class TelegramFormRegistry
         'education_level' => ['max'=>60, 'skip'=>true, 'label'=>'Education level / የትምህርት ደረጃ', 'input'=>'choice', 'choices'=>['kg'=>'KG','elementary'=>'Elementary (1–8)','high'=>'High School (9–12)','tvet_level1'=>'TVET Level I','tvet_level2'=>'TVET Level II','tvet_level3'=>'TVET Level III','diploma'=>'Diploma','advanced_diploma'=>'Advanced Diploma','degree'=>'Degree','masters'=>'Masters','phd'=>'PhD','other'=>'ሌላ / Other']],
         'spiritual_education' => ['max'=>100, 'skip'=>true, 'label'=>'Spiritual education / መንፈሳዊ ትምህርት', 'input'=>'choice', 'choices'=>['grade_1'=>'1ኛ ክፍል / Grade 1','grade_2'=>'2ኛ ክፍል / Grade 2','grade_3'=>'3ኛ ክፍል / Grade 3','grade_4'=>'4ኛ ክፍል / Grade 4','grade_5'=>'5ኛ ክፍል / Grade 5','grade_6'=>'6ኛ ክፍል / Grade 6','grade_7'=>'7ኛ ክፍል / Grade 7','grade_8'=>'8ኛ ክፍል / Grade 8','grade_9'=>'9ኛ ክፍል / Grade 9','grade_10'=>'10ኛ ክፍል / Grade 10','grade_11'=>'11ኛ ክፍል / Grade 11','grade_12'=>'12ኛ ክፍል / Grade 12','diploma'=>'ዲፕሎማ / Diploma','degree'=>'ዲግሪ / Degree']],
         'current_section' => ['max'=>100, 'skip'=>true, 'label'=>'Current section / ክፍል', 'input'=>'dynamic_choice'],
+        'student_photo' => ['max'=>0, 'skip'=>true, 'label'=>'የአባል ፎቶ', 'input'=>'file', 'accept'=>'image'],
+        'guardian_photo' => ['max'=>0, 'skip'=>true, 'label'=>'የአሳዳጊ ፎቶ', 'input'=>'file', 'accept'=>'image'],
+        'doc_school_records' => ['max'=>0, 'skip'=>true, 'label'=>'የትምህርት ማስረጃ', 'input'=>'file', 'accept'=>'image_pdf'],
+        'doc_spiritual' => ['max'=>0, 'skip'=>true, 'label'=>'መንፈሳዊ ማስረጃ', 'input'=>'file', 'accept'=>'image_pdf'],
+        'doc_signed_form' => ['max'=>0, 'skip'=>true, 'label'=>'የተፈረመ ቅጽ', 'input'=>'file', 'accept'=>'image_pdf'],
     ];
 
     /** @return list<string> */
@@ -49,6 +54,7 @@ final class TelegramFormRegistry
         if (!isset(self::FIELDS[$key]) || !is_scalar($raw)) {
             throw new InvalidArgumentException('Unsupported registration field.');
         }
+        if((self::FIELDS[$key]['input']??'')==='file')throw new InvalidArgumentException('ፋይሉን በቴሌግራም የፎቶ ወይም የሰነድ አዝራር ይላኩ።');
         $value = trim((string)$raw);
         $skip = in_array(strtolower($value), ['/skip','skip','ዝለል','⏭️ ዝለል'], true);
         if ($skip) {
