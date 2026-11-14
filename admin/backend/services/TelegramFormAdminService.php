@@ -20,7 +20,7 @@ final class TelegramFormAdminService
     /** Clone latest version into a new draft; published snapshots never mutate. */
     public function createDraft(string $profileKey,int $actor): array
     {
-        if(!in_array($profileKey,['waiting','direct'],true))throw new InvalidArgumentException('Invalid form profile.');
+        if(!in_array($profileKey,['waiting','direct','transfer'],true))throw new InvalidArgumentException('Invalid form profile.');
         $this->conn->begin_transaction();
         try{
             $q=$this->conn->prepare('SELECT id,version,title_am,title_en FROM telegram_form_profiles WHERE profile_key=? ORDER BY version DESC LIMIT 1 FOR UPDATE');$q->bind_param('s',$profileKey);$q->execute();$source=$q->get_result()->fetch_assoc();$q->close();

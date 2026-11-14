@@ -114,15 +114,16 @@ final class TelegramRegistrationService
     {
         $buttons=[];
         if ((int)$actor['can_waiting']===1) $buttons[]=[['text'=>'⏳ ጊዜያዊ / Temporary']];
-        if ((int)$actor['can_direct']===1) $buttons[]=[['text'=>'⚡ ቀጥታ / Direct']];
-        $buttons[]=[['text'=>'❌ Cancel']];
+        if ((int)$actor['can_direct']===1) $buttons[]=[['text'=>'⚡ ቀጥታ ምዝገባ']];
+        if ((int)($actor['can_transfer']??0)===1) $buttons[]=[['text'=>'🔄 የዝውውር ምዝገባ']];
+        $buttons[]=[['text'=>'❌ ሰርዝ']];
         return self::message($chatId,'የምዝገባ ዓይነት ይምረጡ። / Choose registration type.', ['keyboard'=>$buttons,'resize_keyboard'=>true,'one_time_keyboard'=>true]);
     }
 
     private function chooseProfile(array $session,array $actor,string $text): array
     {
-        $profile = str_contains(strtolower($text),'direct') || str_contains($text,'ቀጥታ') ? 'direct' : (str_contains(strtolower($text),'temporary') || str_contains($text,'ጊዜያዊ') ? 'waiting' : '');
-        if ($profile==='' || ($profile==='direct' && (int)$actor['can_direct']!==1) || ($profile==='waiting' && (int)$actor['can_waiting']!==1)) {
+        $profile = str_contains(strtolower($text),'transfer') || str_contains($text,'ዝውውር') ? 'transfer' : (str_contains(strtolower($text),'direct') || str_contains($text,'ቀጥታ') ? 'direct' : (str_contains(strtolower($text),'temporary') || str_contains($text,'ጊዜያዊ') ? 'waiting' : ''));
+        if ($profile==='' || ($profile==='direct' && (int)$actor['can_direct']!==1) || ($profile==='transfer' && (int)($actor['can_transfer']??0)!==1) || ($profile==='waiting' && (int)$actor['can_waiting']!==1)) {
             return self::message((int)$session['telegram_chat_id'],'Choose one of the allowed registration types.');
         }
         $statement=$this->conn->prepare("SELECT id,version FROM telegram_form_profiles WHERE profile_key=? AND status='published' ORDER BY version DESC LIMIT 1");

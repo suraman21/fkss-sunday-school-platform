@@ -109,6 +109,20 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn("case 'review_approve'", api)
         self.assertIn("Only HR may approve", api)
 
+    def test_transfer_profile_and_clean_review_queue_are_supported(self):
+        transfer = (ROOT / "sql/084_telegram_transfer_registration.sql").read_text(encoding="utf-8")
+        api = (ROOT / "admin/api_telegram_registration.php").read_text(encoding="utf-8")
+        page = (ROOT / "admin/telegram_registration.php").read_text(encoding="utf-8")
+        approval = (ROOT / "admin/backend/services/TelegramMemberApprovalService.php").read_text(encoding="utf-8")
+        self.assertIn("can_transfer", transfer)
+        self.assertIn("'waiting','direct','transfer'", transfer)
+        self.assertIn("$profile==='transfer'?'transfer':'direct'", approval)
+        self.assertIn("WHERE s.status IN ('submitted','approved')", api)
+        self.assertIn('data-profile="transfer"', page)
+        self.assertIn("name=\"can_transfer\"", page)
+        self.assertIn("dialog-close", page)
+        self.assertIn("aria-label','ዝጋ'", page)
+
     def test_submission_never_inserts_member(self):
         submit = self.service[self.service.index("private function submitReview"):]
         self.assertIn("status='submitted'", submit)
