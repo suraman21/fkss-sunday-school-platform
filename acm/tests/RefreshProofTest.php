@@ -203,8 +203,11 @@ final class RefreshProofTest extends TestCase
             self::proof($key, $alg, $now, ['jwk' => ['kty' => 'RSA', 'n' => 'x', 'e' => 'y']]), $alg
         ));
         // Payload type violations: non-int iat, missing/oversize jti.
+        // Non-whole float: a whole-valued float ((float)$now) does not
+        // survive JSON round-trip as a float (json_encode emits the
+        // integer form), so only x.5 exercises the is_int rejection.
         $this->assertNull(DeviceCrypto::parseDpopProof(
-            self::proof($key, $alg, $now, [], ['iat' => (float)$now]), $alg
+            self::proof($key, $alg, $now, [], ['iat' => $now + 0.5]), $alg
         ));
         $this->assertNull(DeviceCrypto::parseDpopProof(
             self::proof($key, $alg, $now, [], ['iat' => (string)$now]), $alg
