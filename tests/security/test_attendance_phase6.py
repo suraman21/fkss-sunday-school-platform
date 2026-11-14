@@ -31,6 +31,7 @@ import urllib.parse
 from pathlib import Path
 
 from test_attendance_phase1 import BASE, USERS, WebSession, db, _live_ready, mobile, mobile_token  # noqa: E402
+from attendance_test_dates import recent  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 USERS.setdefault("attendance_taker", "audit_taker")
@@ -180,10 +181,10 @@ def _phase6_ready():
 @unittest.skipUnless(_phase6_ready(), "live server + sql/076 required")
 class Phase6LiveGuards(unittest.TestCase):
     """Fixture: class 1 (members 900000, 900001, 900002, 900006; teacher user 3
-    assigned class 1 + subject 1) on 2026-10-06 — a date no other phase uses."""
+    assigned class 1 + subject 1) on a rolling date no other phase uses."""
     CLASS_ID = 1
     SUBJECT_ID = 1
-    DATE = "2026-10-06"
+    DATE = recent(32)
     MEMBERS = (900000, 900001, 900002, 900006)
     _sessions: dict = {}
 
