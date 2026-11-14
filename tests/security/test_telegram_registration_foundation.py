@@ -153,6 +153,14 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn("GROUP BY profile_key", api)
         self.assertIn("ORDER BY total DESC LIMIT 20", api)
 
+    def test_analytics_dashboard_has_period_filters_and_safe_rendering(self):
+        page = (ROOT / "admin/telegram_registration.php").read_text(encoding="utf-8")
+        self.assertIn('data-tab="analytics"', page)
+        self.assertIn('id="analyticsDays"', page)
+        self.assertIn("async function loadAnalytics", page)
+        self.assertIn("registration_types", page)
+        self.assertIn("duplicate_attention", page)
+
     def test_submission_never_inserts_member(self):
         submit = self.service[self.service.index("private function submitReview"):]
         self.assertIn("status='submitted'", submit)
