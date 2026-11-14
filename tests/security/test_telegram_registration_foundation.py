@@ -110,7 +110,7 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn("Only HR may approve", api)
 
     def test_transfer_profile_and_clean_review_queue_are_supported(self):
-        transfer = (ROOT / "sql/084_telegram_transfer_registration.sql").read_text(encoding="utf-8")
+        transfer = (ROOT / "sql/085_telegram_transfer_registration.sql").read_text(encoding="utf-8")
         api = (ROOT / "admin/api_telegram_registration.php").read_text(encoding="utf-8")
         page = (ROOT / "admin/telegram_registration.php").read_text(encoding="utf-8")
         approval = (ROOT / "admin/backend/services/TelegramMemberApprovalService.php").read_text(encoding="utf-8")
