@@ -589,6 +589,35 @@ class DeviceService implements DeviceRegistry
     }
 
     /**
+     * S5: live BOUND refresh families per device (uuid => count) for
+     * the console device panel, so officers can SEE enforcement.
+     * Throws on database failure (including pre-086: the caller
+     * renders rows without badges then -- counts must never hide
+     * the S4 device list on schema skew).
+     *
+     * @return array<string,int>
+     */
+    public function boundFamilyCounts(int $userId): array
+    {
+        if ($userId <= 0) {
+            throw new InvalidArgumentException('Not authenticated.');
+        }
+        $stmt = $this->pdo->prepare(
+            'SELECT d.uuid AS uuid, COUNT(DISTINCT s.family_id) AS families'
+            . ' FROM acm_devices d LEFT JOIN api_refresh_sessions s'
+            . ' ON s.acm_device_id = d.id AND s.acm_bound = 1'
+            . ' AND s.revoked_at IS NULL AND s.expires_at > NOW()'
+            . ' WHERE d.user_id = :u GROUP BY d.uuid'
+        );
+        $stmt->execute([':u' => $userId]);
+        $counts = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $counts[(string)$row['uuid']] = (int)$row['families'];
+        }
+        return $counts;
+    }
+
+    /**
      * Validate a login-time device assertion (D3.8 link). Returns the
      * device id on an exact active match, null otherwise (login still
      * succeeds unlinked -- S4 links, S5 enforces).

@@ -82,9 +82,10 @@ if ($action === 'login' && $method === 'POST') {
     }
 
     // S4 (D3.8): optional device assertion links the new refresh
-    // family to a registered device. Best-effort by design: absent
-    // or unusable assertions yield a legacy unlinked family (login
-    // still succeeds -- S4 links, S5 enforces). Only a MISSING 084
+    // family to a registered device. S5: a RESOLVED assertion now
+    // issues a BOUND family (DPoP proof required at every refresh).
+    // Best-effort by design: absent or unusable assertions yield a
+    // legacy unlinked family (login still succeeds). Only a MISSING 084
     // table reads as absent (pre-migration probe); every other
     // failure propagates loudly (fail closed, never silently
     // unlinked on a migrated database).
@@ -112,7 +113,7 @@ if ($action === 'login' && $method === 'POST') {
     }
 
     try {
-        $refreshToken = $refreshService->issue($user, $clientIp, $userAgent, $acmDeviceId);
+        $refreshToken = $refreshService->issue($user, $clientIp, $userAgent, $acmDeviceId, $acmDeviceId !== null);
         $accessFamily = apiRefreshAccessBinding($refreshToken, (int)$user['id']);
     } catch (Throwable $error) {
         error_log('API refresh session creation failed. Apply migrations 010 and 048.');
@@ -147,6 +148,9 @@ if ($action === 'login' && $method === 'POST') {
         ),
         'refresh_token' => $refreshToken,
         'expires_in' => $accessTokenExpiry,
+        // S5: true when this family is device-bound (the app must
+        // attach a DPoP proof to every refresh of this family).
+        'device_bound' => $acmDeviceId !== null,
         'user' => [
             'id' => (int)$user['id'],
             'username' => $user['username'],
@@ -196,7 +200,17 @@ if ($action === 'refresh-token' && $method === 'POST') {
             ['code' => 'INVALID_REFRESH_TOKEN']);
     }
 
-    $rotation = $refreshService->rotate($refreshToken, $payload, $clientIp, $userAgent);
+    // S5 (D3.8): bound families require a DPoP proof. The header is
+    // read unconditionally but USED only when the loaded session row
+    // is bound; unbound sessions ignore it entirely (legacy path,
+    // byte-identical). The verifier (seed read) is built only when a
+    // proof is present, so legacy traffic pays nothing.
+    $dpopProof = isset($_SERVER['HTTP_DPOP']) && is_string($_SERVER['HTTP_DPOP'])
+        ? trim($_SERVER['HTTP_DPOP']) : '';
+    $proofVerifier = $dpopProof !== ''
+        ? \SSMS\Acm\Device\DeviceRefreshProofs::rotationVerifier($conn)
+        : null;
+    $rotation = $refreshService->rotate($refreshToken, $payload, $clientIp, $userAgent, $dpopProof, $proofVerifier);
     $rotationState = (string)($rotation['state'] ?? 'invalid');
     if ($rotationState === 'reused') {
         logApiAction((int)($payload['uid'] ?? 0), (string)($payload['usr'] ?? ''),
@@ -219,6 +233,14 @@ if ($action === 'refresh-token' && $method === 'POST') {
     if ($rotationState === 'account_removed') {
         err('This account no longer exists. Please login again.', 401,
             ['code' => 'ACCOUNT_REMOVED']);
+    }
+    if ($rotationState === 'proof_required') {
+        err('This session requires a device proof. Please login again.', 401,
+            ['code' => 'DEVICE_PROOF_REQUIRED']);
+    }
+    if ($rotationState === 'proof_invalid') {
+        err('Invalid device proof. Please login again.', 401,
+            ['code' => 'DEVICE_PROOF_INVALID']);
     }
     if ($rotationState === 'unavailable') {
         error_log('API refresh rotation failed. Apply migrations 010 and 048.');
