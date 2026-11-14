@@ -235,6 +235,17 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn("isset($message['document'])", self.webhook)
         self.assertIn("isset($message['photo'])", self.webhook)
 
+    def test_hr_review_lists_attachment_metadata_without_private_paths(self):
+        api = (ROOT / "admin/api_telegram_registration.php").read_text(encoding="utf-8")
+        page = (ROOT / "admin/telegram_registration.php").read_text(encoding="utf-8")
+        approval = (ROOT / "admin/backend/services/TelegramMemberApprovalService.php").read_text(encoding="utf-8")
+        self.assertIn("field_key,mime_type,byte_size,status,created_at", api)
+        self.assertNotIn("SELECT id,field_key,stored_path,mime_type", api)
+        self.assertIn("'attachments'=>$attachments", api)
+        self.assertIn('id="reviewAttachments"', page)
+        self.assertIn("student_photo_path'=>$files['student_photo']", approval)
+        self.assertIn("SET status='attached'", approval)
+
     def test_submission_never_inserts_member(self):
         submit = self.service[self.service.index("private function submitReview"):]
         self.assertIn("status='submitted'", submit)
