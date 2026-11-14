@@ -427,18 +427,36 @@ final class TelegramRegistrationService
         $answers = $this->answers($id);
         $ready = (new TelegramApprovalReadinessService($this->conn))->inspect($session, $this->answersRows($id));
         $cands = $this->loadCandidateList($session);
+        $blocked = false;
         foreach ($cands as $c) {
-            if ((int)($c['match_score']??0) >= 70 && !$this->decisionExistsFor($id, (int)$c['id'], ['same'])) {
-                $text = TelegramMessageService::get($this->conn,'final_validation_blocked',[
-                    'blocker' => 'ከፍተኛ ተመሳሳይነት ያለው እጩ አለ። እባክዎ አስቀድመው ያረጋግጡ።'
-                ]);
-                $this->apiEditOrSend($api, $chatId, $messageId, $text, TelegramKeyboard::inline([
-                    [['🔍 እጮች አሳይ', 'cand_prev']],
-                    [['❌ ሰርዝ','cancel']]
-                ]));
-                return;
+            $band = (string)($c['score_band']??($c['band']??''));
+            $score = (int)($c['match_score']??0);
+            $cid = (int)($c['id']??0);
+            $isHigh = $score >= 70 || in_array($band,['high','very_high','certain'],true);
+            if ($isHigh && $cid > 0) {
+                if ($this->decisionExistsFor($id, $cid, ['same'])) {
+                    $text = TelegramMessageService::get($this->conn,'final_validation_blocked',[
+                        'blocker' => 'ይህ መዝገብ ከነበረ አባል ጋር ተመሳሳይ ሆኖ ምልክት ተደርጓል። እባክዎ የነበረውን አባል ይጠቀሙ።'
+                    ]);
+                    $this->apiEditOrSend($api, $chatId, $messageId, $text, TelegramKeyboard::inline([
+                        [['🔍 እጮች አሳይ', 'cand_prev']],
+                        [['❌ ሰርዝ','cancel']]
+                    ]));
+                    $blocked = true; break;
+                }
+                if (!$this->decisionExistsFor($id, $cid, ['different','uncertain'])) {
+                    $text = TelegramMessageService::get($this->conn,'final_validation_blocked',[
+                        'blocker' => 'ከፍተኛ ተመሳሳይነት ያለው እጩ አለ። እባክዎ አስቀድመው ያረጋግጡ።'
+                    ]);
+                    $this->apiEditOrSend($api, $chatId, $messageId, $text, TelegramKeyboard::inline([
+                        [['🔍 እጮች አሳይ', 'cand_prev']],
+                        [['❌ ሰርዝ','cancel']]
+                    ]));
+                    $blocked = true; break;
+                }
             }
         }
+        if ($blocked) return;
         if (!$ready['ready']) {
             $text = TelegramMessageService::get($this->conn,'final_validation_blocked',['blocker'=>implode('; ',$ready['blockers'])]);
             try { $api->sendMessage($chatId, $text); } catch (\Throwable $ignore) {}
@@ -1045,15 +1063,34 @@ final class TelegramRegistrationService
         $ready = (new TelegramApprovalReadinessService($this->conn))->inspect($session, $this->answersRows($id));
         $cands = $this->loadCandidateList($session);
         foreach ($cands as $c) {
-            if ((int)($c['match_score']??0) >= 70 && !$this->decisionExistsFor($id, (int)$c['id'], ['same'])) {
-                // Unresolved high-confidence candidate
-                $text = TelegramMessageService::get($this->conn,'final_validation_blocked',[
-                    'blocker' => 'ከፍተኛ ተመሳሳይነት ያለው እጩ አለ። እባክዎ አስቀድመው ያረጋግጡ ወይም "ይህ አባል አይደለም" ብለው ምልክት ያድርጉ።'
-                ]);
-                return $this->editOrSend($chatId,$editId,$text,TelegramKeyboard::inline([
-                    [['🔍 እጮች አሳይ', 'cand_prev']],
-                    [['❌ ሰርዝ','cancel']]
-                ]));
+            $band = (string)($c['score_band']??($c['band']??''));
+            $score = (int)($c['match_score']??0);
+            $cid = (int)($c['id']??0);
+            $isHigh = $score >= 70 || in_array($band,['high','very_high','certain'],true);
+            if ($isHigh && $cid > 0) {
+                // Per REG spec: same_person → cannot create new member;
+                // no decision → blocks submission (must verify);
+                // uncertain → warning (readiness service will warn, not block);
+                // different_person → ok to proceed.
+                if ($this->decisionExistsFor($id, $cid, ['same'])) {
+                    $text = TelegramMessageService::get($this->conn,'final_validation_blocked',[
+                        'blocker' => 'ይህ መዝገብ ከነበረ አባል ጋር ተመሳሳይ ሆኖ ምልክት ተደርጓል። እባክዎ የነበረውን አባል ይጠቀሙ እንጂ አዲስ አይመዝገቡ።'
+                    ]);
+                    return $this->editOrSend($chatId,$editId,$text,TelegramKeyboard::inline([
+                        [['🔍 እጮች አሳይ', 'cand_prev']],
+                        [['❌ ሰርዝ','cancel']]
+                    ]));
+                }
+                if (!$this->decisionExistsFor($id, $cid, ['different','uncertain'])) {
+                    // Unresolved high-confidence candidate
+                    $text = TelegramMessageService::get($this->conn,'final_validation_blocked',[
+                        'blocker' => 'ከፍተኛ ተመሳሳይነት ያለው እጩ አለ። እባክዎ አስቀድመው ያረጋግጡ።'
+                    ]);
+                    return $this->editOrSend($chatId,$editId,$text,TelegramKeyboard::inline([
+                        [['🔍 እጮች አሳይ', 'cand_prev']],
+                        [['❌ ሰርዝ','cancel']]
+                    ]));
+                }
             }
         }
         if (!$ready['ready']) {
