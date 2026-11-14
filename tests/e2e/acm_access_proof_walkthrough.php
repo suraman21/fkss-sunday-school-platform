@@ -45,6 +45,7 @@ if (!is_file($envFile)) {
 require $envFile;
 require __DIR__ . '/destructive_guard.php';
 require_once $root . '/admin/backend/services/RefreshTokenService.php';
+require_once $root . '/admin/backend/services/AccountCredentialService.php';
 require_once $root . '/acm/autoload.php';
 require_once $root . '/api/v1/core/response.php';
 require_once $root . '/api/v1/core/auth.php';
