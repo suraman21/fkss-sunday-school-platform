@@ -45,6 +45,10 @@ class AcmPolicy
             // S7: office suspends/reactivates member/parent
             // accounts (target-role guard lives in the service;
             // staff/officers stay in user administration).
+            // S8: 'deactivate' is intentionally ABSENT: the
+            // terminal action is super_admin-only (#25) via the
+            // bypass above. Deactivating a seat here would need a
+            // second thought, not a second entry.
             'account'  => ['view', 'suspend', 'reactivate'],
             'audit'    => ['view'],
             'code'     => ['issue', 'view'],

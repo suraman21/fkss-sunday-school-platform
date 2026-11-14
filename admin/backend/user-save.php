@@ -268,6 +268,25 @@ try {
         $prevRow = $prev->fetch();
         if (!$prevRow) respond('error', 'User not found.');
 
+        // S8: never resurrect a revoked (deactivated) ACM link
+        // via the edit form (same guard as user-toggle.php:
+        // gates read only the bit). Re-entry is a FRESH
+        // activation ticket, never a revive.
+        if ((int)$prevRow['is_active'] === 0 && (int)$isActive === 1) {
+            try {
+                $acmGuard = $pdo->prepare('SELECT status FROM acm_person_accounts WHERE user_id = :uid LIMIT 1');
+                $acmGuard->execute([':uid' => $userId]);
+                if ($acmGuard->fetchColumn() === 'revoked') {
+                    respond('error', 'This account was deactivated and cannot be re-enabled; start a fresh activation.');
+                }
+            } catch (PDOException $e) {
+                // 42S02/42S22: pre-ACM deployment — proceed.
+                if ($e->getCode() !== '42S02' && $e->getCode() !== '42S22') {
+                    respond('error', 'Could not verify account links.');
+                }
+            }
+        }
+
         // One account mutation shared by the ordinary update path and the
         // credential service's transaction-aware administrator reset path.
         // Every statement here uses the same mysqli connection as the
