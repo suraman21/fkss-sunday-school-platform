@@ -138,7 +138,10 @@ function proofProbe(string $dbName, string $token, ?string $dpop, string $method
     return ['unparseable', substr($text, -200)];
 }
 
-// Refresh issuer with a capturing test signer (S5 shape).
+// Refresh issuer with a capturing test signer (prod shape: the
+// route's signer mints REAL refresh JWTs, and boundSession feeds
+// them to apiRefreshAccessBinding exactly like login does -- an
+// opaque stand-in token cannot parse and fatals the run).
 $capturedPayloads = [];
 $refresh = new RefreshTokenService(
     $mysqli,
@@ -146,7 +149,16 @@ $refresh = new RefreshTokenService(
         int $uid, string $username, string $role, string $fullName,
         int $authzVersion, string $sessionId, string $familyId, int $expiresAt
     ) use (&$capturedPayloads): string {
-        $token = 'e2e-' . bin2hex(random_bytes(16));
+        $token = createRefreshToken(
+            $uid,
+            $username,
+            $role,
+            $fullName,
+            $authzVersion,
+            $sessionId,
+            $familyId,
+            $expiresAt
+        );
         $capturedPayloads[$token] = ['jti' => $sessionId, 'fid' => $familyId, 'uid' => $uid];
         return $token;
     },
