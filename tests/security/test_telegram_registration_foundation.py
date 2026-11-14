@@ -227,6 +227,14 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn("ssms_private/telegram_quarantine", attachments)
         self.assertIn("@chmod($target,0600)", attachments)
 
+    def test_file_messages_are_processed_only_for_active_file_questions(self):
+        self.assertIn("private function acceptAttachment", self.service)
+        self.assertIn("TelegramBotApiService())->downloadFile", self.service)
+        self.assertIn("TelegramAttachmentService($this->conn))->store", self.service)
+        self.assertIn("file_unique_id", self.service)
+        self.assertIn("isset($message['document'])", self.webhook)
+        self.assertIn("isset($message['photo'])", self.webhook)
+
     def test_submission_never_inserts_member(self):
         submit = self.service[self.service.index("private function submitReview"):]
         self.assertIn("status='submitted'", submit)
