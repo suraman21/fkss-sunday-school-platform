@@ -246,6 +246,15 @@ class TelegramRegistrationFoundationTests(unittest.TestCase):
         self.assertIn("student_photo_path'=>$files['student_photo']", approval)
         self.assertIn("SET status='attached'", approval)
 
+    def test_replaced_and_cancelled_attachments_are_deleted(self):
+        attachments = (ROOT / "admin/backend/services/TelegramAttachmentService.php").read_text(encoding="utf-8")
+        self.assertIn("SELECT stored_path", attachments)
+        self.assertIn("self::discard($oldPath)", attachments)
+        self.assertIn("public function cleanupSession", attachments)
+        self.assertIn("status='deleted',stored_path=NULL", attachments)
+        self.assertIn("telegram_quarantine/([a-f0-9]{32}", attachments)
+        self.assertIn("cleanupSession((int)$id)", self.service)
+
     def test_submission_never_inserts_member(self):
         submit = self.service[self.service.index("private function submitReview"):]
         self.assertIn("status='submitted'", submit)
