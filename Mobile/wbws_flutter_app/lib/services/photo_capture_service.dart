@@ -5,6 +5,7 @@ import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 
 import 'device_tier_service.dart';
+import 'photo_framing_geometry.dart';
 import 'photo_image_processor.dart';
 import 'photo_outbox_models.dart';
 import 'photo_outbox_service.dart';
@@ -13,7 +14,12 @@ class CapturedPhoto {
   final String path;
   final DateTime takenAt;
 
-  const CapturedPhoto({required this.path, required this.takenAt});
+  /// Displayed 3:4 frame normalized to the upright image (in-app camera
+  /// path — the processor crops exactly this window), or null for the
+  /// legacy maximal center crop (gallery path).
+  final RectF? crop;
+
+  const CapturedPhoto({required this.path, required this.takenAt, this.crop});
 }
 
 /// Queues an in-app camera capture for ID-card and profile use.
@@ -52,6 +58,7 @@ class PhotoCaptureService {
         source.path,
         tempPath,
         DeviceTierService.instance.tier,
+        cropFraction: capture.crop,
       );
       encodedPath = encoded.path;
 

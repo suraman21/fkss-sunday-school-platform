@@ -19,7 +19,13 @@
 /// * **Preview space** — pixels of the on-screen `CameraPreview` widget.
 /// * **Frame space** — normalized (0..1, 0..1) coordinates inside the
 ///   final 3:4 crop. Target regions (spec §7.3) are defined here.
+/// * **Area space** — pixels of the on-screen preview area in the
+///   full-bleed redesign: the whole upright image drawn at its true
+///   aspect (cover-fit, possibly overflowing), with the 3:4 crop frame
+///   as a centered window inside it.
 library;
+
+import 'dart:math' as math;
 
 /// Calibration switch for ML Kit coordinate output.
 ///
@@ -111,6 +117,145 @@ OffsetF framePointToPreview(
 /// Frame-normalized x → preview-space x (mirroring aware).
 double frameXToPreview(double nx, RectF frame, {bool mirror = false}) =>
     mirror ? frame.right - nx * frame.width : frame.left + nx * frame.width;
+
+/// Layout of the full-bleed capture preview (redesign).
+///
+/// The camera image is drawn at its TRUE aspect — the box handed to
+/// `CameraPreview` always has exactly the `imageAspect` ratio, so the
+/// texture can never stretch (the old `FittedBox` + fixed-size `SizedBox`
+/// clamped the preview into a 3:4 box and squeezed the image).
+/// The 3:4 crop frame is a centered window inside the image; the
+/// processor saves exactly this window ([frameInImage]), so the frame
+/// edge on screen IS the saved-file edge (FR-02, FR-03).
+class PreviewLayout {
+  /// Full upright image rect in area coords (cover-fit; may overflow).
+  final RectF image;
+
+  /// Displayed 3:4 crop frame in area coords. Always ⊆ image ∩ area.
+  final RectF frame;
+
+  /// [frame] normalized 0..1 to the IMAGE (what the processor crops).
+  final RectF frameInImage;
+
+  const PreviewLayout({
+    required this.image,
+    required this.frame,
+    required this.frameInImage,
+  });
+}
+
+/// Computes the full-bleed layout for a preview [area] and an upright
+/// camera-image aspect ([imageAspect] = width / height, ≤ 1 on phones).
+///
+/// The image cover-fits the area (uniform scale, centered, no letterbox,
+/// no stretch); the frame is the largest centered 3:4 rect inside the
+/// area with at least [gutter] clearance on every side.
+PreviewLayout previewLayout({
+  required SizeF area,
+  required double imageAspect,
+  double gutter = 14.0,
+}) {
+  assert(area.width > 0 && area.height > 0);
+  var a = imageAspect;
+  if (a.isNaN || a <= 0) a = kPhotoFrameAspect;
+
+  // Cover-fit, centered: uniform scale, so width/height is exactly `a`.
+  double imgW;
+  double imgH;
+  if (a <= 1) {
+    imgW = area.width;
+    imgH = imgW / a;
+    if (imgH < area.height) {
+      imgH = area.height;
+      imgW = imgH * a;
+    }
+  } else {
+    imgH = area.height;
+    imgW = imgH * a;
+    if (imgW < area.width) {
+      imgW = area.width;
+      imgH = imgW / a;
+    }
+  }
+  final image = RectF(
+    left: (area.width - imgW) / 2,
+    top: (area.height - imgH) / 2,
+    width: imgW,
+    height: imgH,
+  );
+
+  // Cover ⇒ image ⊇ area, so constraining the frame to the area (with a
+  // gutter that survives tiny areas) also keeps it inside the image.
+  final g = math.min(
+      gutter, math.min(area.width / 4, area.height / 4));
+  var fw = math.min(
+      area.width - 2 * g, (area.height - 2 * g) * kPhotoFrameAspect);
+  fw = math.max(fw, 1);
+  final fh = fw / kPhotoFrameAspect;
+  final frame = RectF(
+    left: (area.width - fw) / 2,
+    top: (area.height - fh) / 2,
+    width: fw,
+    height: fh,
+  );
+  final frameInImage = RectF(
+    left: (frame.left - image.left) / image.width,
+    top: (frame.top - image.top) / image.height,
+    width: frame.width / image.width,
+    height: frame.height / image.height,
+  );
+  return PreviewLayout(image: image, frame: frame, frameInImage: frameInImage);
+}
+
+/// Tap in area coords → focus point as fractions of the FULL upright
+/// image (0..1, clamped), ready for the camera plugin's focus/exposure
+/// point. Correct even where the image overflows the visible area.
+OffsetF tapToFocusPoint({required OffsetF tap, required RectF image}) {
+  final fx = image.width > 0 ? (tap.x - image.left) / image.width : 0.5;
+  final fy = image.height > 0 ? (tap.y - image.top) / image.height : 0.5;
+  return OffsetF(
+    fx.clamp(0.0, 1.0).toDouble(),
+    fy.clamp(0.0, 1.0).toDouble(),
+  );
+}
+
+/// Pixel crop rect for the image processor.
+///
+/// A null [frameInImage] keeps the legacy maximal centered 3:4 crop
+/// (gallery path — arbitrary source aspects). Otherwise the crop is the
+/// exact displayed frame, so preview and file agree by construction.
+/// The result always stays inside the image with a uniform scale, so the
+/// 3:4 ratio survives even corrupt input (no stretch downstream).
+RectF cropRectPixels(SizeF image, RectF? frameInImage) {
+  final w = image.width;
+  final h = image.height;
+  if (frameInImage == null) {
+    final sourceAspect = w / h;
+    if ((sourceAspect - kPhotoFrameAspect).abs() < 0.01) {
+      return RectF(left: 0, top: 0, width: w, height: h);
+    }
+    if (sourceAspect > kPhotoFrameAspect) {
+      final cw = h * kPhotoFrameAspect;
+      return RectF(left: (w - cw) / 2, top: 0, width: cw, height: h);
+    }
+    final ch = w / kPhotoFrameAspect;
+    return RectF(left: 0, top: (h - ch) / 2, width: w, height: ch);
+  }
+  final left =
+      (frameInImage.left * w).clamp(0.0, math.max(0.0, w - 1.0)).toDouble();
+  final top =
+      (frameInImage.top * h).clamp(0.0, math.max(0.0, h - 1.0)).toDouble();
+  var cw = frameInImage.width * w;
+  var ch = frameInImage.height * h;
+  final maxW = math.max(1.0, w - left);
+  final maxH = math.max(1.0, h - top);
+  var scale = 1.0;
+  if (cw > maxW) scale = math.min(scale, maxW / cw);
+  if (ch > maxH) scale = math.min(scale, maxH / ch);
+  cw = math.max(1.0, cw * scale);
+  ch = math.max(1.0, ch * scale);
+  return RectF(left: left, top: top, width: cw, height: ch);
+}
 
 /// Minimal rectangle primitives (unit-testable without dart:ui).
 class SizeF {

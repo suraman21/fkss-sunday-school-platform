@@ -29,6 +29,7 @@ const Color _kGreen = Color(0xFF22C55E);
 const Color _kAmber = Color(0xFFF59E0B);
 const Color _kTextDim = Color(0xFF94A3B8);
 const Color _kGold = Color(0xFFD4AF37);
+const Color _kDim = Color(0x73000000);
 
 /// FKSS adaptive portrait capture (spec: Adaptive Human-Guided Photo
 /// Capture v1.0).
@@ -82,6 +83,10 @@ class _PhotoCameraScreenState extends State<PhotoCameraScreen>
   DateTime? _lastFrameAt;
   bool _detectionStalled = false;
   bool _hapticsReady = true; // vibrate once when framing becomes ready
+  // Latest displayed 3:4 frame, normalized to the upright image. Written
+  // every layout; read by detection mapping (same window for checks and
+  // overlay) and by capture (the processor crops exactly this window).
+  RectF? _lastFrameInImage;
 
   /// Shown when the detector stops producing results: every check is
   /// neutral and capture stays available (spec §8 "poor detection
@@ -232,10 +237,11 @@ class _PhotoCameraScreenState extends State<PhotoCameraScreen>
     if (controller == null || !controller.value.isInitialized) return;
 
     // Virtual preview with the upright image aspect: frame-normalized
-    // coordinates are invariant to the displayed size, and the 3:4
-    // frame rect is exactly the processor's crop.
+    // coordinates are invariant to the displayed size. Checks run in the
+    // DISPLAYED 3:4 frame — the exact window the overlay draws and the
+    // processor saves — so all three agree by construction (FR-03).
     final preview = SizeF(1000, 1000 / _uprightAspect);
-    final frame = frameRectInPreview(preview);
+    final frame = _displayedFrameIn(preview);
     final mirror = _isFrontCamera;
 
     final faces = raw.faces;
@@ -317,6 +323,21 @@ class _PhotoCameraScreenState extends State<PhotoCameraScreen>
     } else if (!verdict.ready) {
       _hapticsReady = true;
     }
+  }
+
+  /// Displayed 3:4 frame expressed in the given full-image (virtual
+  /// preview) coordinates. Before the first layout there is no displayed
+  /// frame yet, so the maximal centered crop stands in for a frame or two
+  /// (no overlay is drawn from it — landmarks need a verdict first).
+  RectF _displayedFrameIn(SizeF preview) {
+    final n = _lastFrameInImage;
+    if (n == null) return frameRectInPreview(preview);
+    return RectF(
+      left: n.left * preview.width,
+      top: n.top * preview.height,
+      width: n.width * preview.width,
+      height: n.height * preview.height,
+    );
   }
 
   /// A detector that errors or stops producing results must not leave a
@@ -428,23 +449,16 @@ class _PhotoCameraScreenState extends State<PhotoCameraScreen>
     }
   }
 
-  /// Tap-to-focus. The preview box shows only the centered 3:4 crop of
-  /// the upright camera image, so the tap is projected back into full
-  /// preview coordinates before handing it to the plugin.
-  Future<void> _focusAt(TapDownDetails details, Size boxSize) async {
+  /// Tap-to-focus. The tap arrives as fractions of the full upright
+  /// image ([tapToFocusPoint] — correct even where the image overflows
+  /// the visible area), which is exactly what the plugin expects.
+  Future<void> _focusAt(OffsetF point) async {
     final controller = _controller;
     if (controller == null || _takingPicture) return;
-    if (boxSize.width <= 0 || boxSize.height <= 0) return;
-    final visibleFraction = _uprightAspect / kPhotoFrameAspect; // <= 1
-    final f = visibleFraction.clamp(0.01, 1.0);
-    final point = Offset(
-      (details.localPosition.dx / boxSize.width).clamp(0, 1),
-      ((1 - f) / 2 + (details.localPosition.dy / boxSize.height) * f)
-          .clamp(0, 1),
-    );
+    final focus = Offset(point.x, point.y);
     try {
-      await controller.setFocusPoint(point);
-      await controller.setExposurePoint(point);
+      await controller.setFocusPoint(focus);
+      await controller.setExposurePoint(focus);
     } on CameraException catch (e) {
       if (mounted) {
         setState(() =>
@@ -497,7 +511,12 @@ class _PhotoCameraScreenState extends State<PhotoCameraScreen>
         return;
       }
       Navigator.of(context).pop(
-        CapturedPhoto(path: image.path, takenAt: DateTime.now().toUtc()),
+        CapturedPhoto(
+          path: image.path,
+          takenAt: DateTime.now().toUtc(),
+          // The processor crops exactly the frame the operator saw.
+          crop: _lastFrameInImage,
+        ),
       );
     } on CameraException catch (e) {
       if (mounted) {
@@ -920,74 +939,121 @@ class _PhotoCameraScreenState extends State<PhotoCameraScreen>
 
   // --- Preview (spec §4.3) ----------------------------------------------
 
-  /// Shows exactly the centered 3:4 region that `PhotoImageProcessor`
-  /// saves: the full-width preview is scaled into a 3:4 box and clipped
-  /// vertically, so the box edges ARE the crop edges (FR-03). The guide
-  /// paints in the same coordinate space.
+  /// Full-bleed preview (approved FKSS reference): the whole upright
+  /// camera image at its TRUE aspect — the box handed to `CameraPreview`
+  /// is exactly [_uprightAspect], so the texture can never stretch
+  /// (FR-02) — with the centered 3:4 crop frame drawn as a window
+  /// inside it. The dimmed surround is outside the saved photo; the
+  /// frame edge on screen IS the saved-file edge (FR-03), because the
+  /// processor crops exactly [PreviewLayout.frameInImage].
   Widget _previewArea(CameraController controller) {
     final aspect = _uprightAspect;
     return LayoutBuilder(
       builder: (context, constraints) {
-        // Small gutter keeps the frame clear of the screen edges, as in
-        // the approved reference. The frame is the crop, only scaled.
-        final boxWidth = math.min(
-          constraints.maxWidth - 20,
-          constraints.maxHeight * kPhotoFrameAspect,
+        final areaW = constraints.maxWidth;
+        final areaH = constraints.maxHeight;
+        if (areaW <= 0 || areaH <= 0) return const SizedBox.shrink();
+        final layout = previewLayout(
+          area: SizeF(areaW, areaH),
+          imageAspect: aspect,
         );
-        final boxHeight = boxWidth / kPhotoFrameAspect;
+        _lastFrameInImage = layout.frameInImage;
+        final img = layout.image;
+        final frame = layout.frame;
+        assert(
+          (img.width / img.height - aspect).abs() < 1e-9,
+          'preview box must carry the true camera aspect (no stretch)',
+        );
         return Stack(
           children: [
-            Center(
-              child: SizedBox(
-                width: boxWidth,
-                height: boxHeight,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(20),
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTapDown: (details) =>
-                        _focusAt(details, Size(boxWidth, boxHeight)),
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        ColoredBox(
-                          color: Colors.black,
-                          child: FittedBox(
-                            fit: BoxFit.fitWidth,
-                            alignment: Alignment.center,
-                            child: SizedBox(
-                              width: 1000,
-                              height: 1000 / aspect,
-                              child: CameraPreview(controller),
-                            ),
-                          ),
-                        ),
-                        CustomPaint(
-                          painter: _AdaptiveGuidePainter(_overlay),
-                        ),
-                        if (_verdict?.ready ?? false)
-                          const Positioned(
-                            top: 12,
-                            right: 12,
-                            child: _PerfectBadge(),
-                          ),
-                      ],
-                    ),
+            // Full camera image, true aspect. Cover-fit: it may overflow
+            // the area vertically (tall sensors) or horizontally (wide
+            // sensors); the Stack clips the overflow.
+            Positioned(
+              left: img.left,
+              top: img.top,
+              width: img.width,
+              height: img.height,
+              child: CameraPreview(controller),
+            ),
+            // Tap-to-focus anywhere on the live image.
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTapDown: (details) => _focusAt(tapToFocusPoint(
+                  tap: OffsetF(
+                    details.localPosition.dx,
+                    details.localPosition.dy,
                   ),
-                ),
+                  image: img,
+                )),
+              ),
+            ),
+            // Dimmed surround: four bands around the frame showing what
+            // falls OUTSIDE the saved photo.
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              height: frame.top,
+              child: Container(color: _kDim),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              top: frame.bottom,
+              bottom: 0,
+              child: Container(color: _kDim),
+            ),
+            Positioned(
+              left: 0,
+              top: frame.top,
+              width: frame.left,
+              height: frame.height,
+              child: Container(color: _kDim),
+            ),
+            Positioned(
+              left: frame.right,
+              right: 0,
+              top: frame.top,
+              height: frame.height,
+              child: Container(color: _kDim),
+            ),
+            // The 3:4 crop frame: static guides + adaptive landmark
+            // layer, with the Perfect badge at its top-right corner.
+            Positioned(
+              left: frame.left,
+              top: frame.top,
+              width: frame.width,
+              height: frame.height,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  CustomPaint(
+                    painter: _AdaptiveGuidePainter(_overlay),
+                  ),
+                  if (_verdict?.ready ?? false)
+                    const Align(
+                      alignment: Alignment.topRight,
+                      child: Padding(
+                        padding: EdgeInsets.all(12),
+                        child: _PerfectBadge(),
+                      ),
+                    ),
+                ],
               ),
             ),
             Align(
               alignment: Alignment.centerLeft,
               child: Padding(
-                padding: const EdgeInsets.only(left: 6),
+                padding: const EdgeInsets.only(left: 8),
                 child: _StatusRail(verdict: _verdict),
               ),
             ),
             const Align(
-              alignment: Alignment.centerRight,
+              alignment: Alignment(1.0, -0.25),
               child: Padding(
-                padding: EdgeInsets.only(right: 6),
+                padding: EdgeInsets.only(right: 8),
                 child: _PassportCard(),
               ),
             ),
@@ -1001,13 +1067,12 @@ class _PhotoCameraScreenState extends State<PhotoCameraScreen>
 
   Widget _bottomBar(bool ready) {
     return Container(
-      margin: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
-      decoration: BoxDecoration(
+      width: double.infinity,
+      decoration: const BoxDecoration(
         color: _kControl,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: _kPanelBorder),
+        border: Border(top: BorderSide(color: _kPanelBorder)),
       ),
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 10),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1562,13 +1627,13 @@ class _ActionButton extends StatelessWidget {
       opacity: enabled ? 1 : 0.45,
       child: Material(
         color: _kButton,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(999),
         child: InkWell(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(999),
           onTap: onTap,
           child: SizedBox(
-            width: 88,
-            height: 58,
+            width: 104,
+            height: 62,
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [

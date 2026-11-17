@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 
 import 'device_tier_service.dart';
+import 'photo_framing_geometry.dart';
 
 class PhotoOutputSize {
   final int width;
@@ -41,8 +42,9 @@ class PhotoImageProcessor {
   Future<ProcessedPhoto> encode(
     String sourcePath,
     String tempPath,
-    DeviceTier tier,
-  ) async {
+    DeviceTier tier, {
+    RectF? cropFraction,
+  }) async {
     final sourceBytes = await File(sourcePath).readAsBytes();
     if (sourceBytes.isEmpty) {
       throw const FormatException('Camera produced an empty photo.');
@@ -62,7 +64,22 @@ class PhotoImageProcessor {
     }
     final sourceImage = frame.image;
     try {
-      final crop = _centerCrop(sourceImage.width, sourceImage.height);
+      // The displayed 3:4 frame (camera path) or the maximal centered
+      // crop (gallery path, null fraction) — same pure math the screen
+      // lays out, so preview and file agree by construction (FR-03).
+      final cropPixels = cropRectPixels(
+        SizeF(
+          sourceImage.width.toDouble(),
+          sourceImage.height.toDouble(),
+        ),
+        cropFraction,
+      );
+      final crop = ui.Rect.fromLTWH(
+        cropPixels.left,
+        cropPixels.top,
+        cropPixels.width,
+        cropPixels.height,
+      );
       final outputWidth = crop.width.floor().clamp(1, targetSize.width).toInt();
       final outputHeight = (outputWidth / targetAspect).round();
       final croppedPng = await _renderCrop(
@@ -132,29 +149,6 @@ class PhotoImageProcessor {
     } finally {
       rendered.dispose();
     }
-  }
-
-  ui.Rect _centerCrop(int width, int height) {
-    final sourceAspect = width / height;
-    if ((sourceAspect - targetAspect).abs() < 0.01) {
-      return ui.Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble());
-    }
-    if (sourceAspect > targetAspect) {
-      final cropWidth = height * targetAspect;
-      return ui.Rect.fromLTWH(
-        (width - cropWidth) / 2,
-        0,
-        cropWidth,
-        height.toDouble(),
-      );
-    }
-    final cropHeight = width / targetAspect;
-    return ui.Rect.fromLTWH(
-      0,
-      (height - cropHeight) / 2,
-      width.toDouble(),
-      cropHeight,
-    );
   }
 
   List<_EncodeSpec> _encodeSpecs(int width) {

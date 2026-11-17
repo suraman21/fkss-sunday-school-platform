@@ -237,4 +237,187 @@ void main() {
       expect(frame.contains(const OffsetF(9, 40)), isFalse);
     });
   });
+
+  // Full-bleed redesign: the preview box handed to CameraPreview always
+  // carries the true camera aspect (FR-02 — the old FittedBox + fixed
+  // SizedBox clamped the texture into a 3:4 box and stretched it), and
+  // the displayed 3:4 frame is exactly what the processor crops (FR-03).
+  group('previewLayout', () {
+    test('16:9 sensor: image overflows vertically, frame is inset 3:4',
+        () {
+      final layout = previewLayout(
+        area: const SizeF(412, 700),
+        imageAspect: 9 / 16,
+      );
+      // Full image at true aspect, centered, taller than the area.
+      expect(layout.image.width, closeTo(412, 1e-9));
+      expect(layout.image.height, closeTo(412 / (9 / 16), 1e-6));
+      expect(layout.image.left, closeTo(0, 1e-9));
+      // Frame: gutter-inset, exactly 3:4, centered.
+      expect(layout.frame.width, closeTo(412 - 28, 1e-9));
+      expect(layout.frame.width / layout.frame.height, closeTo(0.75, 1e-12));
+      expect(layout.frame.left, closeTo(14, 1e-9));
+      expect(layout.frame.top,
+          closeTo((700 - (412 - 28) / 0.75) / 2, 1e-6));
+    });
+
+    test('4:3 sensor: image cover-scales, frame stays inside', () {
+      final layout = previewLayout(
+        area: const SizeF(412, 700),
+        imageAspect: 3 / 4,
+      );
+      // 412x549 would letterbox, so cover scales to 525x700 (sides crop).
+      expect(layout.image.height, closeTo(700, 1e-9));
+      expect(layout.image.width, closeTo(700 * 0.75, 1e-9));
+      expect(layout.frame.width, closeTo(412 - 28, 1e-9));
+      expect(layout.frame.top, greaterThanOrEqualTo(layout.image.top));
+      expect(layout.frame.bottom, lessThanOrEqualTo(layout.image.bottom));
+      expect(layout.frame.width / layout.frame.height, closeTo(0.75, 1e-12));
+    });
+
+    test('wide sensor: cover-scale keeps the frame inside the image', () {
+      final layout = previewLayout(
+        area: const SizeF(412, 700),
+        imageAspect: 1.0,
+      );
+      // Square image cover-scales to 700x700; the gutter-bound frame
+      // (384x512) stays fully inside it.
+      expect(layout.image.width, closeTo(700, 1e-9));
+      expect(layout.image.height, closeTo(700, 1e-9));
+      expect(layout.frame.width, closeTo(412 - 28, 1e-9));
+      expect(layout.frame.left, greaterThanOrEqualTo(layout.image.left));
+      expect(layout.frame.right, lessThanOrEqualTo(layout.image.right));
+      expect(layout.frame.top, greaterThanOrEqualTo(layout.image.top));
+      expect(layout.frame.bottom, lessThanOrEqualTo(layout.image.bottom));
+    });
+
+    test('short area: frame fits by height, stays centered', () {
+      final layout = previewLayout(
+        area: const SizeF(412, 400),
+        imageAspect: 9 / 16,
+      );
+      expect(layout.frame.height, closeTo(400 - 28, 1e-6));
+      expect(layout.frame.width, closeTo((400 - 28) * 0.75, 1e-6));
+      expect(layout.frame.left, closeTo((412 - (400 - 28) * 0.75) / 2, 1e-6));
+    });
+
+    test('no-stretch invariant across sensor aspects', () {
+      for (final aspect in [9 / 16, 3 / 4, 1.0, 0.5, 0.8]) {
+        final layout = previewLayout(
+          area: const SizeF(412, 700),
+          imageAspect: aspect,
+        );
+        // The box given to CameraPreview is EXACTLY the camera aspect.
+        expect(layout.image.width / layout.image.height,
+            closeTo(aspect, 1e-12));
+        // The frame is exactly 3:4 and inside the image.
+        expect(layout.frame.width / layout.frame.height, closeTo(0.75, 1e-12));
+        expect(layout.frame.left, greaterThanOrEqualTo(layout.image.left));
+        expect(layout.frame.right, lessThanOrEqualTo(layout.image.right));
+        expect(layout.frame.top, greaterThanOrEqualTo(layout.image.top));
+        expect(layout.frame.bottom, lessThanOrEqualTo(layout.image.bottom));
+      }
+    });
+
+    test('frameInImage fractions stay within the image', () {
+      final layout = previewLayout(
+        area: const SizeF(412, 700),
+        imageAspect: 9 / 16,
+      );
+      final n = layout.frameInImage;
+      expect(n.left, greaterThanOrEqualTo(0));
+      expect(n.top, greaterThanOrEqualTo(0));
+      expect(n.left + n.width, lessThanOrEqualTo(1));
+      expect(n.top + n.height, lessThanOrEqualTo(1));
+      // Uniform area→image scale, so fractions keep the 3:4 ratio:
+      // (fw * imgW) / (fh * imgH) == 0.75 for a 9:16 image.
+      expect((n.width * 9) / (n.height * 16), closeTo(0.75, 1e-9));
+    });
+
+    test('degenerate input falls back to a usable layout', () {
+      final layout =
+          previewLayout(area: const SizeF(412, 700), imageAspect: 0);
+      expect(layout.image.width / layout.image.height, closeTo(0.75, 1e-12));
+      expect(layout.frame.width, greaterThan(0));
+    });
+  });
+
+  group('tapToFocusPoint', () {
+    test('area center maps to image center', () {
+      final layout = previewLayout(
+        area: const SizeF(412, 700),
+        imageAspect: 9 / 16,
+      );
+      final p = tapToFocusPoint(
+        tap: const OffsetF(206, 350),
+        image: layout.image,
+      );
+      expect(p.x, closeTo(0.5, 1e-12));
+      expect(p.y, closeTo(0.5, 1e-12));
+    });
+
+    test('taps account for the overflowed (cropped) region', () {
+      final layout = previewLayout(
+        area: const SizeF(412, 700),
+        imageAspect: 9 / 16,
+      );
+      // Top edge of the area is inside the image (overflow cropped).
+      final p = tapToFocusPoint(
+        tap: const OffsetF(206, 0),
+        image: layout.image,
+      );
+      expect(p.y, greaterThan(0));
+      expect(p.y, lessThan(0.5));
+    });
+
+    test('taps outside the image clamp to 0..1', () {
+      const image = RectF(left: 0, top: -100, width: 412, height: 900);
+      final p = tapToFocusPoint(tap: const OffsetF(-50, 2000), image: image);
+      expect(p.x, 0);
+      expect(p.y, 1);
+    });
+  });
+
+  group('cropRectPixels', () {
+    test('null fraction keeps the legacy maximal center crop', () {
+      // Portrait 9:16 → full-width 3:4 window.
+      var crop = cropRectPixels(const SizeF(1200, 2133), null);
+      expect(crop.width, closeTo(1200, 1e-9));
+      expect(crop.width / crop.height, closeTo(0.75, 1e-9));
+      expect(crop.left, closeTo(0, 1e-9));
+      // Landscape 4:3 → full-height 3:4 window.
+      crop = cropRectPixels(const SizeF(1600, 1200), null);
+      expect(crop.height, closeTo(1200, 1e-9));
+      expect(crop.width / crop.height, closeTo(0.75, 1e-9));
+      // Near-exact 3:4 keeps the whole image.
+      crop = cropRectPixels(const SizeF(1200, 1600), null);
+      expect(crop.width, 1200);
+      expect(crop.height, 1600);
+    });
+
+    test('displayed frame maps to the same pixels the screen shows', () {
+      final layout = previewLayout(
+        area: const SizeF(412, 700),
+        imageAspect: 9 / 16,
+      );
+      // 9:16 image, e.g. 2250x4000.
+      final crop = cropRectPixels(const SizeF(2250, 4000), layout.frameInImage);
+      expect(crop.width / crop.height, closeTo(0.75, 1e-9));
+      expect(crop.left, greaterThanOrEqualTo(0));
+      expect(crop.top, greaterThanOrEqualTo(0));
+      expect(crop.left + crop.width, lessThanOrEqualTo(2250));
+      expect(crop.top + crop.height, lessThanOrEqualTo(4000));
+    });
+
+    test('corrupt fractions clamp inside the image without stretching',
+        () {
+      const bad = RectF(left: -0.5, top: 0.9, width: 2, height: 2);
+      final crop = cropRectPixels(const SizeF(1000, 1000), bad);
+      expect(crop.left, greaterThanOrEqualTo(0));
+      expect(crop.top, greaterThanOrEqualTo(0));
+      expect(crop.left + crop.width, lessThanOrEqualTo(1000));
+      expect(crop.top + crop.height, lessThanOrEqualTo(1000));
+      expect(crop.width / crop.height, closeTo(1.0, 1e-9));
+    });
+  });
 }
