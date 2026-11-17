@@ -186,6 +186,9 @@ final class PhotoUploadService
         $ownedTransaction = true;
         try {
             // Insert receipt.
+            // bind_param() takes its values by reference, so the
+            // taken_at expression must live in a variable first.
+            $takenAtStr = $takenAt ? $takenAt->format('Y-m-d H:i:s') : null;
             $stmt = $conn->prepare(
                 'INSERT INTO photo_upload_receipts
                    (client_op_id, import_item_id, member_id, field,
@@ -194,11 +197,11 @@ final class PhotoUploadService
                  VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())'
             );
             $stmt->bind_param(
-                'sisssssssiiis',
+                'sisssssssiis',
                 $clientOpId, $memberId, $field,
                 $operatorId, $deviceId, $claimedSha256, $webPath, $mime,
                 $size, $width, $height,
-                $takenAt ? $takenAt->format('Y-m-d H:i:s') : null
+                $takenAtStr
             );
             if (!$stmt->execute()) {
                 throw new \RuntimeException('receipt_insert_failed');
@@ -241,10 +244,10 @@ final class PhotoUploadService
             $isCurrentInt = $shouldBecomeCurrent ? 1 : 0;
             $pendingInt  = $isConflict ? 1 : 0;
             $stmt->bind_param(
-                'isiissssiiisi',
+                'isiissssiiisii',
                 $memberId, $field, $receiptId, $operatorId, $deviceId,
                 $claimedSha256, $webPath, $mime, $size, $width, $height,
-                $takenAt ? $takenAt->format('Y-m-d H:i:s') : null,
+                $takenAtStr,
                 $isCurrentInt, $pendingInt
             );
             if (!$stmt->execute()) {
@@ -393,6 +396,9 @@ final class PhotoUploadService
 
         $conn->begin_transaction();
         try {
+            // bind_param() takes its values by reference, so the
+            // taken_at expression must live in a variable first.
+            $takenAtStr = $takenAt ? $takenAt->format('Y-m-d H:i:s') : null;
             $stmt = $conn->prepare(
                 'INSERT INTO photo_upload_receipts
                    (client_op_id, import_item_id, member_id, field,
@@ -401,11 +407,11 @@ final class PhotoUploadService
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())'
             );
             $stmt->bind_param(
-                'siisssssssiiis',
+                'siisssssssiis',
                 $clientOpId, $importItemId, $memberId, $field,
                 $operatorId, $deviceId, $claimedSha256, $webPath, $mime,
                 $size, $width, $height,
-                $takenAt ? $takenAt->format('Y-m-d H:i:s') : null
+                $takenAtStr
             );
             if (!$stmt->execute()) throw new \RuntimeException('receipt_insert_failed');
             $receiptId = (int)$conn->insert_id;
@@ -438,10 +444,10 @@ final class PhotoUploadService
             $isCurrentInt = $shouldBecomeCurrent ? 1 : 0;
             $pendingInt = $isConflict ? 1 : 0;
             $stmt->bind_param(
-                'isiissssiiisi',
+                'isiissssiiisii',
                 $memberId, $field, $receiptId, $operatorId, $deviceId,
                 $claimedSha256, $webPath, $mime, $size, $width, $height,
-                $takenAt ? $takenAt->format('Y-m-d H:i:s') : null,
+                $takenAtStr,
                 $isCurrentInt, $pendingInt
             );
             if (!$stmt->execute()) throw new \RuntimeException('candidate_insert_failed');
