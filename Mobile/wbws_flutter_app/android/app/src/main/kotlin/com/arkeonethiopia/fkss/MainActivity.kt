@@ -2,9 +2,12 @@ package com.arkeonethiopia.fkss
 
 import android.app.ActivityManager
 import android.content.Context
+import android.content.ContentValues
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.provider.Settings
 import android.view.WindowManager
 import androidx.core.content.FileProvider
@@ -17,6 +20,8 @@ import com.ryanheise.audioservice.AudioServiceFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
+import java.io.FileInputStream
+import java.io.IOException
 import java.lang.ref.WeakReference
 
 class MainActivity : AudioServiceFragmentActivity() {
@@ -25,6 +30,7 @@ class MainActivity : AudioServiceFragmentActivity() {
     private val deviceChannelName = "fkss.app/device"
     private val photoSyncChannelName = "fkss.app/photo_sync_service"
     private val noCloudChannelName = "app.fkss.photo/nocloud"
+    private val photoExportChannelName = "fkss.app/photo_export"
 
     /**
      * S3 A.8 — kept so the engine's background-sync channel can be unbound
@@ -160,6 +166,32 @@ class MainActivity : AudioServiceFragmentActivity() {
                 }
             }
 
+        // ZIP airlock export: save a copy to public Downloads/FKSS so the
+        // operator can find it in any file manager and copy it by USB.
+        // Android 10+ needs no permission (MediaStore RELATIVE_PATH);
+        // older releases use the legacy public path, which needs
+        // WRITE_EXTERNAL_STORAGE (manifest, maxSdk 28) — without the
+        // grant this returns save_failed and Dart keeps share-only
+        // behavior instead of failing the export.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, photoExportChannelName)
+            .setMethodCallHandler { call, result ->
+                if (call.method == "saveZipToDownloads") {
+                    val path = call.argument<String>("path")
+                    val fileName = call.argument<String>("fileName")
+                    if (path.isNullOrBlank() || fileName.isNullOrBlank()) {
+                        result.error("bad_args", "path and fileName are required", null)
+                        return@setMethodCallHandler
+                    }
+                    try {
+                        result.success(saveZipToPublicDownloads(path, fileName))
+                    } catch (e: Exception) {
+                        result.error("save_failed", e.message, null)
+                    }
+                } else {
+                    result.notImplemented()
+                }
+            }
+
         // P65 — device capability snapshot (ABI, RAM class, OS): drives
         // the low-end device tier (image-cache budgets) and the ABI-aware
         // update download, and surfaces in Profile → Diagnostics. Read
@@ -278,6 +310,60 @@ class MainActivity : AudioServiceFragmentActivity() {
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    /**
+     * Copies [srcPath] into public Downloads/FKSS via MediaStore and
+     * returns the display path shown to the operator
+     * ("Downloads/FKSS/<name>"). Bundle names carry a UUID so collisions
+     * are near-impossible; the pre-Q branch appends a counter if needed.
+     */
+    private fun saveZipToPublicDownloads(srcPath: String, fileName: String): String {
+        val src = File(srcPath)
+        require(src.exists()) { "ZIP not found: $srcPath" }
+        val resolver = applicationContext.contentResolver
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                put(MediaStore.Downloads.MIME_TYPE, "application/zip")
+                put(MediaStore.Downloads.RELATIVE_PATH, "Download/FKSS")
+            }
+            val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                ?: throw IOException("MediaStore refused the download entry")
+            resolver.openOutputStream(uri)?.use { out ->
+                FileInputStream(src).use { it.copyTo(out) }
+            } ?: throw IOException("Cannot open MediaStore output stream")
+            return "Downloads/FKSS/$fileName"
+        }
+        // Pre-Q: MediaStore.DATA with the legacy public path.
+        @Suppress("DEPRECATION")
+        val legacyDir = File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+            "FKSS",
+        )
+        if (!legacyDir.exists() && !legacyDir.mkdirs()) {
+            throw IOException("Cannot create Downloads/FKSS (storage permission?)")
+        }
+        val base = fileName.removeSuffix(".zip")
+        var name = fileName
+        var attempt = 1
+        while (File(legacyDir, name).exists() && attempt < 100) {
+            name = "$base ($attempt).zip"
+            attempt++
+        }
+        val values = ContentValues().apply {
+            @Suppress("DEPRECATION")
+            put(MediaStore.Downloads.DATA, File(legacyDir, name).absolutePath)
+            put(MediaStore.Downloads.DISPLAY_NAME, name)
+            put(MediaStore.Downloads.MIME_TYPE, "application/zip")
+        }
+        @Suppress("DEPRECATION")
+        val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            ?: throw IOException("MediaStore refused the download entry")
+        resolver.openOutputStream(uri)?.use { out ->
+            FileInputStream(src).use { it.copyTo(out) }
+        } ?: throw IOException("Cannot open MediaStore output stream")
+        return "Downloads/FKSS/$name"
     }
 
     /**

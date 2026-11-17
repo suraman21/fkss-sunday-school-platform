@@ -352,7 +352,7 @@ lib/screens/members/
   - Sub-toggle (visible only when sync is ON): `[ ] Allow sync over cellular (not recommended — may use your data plan)` (default OFF).
 - **Summary card:** 127 queued · 0 done · 0 pending review · 238 MB total · estimated ~8 min on Wi-Fi · 42 min on 3G.
 - **Two big action buttons:**
-  - 📦 **Export ZIP file** (always available, works offline) → opens share sheet (see ZIP_IMPORT_DESIGN).
+  - 📦 **Export ZIP file** (always available, works offline) → saves a copy to public Downloads/FKSS (Android, for USB handoff) and opens the share sheet (see ZIP_IMPORT_DESIGN).
   - ▶ **Start Sync** (enabled only when sync toggle is ON AND network is available per the policy).
 - When **Start Sync** is tapped:
   - Foreground worker begins; per-photo progress bar with member name, X/127, current MB/s, ETA.

@@ -41,9 +41,6 @@ class _MemberPhotoCaptureScreenState extends State<MemberPhotoCaptureScreen> {
   bool _processing = false;
   PhotoOutboxEntry? _reviewEntry;
   String? _error;
-  // The client_op_id of the just-accepted photo (undo window open).
-  String? _lastAcceptedOpId;
-  Timer? _autoPopTimer;
   bool _loadedPreviousPhoto = false;
   String? _previousPhotoPath;
   String? _previousPhotoError;
@@ -55,12 +52,6 @@ class _MemberPhotoCaptureScreenState extends State<MemberPhotoCaptureScreen> {
       _loadedPreviousPhoto = true;
       unawaited(_loadPreviousPhoto());
     }
-  }
-
-  @override
-  void dispose() {
-    _autoPopTimer?.cancel();
-    super.dispose();
   }
 
   int get _memberId => (ModalRoute.of(context)?.settings.arguments
@@ -154,8 +145,7 @@ class _MemberPhotoCaptureScreenState extends State<MemberPhotoCaptureScreen> {
   void _retake() {
     // Retake the photo currently in review. We pass its clientOpId so
     // the outbox marks the prior capture as discarded (with a
-    // replaced_by pointer) instead of leaving orphaned files — this
-    // keeps the undoRetake path valid for ~30 s.
+    // replaced_by pointer) instead of leaving orphaned files.
     final entry = _reviewEntry;
     setState(() {
       _reviewEntry = null;
@@ -167,51 +157,9 @@ class _MemberPhotoCaptureScreenState extends State<MemberPhotoCaptureScreen> {
   void _accept() {
     final entry = _reviewEntry;
     if (entry == null) return;
-    _autoPopTimer?.cancel();
-    setState(() {
-      _lastAcceptedOpId = entry.clientOpId;
-      _reviewEntry = null;
-    });
-    // Keep the undo affordance brief so it cannot block the member screen.
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Row(children: [
-        const Icon(Icons.check_circle, color: AppTheme.gold, size: 18),
-        const SizedBox(width: 8),
-        Expanded(
-            child: Text('Photo saved · ${entry.humanSize}',
-                style: const TextStyle(fontSize: 13))),
-      ]),
-      duration: const Duration(seconds: 2),
-      backgroundColor: AppTheme.maroon,
-      action: SnackBarAction(
-        label: 'UNDO',
-        textColor: AppTheme.gold,
-        onPressed: () => _undoLastAccepted(entry.clientOpId),
-      ),
-    ));
-    _autoPopTimer = Timer(const Duration(seconds: 2), () {
-      if (!mounted) return;
-      if (_lastAcceptedOpId == entry.clientOpId) {
-        _lastAcceptedOpId = null;
-        Navigator.of(context).pop(entry);
-      }
-    });
-  }
-
-  Future<void> _undoLastAccepted(String opId) async {
-    _autoPopTimer?.cancel();
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    // Try undoRetake first (only works when this entry replaced a
-    // prior one). If not applicable (first capture of the session),
-    // just discard the current entry and re-open.
-    await PhotoOutboxService.instance.undoRetake(opId);
-    await PhotoOutboxService.instance.discard(opId);
-    if (!mounted) return;
-    setState(() {
-      _lastAcceptedOpId = null;
-      _error = null;
-    });
-    _takePhoto(retakeOfClientOpId: opId);
+    // No confirmation toast: the operator approved the exact photo in
+    // review, so return to the member screen immediately.
+    Navigator.of(context).pop(entry);
   }
 
   @override

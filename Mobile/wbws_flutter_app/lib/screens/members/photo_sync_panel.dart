@@ -127,11 +127,15 @@ class _PhotoSyncPanelScreenState extends State<PhotoSyncPanelScreen> {
     if (_exportingZip) return;
     setState(() => _exportingZip = true);
     try {
-      final zip = await PhotoZipExportService.instance.exportAndShare();
+      final bundle =
+          await PhotoZipExportService.instance.exportAndShare();
       if (!mounted) return;
+      final kb = (await bundle.zip.length()) ~/ 1024;
+      final where = bundle.downloadsPath == null
+          ? 'choose a share target (AirDrop, email, Save to Files…).'
+          : 'saved to ${bundle.downloadsPath} — copy it by USB or choose a share target.';
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('ZIP ready (${(await zip.length()) ~/ 1024} KB) — '
-            'choose a share target (AirDrop, email, Save to Files…).'),
+        content: Text('ZIP ready ($kb KB) — $where'),
         duration: const Duration(seconds: 5),
         backgroundColor: const Color(0xFF600000),
       ));

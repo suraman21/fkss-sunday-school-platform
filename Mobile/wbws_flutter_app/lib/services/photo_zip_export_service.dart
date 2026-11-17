@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
 import 'package:uuid/uuid.dart';
@@ -12,6 +13,7 @@ import 'package:uuid/uuid.dart';
 import 'local_db.dart';
 import 'photo_outbox_models.dart';
 import 'photo_outbox_service.dart';
+import 'photo_public_downloads.dart';
 import '../utils/config.dart';
 
 /// Z1 — ZIP airlock export.
@@ -175,15 +177,25 @@ class PhotoZipExportService {
     return out;
   }
 
-  /// Build, then hand the bundle to the OS share sheet.
-  Future<File> exportAndShare({bool onlyUnsynced = true}) async {
+  /// Build, save a copy to public Downloads (Android) for easy USB
+  /// handoff, then hand the bundle to the OS share sheet.
+  ///
+  /// A failed Downloads save never fails the export — sharing still
+  /// works (e.g. old Android without the storage permission).
+  Future<ExportedBundle> exportAndShare({bool onlyUnsynced = true}) async {
     final zip = await exportBundle(onlyUnsynced: onlyUnsynced);
+    String? downloadsPath;
+    try {
+      downloadsPath = await PhotoPublicDownloads.saveZipToDownloads(zip);
+    } catch (e) {
+      debugPrint('Downloads copy failed (share still works): $e');
+    }
     await Share.shareXFiles(
       [XFile(zip.path, mimeType: 'application/zip')],
       subject: 'FKSS photos (${p.basename(zip.path)})',
       text: 'Offline-captured photos for FKSS Sunday School — import via admin Photo Review.',
     );
-    return zip;
+    return ExportedBundle(zip: zip, downloadsPath: downloadsPath);
   }
 
   /// Per-install fallback HMAC key (used when the device has never
@@ -237,4 +249,14 @@ class _ZipPhotoEntry {
     required this.sha256,
     required this.byteSize,
   });
+}
+
+/// Result of [PhotoZipExportService.exportAndShare]: the private bundle
+/// plus the public copy's display path (`Downloads/FKSS/…`, Android
+/// only — null on iOS or when the Downloads save failed).
+class ExportedBundle {
+  final File zip;
+  final String? downloadsPath;
+
+  const ExportedBundle({required this.zip, required this.downloadsPath});
 }
