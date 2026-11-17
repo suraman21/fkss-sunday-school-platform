@@ -104,6 +104,46 @@ final class PhotoDevicePairing
     }
 
     /**
+     * Honest tri-state signature label for an import batch row.
+     *
+     * - 'verified'   the HMAC checked out against the paired key.
+     * - 'unverified' nothing to check against (per-install key, unsigned
+     *                bundle, or device never paired) — expected until the
+     *                phone's first successful online sync.
+     * - 'mismatch'   a paired key exists but the signature failed — the
+     *                only state that suggests tampering or a wrong key.
+     *
+     * $batch needs manifest_sig_valid, manifest_json, operator_admin_id
+     * and device_id. Never throws (safe for history pages).
+     */
+    public static function sigStatusForBatch(mysqli $conn, array $batch): string
+    {
+        try {
+            if (((int)($batch['manifest_sig_valid'] ?? 0)) === 1) {
+                return 'verified';
+            }
+            $manifest = json_decode((string)($batch['manifest_json'] ?? ''), true);
+            $keyType = is_array($manifest)
+                ? (string)($manifest['hmac_key_type'] ?? '')
+                : '';
+            if ($keyType === 'server_paired') {
+                $key = self::lookupKey(
+                    $conn,
+                    (int)($batch['operator_admin_id'] ?? 0),
+                    (string)($batch['device_id'] ?? '')
+                );
+                // A stored key existed and verification still failed:
+                // genuine mismatch. (A server_paired bundle with no
+                // stored key falls through to 'unverified'.)
+                if ($key !== null) return 'mismatch';
+            }
+            return 'unverified';
+        } catch (\Throwable) {
+            return 'unverified';
+        }
+    }
+
+    /**
      * Look up the stored key for ($operatorId, $deviceId) for signature
      * verification. Returns hex key or null if unknown.
      */

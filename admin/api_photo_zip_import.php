@@ -323,12 +323,16 @@ function handleRecent(int $operatorId): void {
     global $conn;
     try {
         $limit = 20;
-        $res = $conn->query("SELECT id, batch_uuid, device_id, total_photos, committed_photos,
-            status, manifest_sig_valid, created_at, committed_at
+        $res = $conn->query("SELECT id, batch_uuid, operator_admin_id, device_id, total_photos, committed_photos,
+            status, manifest_sig_valid, manifest_json, created_at, committed_at
             FROM photo_import_batches
             ORDER BY id DESC LIMIT $limit");
         $rows = [];
-        if ($res) while ($r = $res->fetch_assoc()) $rows[] = $r;
+        if ($res) while ($r = $res->fetch_assoc()) {
+            $r['sig_status'] = \App\Services\PhotoDevicePairing::sigStatusForBatch($conn, $r);
+            unset($r['manifest_json']); // working input only — keeps payload small
+            $rows[] = $r;
+        }
         jsonOut(['status'=>'success','batches'=>$rows]);
     } catch (Throwable $e) {
         jsonOut(['status'=>'error','message'=>$e->getMessage()], 500);

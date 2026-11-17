@@ -151,6 +151,9 @@ async function upload(file) {
         if (j.errors && j.errors.length) html += '<ul class="errors">' + j.errors.map(e=>'<li>'+escapeHtml(e)+'</li>').join('') + '</ul>';
         result.className='result ok'; result.innerHTML=html;
         loadRecent();
+      } else if (j.status === 'session_expired' || j.action === 'reload') {
+        result.className='result err'; result.textContent='Session expired — reloading to login…';
+        setTimeout(()=>location.reload(), 800);
       } else {
         result.className='result err'; result.textContent='Import failed: '+(j.message||'unknown error');
       }
@@ -170,13 +173,21 @@ async function loadRecent() {
   const r = await fetch('/admin/api_photo_zip_import.php?action=recent', {credentials:'same-origin', headers:{'Accept':'application/json','X-Requested-With':'XMLHttpRequest'}});
   const j = await r.json();
   const root = document.getElementById('recent');
+  if (j.status === 'session_expired' || j.action === 'reload') {
+    root.innerHTML = '<p class="note">Session expired — reloading to login…</p>';
+    setTimeout(()=>location.reload(), 800);
+    return;
+  }
   if (j.status !== 'success' || !j.batches.length) {
     root.innerHTML = '<p class="note">No imports yet on this server.</p>'; return;
   }
   root.innerHTML = '<table><thead><tr><th>When</th><th>Batch</th><th>Device</th><th>Status</th><th>Photos</th><th>Sig</th></tr></thead><tbody>'+
     j.batches.map(b=>{
-      const sigBadge = b.manifest_sig_valid==='1' || b.manifest_sig_valid===1
+      const sig = b.sig_status || ((b.manifest_sig_valid==='1' || b.manifest_sig_valid===1) ? 'verified' : 'unverified');
+      const sigBadge = sig === 'verified'
         ? '<span class="badge badge-ok"><i class="fa-solid fa-shield-halved"></i> verified</span>'
+        : sig === 'mismatch'
+        ? '<span class="badge badge-err"><i class="fa-solid fa-shield-halved"></i> mismatch</span>'
         : '<span class="badge badge-warn"><i class="fa-solid fa-triangle-exclamation"></i> unverified</span>';
       const statusBadge = b.status === 'done'
         ? '<span class="badge badge-ok">done</span>'

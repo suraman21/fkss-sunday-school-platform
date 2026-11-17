@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../backend/ethiopian_date.php';
 require_once __DIR__ . '/../backend/calendar_system.php';
+require_once __DIR__ . '/../backend/services/PhotoDevicePairing.php';
 // session is already started and role checked in dashboard.php
 
 // ------------------------------------------------------------
@@ -154,7 +155,8 @@ if (isset($conn)) {
         // Recent batches (last 8)
         $recentBatches = pd_fetch_all($conn,
             "SELECT b.id, b.batch_uuid, b.source, b.total_photos, b.committed_photos,
-                    b.status, b.manifest_sig_valid, b.created_at, b.committed_at,
+                    b.status, b.manifest_sig_valid, b.manifest_json,
+                    b.operator_admin_id, b.device_id, b.created_at, b.committed_at,
                     u.full_name AS operator_name
              FROM photo_import_batches b
              LEFT JOIN users u ON u.id = b.operator_admin_id
@@ -185,7 +187,8 @@ if (isset($conn)) {
     if ($photoTablesReady) {
         $allBatches = pd_fetch_all($conn,
             "SELECT b.id, b.batch_uuid, b.source, b.total_photos, b.committed_photos,
-                    b.status, b.manifest_sig_valid, b.created_at, b.committed_at,
+                    b.status, b.manifest_sig_valid, b.manifest_json,
+                    b.operator_admin_id, b.device_id, b.created_at, b.committed_at,
                     u.full_name AS operator_name
              FROM photo_import_batches b
              LEFT JOIN users u ON u.id = b.operator_admin_id
@@ -713,7 +716,7 @@ $DEPT_SUB_AM  = 'የአባላት ፎቶ ማስተዳደሪያ · ከስልክ �
                     <thead><tr><th>#</th><th>Operator</th><th>Source</th><th>Photos</th><th>Sig</th><th>Status</th><th>Uploaded</th><th>Committed</th></tr></thead>
                     <tbody>
                     <?php foreach ($allBatches as $b):
-                        $sigOk = ((int)($b['manifest_sig_valid'] ?? 0)) === 1;
+                        $sigStatus = \App\Services\PhotoDevicePairing::sigStatusForBatch($conn, $b);
                         $status = $b['status'] ?? 'uploaded';
                         if ($status === 'done' || $status === 'committed')      $badge = '<span class="badge badge-green">Committed</span>';
                         elseif ($status === 'uploaded')   $badge = '<span class="badge badge-amber">Awaiting</span>';
@@ -725,7 +728,7 @@ $DEPT_SUB_AM  = 'የአባላት ፎቶ ማስተዳደሪያ · ከስልክ �
                             <td class="text-xs font-semibold"><?= htmlspecialchars($b['operator_name'] ?? '—') ?></td>
                             <td><span class="badge badge-slate"><?= htmlspecialchars(strtoupper($b['source'] ?? 'zip')) ?></span></td>
                             <td class="text-xs"><b><?= (int)$b['committed_photos'] ?></b> / <?= (int)$b['total_photos'] ?></td>
-                            <td><?= $sigOk ? '<span class="badge badge-green"><i class="fa-solid fa-shield-halved mr-1"></i>Valid</span>' : '<span class="badge badge-red"><i class="fa-solid fa-shield-halved mr-1"></i>Bad</span>' ?></td>
+                            <td><?php if ($sigStatus === 'verified'): ?><span class="badge badge-green"><i class="fa-solid fa-shield-halved mr-1"></i>Valid</span><?php elseif ($sigStatus === 'mismatch'): ?><span class="badge badge-red"><i class="fa-solid fa-shield-halved mr-1"></i>Mismatch</span><?php else: ?><span class="badge badge-amber"><i class="fa-solid fa-shield-halved mr-1"></i>Unverified</span><?php endif; ?></td>
                             <td><?= $badge ?></td>
                             <td class="text-[11px] text-slate-500"><?= htmlspecialchars(substr($b['created_at'] ?? '', 0, 16)) ?></td>
                             <td class="text-[11px] text-slate-500"><?= $b['committed_at'] ? htmlspecialchars(substr($b['committed_at'], 0, 16)) : '<span class="text-slate-400">—</span>' ?></td>

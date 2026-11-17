@@ -34,7 +34,18 @@ if (!$canDecide) {
 }
 
 if ($action === 'list-pending') {
-    $list = pendingCandidates($conn);
+    try {
+        $list = pendingCandidates($conn);
+    } catch (Throwable $e) {
+        http_response_code(500);
+        $out = json_encode(['status' => 'error',
+            'message' => 'Could not load pending reviews: ' . $e->getMessage()],
+            JSON_UNESCAPED_UNICODE);
+        echo $out === false
+            ? '{"status":"error","message":"Could not load pending reviews."}'
+            : $out;
+        exit;
+    }
     echo json_encode(['status' => 'success', 'items' => $list]);
     exit;
 }
@@ -78,8 +89,8 @@ function pendingCandidates(mysqli $conn): array {
                    c.height,
                    c.taken_at,
                    c.operator_admin_id,
-                   a.username AS operator_username,
-                   a.full_name AS operator_name,
+                   u.username AS operator_username,
+                   u.full_name AS operator_name,
                    c.device_id,
                    m.student_name,
                    m.member_code,
@@ -90,7 +101,7 @@ function pendingCandidates(mysqli $conn): array {
                    cur.operator_admin_id AS current_operator_id
               FROM member_photo_candidates c
               JOIN members m ON m.id = c.member_id
-              LEFT JOIN admins a ON a.id = c.operator_admin_id
+              LEFT JOIN users u ON u.id = c.operator_admin_id
               LEFT JOIN member_photo_candidates cur
                 ON cur.member_id = c.member_id AND cur.field = c.field
                AND cur.is_current = 1 AND cur.archived = 0

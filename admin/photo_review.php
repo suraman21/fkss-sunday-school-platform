@@ -135,9 +135,15 @@ async function load() {
   try {
     const r = await fetch('/admin/api_photo_candidates.php?action=list-pending', {credentials:'same-origin'});
     const j = await r.json();
+    if (j.status === 'session_expired' || j.action === 'reload') {
+      document.getElementById('list').innerHTML =
+        '<div class="empty">Session expired — reloading to login…</div>';
+      setTimeout(()=>location.reload(), 800);
+      return;
+    }
     if (j.status !== 'success') {
       document.getElementById('list').innerHTML =
-        '<div class="empty">Error loading pending reviews.</div>';
+        '<div class="empty">Error loading pending reviews: '+esc(j.message||'unknown error')+'</div>';
       return;
     }
     render(j.items || []);
