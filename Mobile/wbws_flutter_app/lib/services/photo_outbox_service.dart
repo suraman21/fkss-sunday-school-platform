@@ -777,6 +777,25 @@ class PhotoOutboxService {
     );
   }
 
+  /// Reset ALL failed entries back to queued (user tapped "Retry all").
+  Future<void> retryAllFailed() async {
+    await ensureInitialized();
+    final db = await LocalDb().database;
+    await db.update(
+      'photo_outbox',
+      {
+        'state': PhotoOutboxState.queued.storageValue,
+        'attempts': 0,
+        'next_attempt_at': DateTime.now().toUtc().toIso8601String(),
+        'last_error': null,
+        'last_error_code': null,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      },
+      where: 'state = ?',
+      whereArgs: [PhotoOutboxState.failed.storageValue],
+    );
+  }
+
   /// Discard a queued/failed entry (and delete its file from disk). Safe on
   /// already-done entries: they stay in receipts (server has them) but
   /// their local file is removed during LRU cleanup, not here.

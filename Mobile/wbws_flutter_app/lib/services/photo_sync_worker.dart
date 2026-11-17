@@ -240,6 +240,12 @@ class PhotoSyncWorker extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Server 429 cooldown: when the server says "slow down", every lane
+  /// pauses until this instant instead of each photo burning its own
+  /// backoff separately (which would stall a 3k-photo queue for hours).
+  DateTime _rateLimitCooldownUntil =
+      DateTime.fromMillisecondsSinceEpoch(0);
+
   // -------------------- drain loop --------------------
 
   Future<void> _drain(int concurrency) async {
@@ -290,6 +296,13 @@ class PhotoSyncWorker extends ChangeNotifier {
         _emit(PhotoSyncEvent(PhotoSyncEventType.waiting,
             'Wi-Fi required. Pausing until Wi-Fi is available.'));
         await _waitFor(const Duration(seconds: 10));
+        continue;
+      }
+
+      // Server 429 cooldown (set in _uploadOne): all lanes pause
+      // together. Silent sleep — the 429 itself was already logged.
+      if (DateTime.now().isBefore(_rateLimitCooldownUntil)) {
+        await Future<void>.delayed(const Duration(milliseconds: 500));
         continue;
       }
 
@@ -401,6 +414,16 @@ class PhotoSyncWorker extends ChangeNotifier {
         );
         _emit(PhotoSyncEvent(PhotoSyncEventType.retrying,
             'Retrying ${entry.memberCode ?? entry.memberId}: $errMsg'));
+        if (code == 429) {
+          // Global cooldown: pause every lane until the server recovers
+          // instead of burning per-photo backoff separately.
+          final retryAfter = response.retryAfterSeconds;
+          final secs = (retryAfter ?? 60).clamp(5, 300).toInt();
+          final until = DateTime.now().add(Duration(seconds: secs));
+          if (until.isAfter(_rateLimitCooldownUntil)) {
+            _rateLimitCooldownUntil = until;
+          }
+        }
         // Don't count as done; it will be picked up again later if still
         // running. For simplicity we treat retry as "continue" — next
         // pickDueForUpload picks it up after backoff.

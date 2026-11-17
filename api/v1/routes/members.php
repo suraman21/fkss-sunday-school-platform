@@ -501,7 +501,11 @@ if ($method === 'POST' && is_int($id) && $sub === 'photo') {
         err('Only Information, HR, or Admin staff can upload member photos.', 403,
             ['code' => 'FORBIDDEN']);
     }
-    if (isApiRateLimited('member_photo_upload', 30)) {
+    // Bulk-photo workflow: one authenticated request per photo; a school
+    // intake run is thousands of photos, often behind one NAT'd IP.
+    // 120/min/IP with client 429+Retry-After backoff keeps abuse bounded
+    // while letting legit bulk syncs finish the same day.
+    if (isApiRateLimited('member_photo_upload', 120)) {
         err('Too many photo uploads. Please wait a moment.', 429);
     }
 

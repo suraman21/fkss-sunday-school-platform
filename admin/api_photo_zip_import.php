@@ -28,14 +28,12 @@ header('Content-Type: application/json; charset=utf-8');
 $role = (string)($_SESSION['admin_role'] ?? '');
 $allowed = ['super_admin','school_admin','info_dept','hr_dept','photo_importer'];
 if (!in_array($role, $allowed, true)) {
-    http_response_code(403);
-    echo json_encode(['status'=>'error','message'=>'Access denied.']);
+    jsonOut(['status'=>'error','message'=>'Access denied.'], 403);
     exit;
 }
 $operatorId = (int)($_SESSION['admin_id'] ?? 0);
 if ($operatorId <= 0) {
-    http_response_code(401);
-    echo json_encode(['status'=>'error','message'=>'You must be logged in.']);
+    jsonOut(['status'=>'error','message'=>'You must be logged in.'], 401);
     exit;
 }
 
@@ -46,48 +44,70 @@ if ($action === 'upload') {
 } elseif ($action === 'recent') {
     handleRecent($operatorId);
 } else {
-    http_response_code(400);
-    echo json_encode(['status'=>'error','message'=>'Unknown action.']);
+    jsonOut(['status'=>'error','message'=>'Unknown action.'], 400);
+}
+
+/**
+ * Emit a JSON response. Guaranteed to never emit an empty body: some
+ * hosts replace an empty 5xx body with a generic 404 page, which hides
+ * the real error from the dashboard ("Unexpected response: <html>...").
+ */
+function jsonOut(array $payload, int $status = 200): void {
+    http_response_code($status);
+    $json = json_encode($payload, JSON_UNESCAPED_UNICODE);
+    if ($json === false) {
+        $json = '{"status":"error","message":"Response encoding failed."}';
+    }
+    echo $json;
 }
 
 function handleUpload(int $operatorId): void {
     global $conn;
+    // Bulk imports (hundreds of photos) legitimately run for minutes:
+    // never let the script die mid-batch (a bare 5xx with no body shows
+    // up in the dashboard as a confusing "Unexpected response" page).
+    @set_time_limit(0);
+    ignore_user_abort(true);
     if (!isset($_FILES['zip']) || !is_array($_FILES['zip'])) {
-        http_response_code(400);
-        echo json_encode(['status'=>'error','message'=>'No ZIP file uploaded.']); return;
+        jsonOut(['status'=>'error','message'=>'No ZIP file uploaded.'], 400); return;
     }
     $f = $_FILES['zip'];
     if ((int)($f['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
-        http_response_code(400);
-        echo json_encode(['status'=>'error','message'=>'Upload error: '.($f['error']??'unknown')]); return;
+        jsonOut(['status'=>'error','message'=>'Upload error: '.($f['error']??'unknown')], 400); return;
     }
     $tmp = (string)($f['tmp_name'] ?? '');
     $size = @filesize($tmp);
     if ($tmp === '' || !is_uploaded_file($tmp) || $size === false || $size <= 0) {
-        http_response_code(400);
-        echo json_encode(['status'=>'error','message'=>'Upload could not be verified.']); return;
+        jsonOut(['status'=>'error','message'=>'Upload could not be verified.'], 400); return;
     }
     if ($size > 200 * 1024 * 1024) { // 200 MB cap (≈100 photos × 2 MB)
-        http_response_code(413);
-        echo json_encode(['status'=>'error','message'=>'ZIP exceeds 200 MB cap.']); return;
+        jsonOut(['status'=>'error','message'=>'ZIP exceeds 200 MB cap.'], 413); return;
     }
 
     // ZipArchive availability check.
     if (!class_exists('ZipArchive')) {
-        http_response_code(500);
-        echo json_encode(['status'=>'error','message'=>'Server is missing the ZipArchive extension (ext-zip). Enable it to import.']); return;
+        jsonOut(['status'=>'error','message'=>'Server is missing the ZipArchive extension (ext-zip). Enable it to import.'], 500); return;
     }
 
     // Extract to temp dir.
     $tmpDir = sys_get_temp_dir() . '/fkss_zip_' . bin2hex(random_bytes(8));
     if (!@mkdir($tmpDir, 0700, true)) {
-        http_response_code(500);
-        echo json_encode(['status'=>'error','message'=>'Could not create temp extract directory.']); return;
+        jsonOut(['status'=>'error','message'=>'Could not create temp extract directory.'], 500); return;
     }
     try {
         $zip = new ZipArchive();
         if ($zip->open($tmp) !== true) {
             throw new RuntimeException('Could not open ZIP (corrupt?).');
+        }
+        // Zip-slip defense: a hostile bundle must not write outside $tmpDir.
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $entryName = $zip->getNameIndex($i);
+            if ($entryName === false || $entryName === ''
+                || str_contains($entryName, '..')
+                || $entryName[0] === '/' || str_contains($entryName, '\\')) {
+                $zip->close();
+                throw new RuntimeException('ZIP contains an unsafe entry name.');
+            }
         }
         if (!$zip->extractTo($tmpDir)) {
             $zip->close();
@@ -159,12 +179,12 @@ function handleUpload(int $operatorId): void {
             $sigInt = $sigValid ? 1 : 0;
             $status = 'importing';
             $manifestJson = json_encode($manifest);
+            if ($manifestJson === false) $manifestJson = '{}';
             // Column types: uuid(s), operator(i), device(s), source(s),
             // sig(i), total(i), status(s), manifest(s) → s i s s i i s s.
             $stmt->bind_param('sissiiss',
                 $batchUuid, $operatorId, $deviceId, $source,
                 $sigInt, $totalCount, $status, $manifestJson);
-            if (!$stmt->execute()) throw new RuntimeException('batch_insert_failed');
             if (!$stmt->execute()) throw new RuntimeException('batch_insert_failed');
             $batchId = (int)$conn->insert_id;
             $stmt->close();
@@ -202,6 +222,25 @@ function handleUpload(int $operatorId): void {
             $itemId = (int)$conn->insert_id;
 
             $srcPath = $tmpDir . '/' . $arcPath;
+            // Belt-and-braces: refuse manifest paths escaping the extract dir.
+            if ($arcPath === '' || str_contains($arcPath, '..')
+                || ($arcPath[0] ?? '') === '/' || str_contains($arcPath, '\\')) {
+                $results[] = ['seq'=>$seq,'code'=>$memberCode,'status'=>'skipped',
+                    'reason'=>'bad_path'];
+                $errors[] = "Seq $seq ($memberCode): unsafe path in manifest";
+                $conn->query("UPDATE photo_import_items SET decision='failed' WHERE id=$itemId");
+                continue;
+            }
+            // Older bundles omit width/height — measure from the file.
+            $width = (int)($p['width'] ?? 0);
+            $height = (int)($p['height'] ?? 0);
+            if (($width <= 0 || $height <= 0) && is_file($srcPath)) {
+                $dims = @getimagesize($srcPath);
+                if (is_array($dims)) {
+                    if ($width <= 0) $width = (int)$dims[0];
+                    if ($height <= 0) $height = (int)$dims[1];
+                }
+            }
             // Resolve member_id by code if not trusted (defense: trust client member_id
             // but cross-check; resolve via member_code when possible).
             if ($memberCode !== '') {
@@ -226,8 +265,8 @@ function handleUpload(int $operatorId): void {
                 'field' => $field,
                 'sha256' => $sha,
                 'taken_at' => $takenAt,
-                'width' => (int)($p['width'] ?? 0),
-                'height' => (int)($p['height'] ?? 0),
+                'width' => $width,
+                'height' => $height,
                 'source_path' => $srcPath,
             ]);
             if (!empty($res['ok'])) {
@@ -259,7 +298,7 @@ function handleUpload(int $operatorId): void {
         @move_uploaded_file($tmp, $archivePath); // source may already be gone; fall back to copy
         if (!is_file($archivePath)) @copy($tmp, $archivePath);
 
-        echo json_encode([
+        jsonOut([
             'status' => 'success',
             'batch_id' => $batchId,
             'batch_uuid' => $batchUuid,
@@ -273,8 +312,7 @@ function handleUpload(int $operatorId): void {
             'errors' => array_slice($errors, 0, 20),
         ]);
     } catch (Throwable $e) {
-        http_response_code(500);
-        echo json_encode(['status'=>'error','message'=>$e->getMessage()]);
+        jsonOut(['status'=>'error','message'=>$e->getMessage()], 500);
     } finally {
         // Clean up temp extraction.
         if (is_dir($tmpDir)) @rmdir_recursive($tmpDir);
@@ -283,14 +321,18 @@ function handleUpload(int $operatorId): void {
 
 function handleRecent(int $operatorId): void {
     global $conn;
-    $limit = 20;
-    $res = $conn->query("SELECT id, batch_uuid, device_id, total_photos, committed_photos,
-        status, manifest_sig_valid, created_at, committed_at
-        FROM photo_import_batches
-        ORDER BY id DESC LIMIT $limit");
-    $rows = [];
-    while ($r = $res->fetch_assoc()) $rows[] = $r;
-    echo json_encode(['status'=>'success','batches'=>$rows]);
+    try {
+        $limit = 20;
+        $res = $conn->query("SELECT id, batch_uuid, device_id, total_photos, committed_photos,
+            status, manifest_sig_valid, created_at, committed_at
+            FROM photo_import_batches
+            ORDER BY id DESC LIMIT $limit");
+        $rows = [];
+        if ($res) while ($r = $res->fetch_assoc()) $rows[] = $r;
+        jsonOut(['status'=>'success','batches'=>$rows]);
+    } catch (Throwable $e) {
+        jsonOut(['status'=>'error','message'=>$e->getMessage()], 500);
+    }
 }
 
 function resolveMemberIdByCode(mysqli $conn, string $code): ?int {

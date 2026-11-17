@@ -135,6 +135,8 @@ async function upload(file) {
   const fd = new FormData(); fd.append('zip', file);
   const xhr = new XMLHttpRequest();
   xhr.open('POST', '/admin/api_photo_zip_import.php?action=upload');
+  xhr.setRequestHeader('Accept', 'application/json');
+  xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
   xhr.upload.onprogress = e=>{ if(e.lengthComputable) bar.style.width=(90*e.loaded/e.total + 5)+'%'; };
   xhr.onload = ()=>{
     bar.style.width='100%';
@@ -153,7 +155,7 @@ async function upload(file) {
         result.className='result err'; result.textContent='Import failed: '+(j.message||'unknown error');
       }
     } catch(e) {
-      result.className='result err'; result.textContent='Unexpected response: '+xhr.responseText.slice(0,500);
+      result.className='result err'; result.textContent='Upload failed (HTTP '+xhr.status+'): '+(xhr.responseText||'').slice(0,300);
     }
   };
   xhr.onerror = ()=>{ result.className='result err'; result.textContent='Network error.'; prog.style.display='none'; };
@@ -165,7 +167,7 @@ function humanBytes(n){if(n<1024)return n+' B';if(n<1024*1024)return(n/1024).toF
 function fmtDate(s){if(!s)return '—';try{return new Date(s.replace(' ','T')+'Z').toLocaleString();}catch(e){return s;}}
 
 async function loadRecent() {
-  const r = await fetch('/admin/api_photo_zip_import.php?action=recent', {credentials:'same-origin'});
+  const r = await fetch('/admin/api_photo_zip_import.php?action=recent', {credentials:'same-origin', headers:{'Accept':'application/json','X-Requested-With':'XMLHttpRequest'}});
   const j = await r.json();
   const root = document.getElementById('recent');
   if (j.status !== 'success' || !j.batches.length) {

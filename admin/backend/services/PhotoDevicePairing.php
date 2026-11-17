@@ -41,6 +41,7 @@ final class PhotoDevicePairing
         // hasn't run yet on a given host).
         self::ensureTable($conn);
 
+        try {
         // Existing key?
         $stmt = $conn->prepare(
             'SELECT hmac_key_hex FROM photo_device_identities
@@ -51,14 +52,17 @@ final class PhotoDevicePairing
         $row = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         if ($row && !empty($row['hmac_key_hex'])) {
-            // Touch last_seen_at (non-fatal if fails).
-            $u = $conn->prepare(
-                'UPDATE photo_device_identities SET last_seen_at = NOW()
-                  WHERE operator_admin_id = ? AND device_id = ?'
-            );
-            $u->bind_param('is', $operatorId, $deviceId);
-            @$u->execute();
-            $u->close();
+            // Touch last_seen_at (non-fatal if fails — inner try because
+            // mysqli strict mode throws instead of returning false).
+            try {
+                $u = $conn->prepare(
+                    'UPDATE photo_device_identities SET last_seen_at = NOW()
+                      WHERE operator_admin_id = ? AND device_id = ?'
+                );
+                $u->bind_param('is', $operatorId, $deviceId);
+                $u->execute();
+                $u->close();
+            } catch (\Throwable) { /* ignore: touch is best-effort */ }
             return (string)$row['hmac_key_hex'];
         }
 
@@ -71,17 +75,32 @@ final class PhotoDevicePairing
                 first_seen_at, last_seen_at)
              VALUES (?, ?, ?, NOW(), NOW())
              ON DUPLICATE KEY UPDATE
-                hmac_key_hex = VALUES(hmac_key_hex),
                 last_seen_at = NOW()'
         );
         $stmt->bind_param('iss', $operatorId, $deviceId, $hex);
-        if (!$stmt->execute()) {
-            $stmt->close();
+        $stmt->execute(); // throws on DB error (caught below → null)
+        $inserted = ($stmt->affected_rows === 1);
+        $stmt->close();
+        // Re-read the winning row: parallel first-uploads from one device
+        // can race here; losers must return the stored key (not their own
+        // minted key) so every client converges on the same secret.
+        $stmt = $conn->prepare(
+            'SELECT hmac_key_hex FROM photo_device_identities
+              WHERE operator_admin_id = ? AND device_id = ? LIMIT 1'
+        );
+        $stmt->bind_param('is', $operatorId, $deviceId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$row || empty($row['hmac_key_hex'])) return null;
+        $stored = (string)$row['hmac_key_hex'];
+        $isNew = $inserted && hash_equals($stored, $hex);
+        return $stored;
+        } catch (\Throwable) {
+            // Best-effort pairing: a DB hiccup degrades to an unpaired
+            // upload, never fatals the request (honors the ?string contract).
             return null;
         }
-        $stmt->close();
-        $isNew = true;
-        return $hex;
     }
 
     /**
@@ -95,6 +114,7 @@ final class PhotoDevicePairing
     ): ?string {
         if ($operatorId <= 0 || $deviceId === '') return null;
         self::ensureTable($conn);
+        try {
         $stmt = $conn->prepare(
             'SELECT hmac_key_hex FROM photo_device_identities
               WHERE operator_admin_id = ? AND device_id = ? LIMIT 1'
@@ -104,6 +124,9 @@ final class PhotoDevicePairing
         $row = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         return $row ? (string)$row['hmac_key_hex'] : null;
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     private static bool $tableChecked = false;

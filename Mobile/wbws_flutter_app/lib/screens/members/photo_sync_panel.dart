@@ -33,12 +33,19 @@ class _PhotoSyncPanelScreenState extends State<PhotoSyncPanelScreen> {
   StreamSubscription<bool>? _radio;
   Timer? _tick;
   DateTime? _startedAt;
+  List<PhotoOutboxEntry> _failed = [];
 
   @override
   void initState() {
     super.initState();
     _load();
-    _events = _worker.progressStream.listen((_) => _refresh());
+    _events = _worker.progressStream.listen((event) {
+      if (event.type == PhotoSyncEventType.failed ||
+          event.type == PhotoSyncEventType.completedWithErrors) {
+        _loadFailed();
+      }
+      _refresh();
+    });
     _radio = _connectivity.statusStream.listen((_) => _refresh());
     _tick = Timer.periodic(const Duration(seconds: 1), (_) {
       if (_worker.isRunning) setState(() {});
@@ -58,7 +65,28 @@ class _PhotoSyncPanelScreenState extends State<PhotoSyncPanelScreen> {
   Future<void> _load() async {
     _policy = await _outbox.readPolicy();
     _counters = await _outbox.counters();
+    await _loadFailed();
     if (mounted) setState(() {});
+  }
+
+  /// Failed entries for the troubleshooter card. Refreshed on load,
+  /// after retries, and whenever the worker reports a failure.
+  Future<void> _loadFailed() async {
+    final visible = await _outbox.listVisibleEntries();
+    _failed = visible
+        .where((e) => e.state == PhotoOutboxState.failed)
+        .toList();
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _retryOneFailed(String clientOpId) async {
+    await _outbox.retryFailed(clientOpId);
+    await _load();
+  }
+
+  Future<void> _retryAllFailed() async {
+    await _outbox.retryAllFailed();
+    await _load();
   }
 
   void _refresh() {
@@ -130,12 +158,22 @@ class _PhotoSyncPanelScreenState extends State<PhotoSyncPanelScreen> {
       final bundle =
           await PhotoZipExportService.instance.exportAndShare();
       if (!mounted) return;
-      final kb = (await bundle.zip.length()) ~/ 1024;
-      final where = bundle.downloadsPath == null
+      var totalBytes = 0;
+      for (final z in bundle.zips) {
+        totalBytes += await z.length();
+      }
+      final kb = totalBytes ~/ 1024;
+      final saved = bundle.downloadsPaths.whereType<String>().toList();
+      final files =
+          bundle.zips.length == 1 ? 'ZIP' : '${bundle.zips.length} ZIPs';
+      final where = saved.isEmpty
           ? 'choose a share target (AirDrop, email, Save to Files…).'
-          : 'saved to ${bundle.downloadsPath} — copy it by USB or choose a share target.';
+          : saved.length == 1
+              ? 'saved to ${saved.first} — copy it by USB or choose a share target.'
+              : 'saved ${saved.length} files to Downloads/FKSS — copy them by USB or choose share targets.';
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('ZIP ready ($kb KB) — $where'),
+        content: Text(
+            '$files ready (${bundle.photoCount} photos, $kb KB) — $where'),
         duration: const Duration(seconds: 5),
         backgroundColor: const Color(0xFF600000),
       ));
@@ -187,6 +225,14 @@ class _PhotoSyncPanelScreenState extends State<PhotoSyncPanelScreen> {
             onCancel: () => _worker.cancel(),
             onExportZip: _exportZip,
           ),
+          if (_failed.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _FailedCard(
+              failed: _failed,
+              onRetryOne: _retryOneFailed,
+              onRetryAll: _retryAllFailed,
+            ),
+          ],
           if (running || _worker.done > 0) ...[
             const SizedBox(height: 12),
             _ProgressCard(
@@ -251,6 +297,88 @@ class _PhotoSyncPanelScreenState extends State<PhotoSyncPanelScreen> {
 }
 
 // ---------- Widgets ----------
+
+/// Troubleshooter for terminally failed uploads (rejected by the
+/// server — never auto-retried, so without this card they would be
+/// invisible once the event log scrolls). Lists member + reason with
+/// per-item and retry-all actions.
+class _FailedCard extends StatelessWidget {
+  final List<PhotoOutboxEntry> failed;
+  final Future<void> Function(String clientOpId) onRetryOne;
+  final Future<void> Function() onRetryAll;
+
+  const _FailedCard({
+    required this.failed,
+    required this.onRetryOne,
+    required this.onRetryAll,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const shown = 20;
+    final items = failed.take(shown).toList();
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.error_outline, color: Colors.red.shade700),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text('${failed.length} failed — needs attention',
+                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                ),
+                TextButton(
+                    onPressed: () => onRetryAll(),
+                    child: const Text('Retry all')),
+              ],
+            ),
+            const SizedBox(height: 4),
+            const Text(
+                'These photos were rejected (not retried automatically). '
+                'Fix the cause, then retry.',
+                style: TextStyle(fontSize: 12, color: Colors.black54)),
+            const SizedBox(height: 8),
+            for (final e in items)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(e.memberCode ?? '#${e.memberId}',
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w600)),
+                          Text(e.lastError ?? e.lastErrorCode ?? 'Unknown error',
+                              style: const TextStyle(
+                                  fontSize: 12, color: Colors.black54),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis),
+                        ],
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () => onRetryOne(e.clientOpId),
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              ),
+            if (failed.length > shown)
+              Text('+${failed.length - shown} more',
+                  style:
+                      const TextStyle(fontSize: 12, color: Colors.black54)),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class _Colors {
   static const maroon = Color(0xFF600000);
