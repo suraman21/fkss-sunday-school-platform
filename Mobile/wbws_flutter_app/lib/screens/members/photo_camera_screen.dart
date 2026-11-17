@@ -14,15 +14,31 @@ import '../../services/photo_framing_engine.dart';
 import '../../services/photo_framing_geometry.dart';
 import '../../services/photo_gallery_import.dart';
 
+// ---------------------------------------------------------------------------
+// Palette — dark professional capture UI with controlled green/amber status
+// and cyan framing accents (approved FKSS camera reference).
+// ---------------------------------------------------------------------------
+const Color _kBg = Color(0xFF05070C);
+const Color _kPanel = Color(0xFF101725);
+const Color _kPanelBorder = Color(0xFF1E293B);
+const Color _kControl = Color(0xFF0B111B);
+const Color _kButton = Color(0xFF131C2B);
+const Color _kBlue = Color(0xFF3B82F6);
+const Color _kCyan = Color(0xFF38BDF8);
+const Color _kGreen = Color(0xFF22C55E);
+const Color _kAmber = Color(0xFFF59E0B);
+const Color _kTextDim = Color(0xFF94A3B8);
+const Color _kGold = Color(0xFFD4AF37);
+
 /// FKSS adaptive portrait capture (spec: Adaptive Human-Guided Photo
 /// Capture v1.0).
 ///
-/// Layout (spec §4): header with logo + offline-readiness indicator and
-/// settings; instruction panel above the preview; the live preview with
-/// the exact 3:4 save frame and the adaptive landmark-driven guide;
-/// three status indicators (face centered / eyes aligned / shoulders
-/// visible, green-amber-neutral); bottom controls with gallery import,
-/// shutter and camera switching.
+/// Layout (spec §4): crest header with offline-readiness pill and
+/// settings; instruction card above the preview; the live preview scaled
+/// to EXACTLY the 3:4 region that will be saved (FR-03), with the
+/// adaptive landmark-driven guide; three status cards (face centered /
+/// eyes on line / shoulders visible, green-amber-neutral); dark control
+/// bar with gallery, shutter and camera switch.
 ///
 /// Detection is on-device (ML Kit, bundled models — no internet) and is
 /// advisory only: the shutter is never disabled by detection (FR-09).
@@ -63,7 +79,22 @@ class _PhotoCameraScreenState extends State<PhotoCameraScreen>
   Timer? _detectionTimer;
   FramingVerdict? _verdict;
   RawDetection? _lastProcessed;
+  DateTime? _lastFrameAt;
+  bool _detectionStalled = false;
   bool _hapticsReady = true; // vibrate once when framing becomes ready
+
+  /// Shown when the detector stops producing results: every check is
+  /// neutral and capture stays available (spec §8 "poor detection
+  /// confidence", FR-18). A stale green must never survive a stalled
+  /// detector.
+  static const FramingVerdict _stalledVerdict = FramingVerdict(
+    faceCentered: CheckState.neutral,
+    eyesAligned: CheckState.neutral,
+    shouldersVisible: CheckState.neutral,
+    message: 'Adjust the lighting or framing',
+    ready: false,
+    personDetected: false,
+  );
 
   ResolutionPreset get _resolutionPreset =>
       switch (DeviceTierService.instance.tier) {
@@ -75,6 +106,19 @@ class _PhotoCameraScreenState extends State<PhotoCameraScreen>
   bool get _isFrontCamera =>
       _selectedCamera?.lensDirection == CameraLensDirection.front;
 
+  /// Aspect ratio (width / height) of the upright camera image — the
+  /// landscape stream aspect inverted for the portrait app. This matches
+  /// what `CameraPreview` displays and what the 3:4 processor crop is
+  /// taken from.
+  double get _uprightAspect {
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) {
+      return kPhotoFrameAspect;
+    }
+    final raw = controller.value.aspectRatio;
+    return raw > 1 ? 1 / raw : raw;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -85,7 +129,10 @@ class _PhotoCameraScreenState extends State<PhotoCameraScreen>
 
   Future<void> _loadHaptics() async {
     final prefs = await SharedPreferences.getInstance();
-    if (mounted) setState(() => _hapticsReady = prefs.getBool('photo_capture_haptics') ?? true);
+    if (mounted) {
+      setState(() =>
+          _hapticsReady = prefs.getBool('photo_capture_haptics') ?? true);
+    }
   }
 
   @override
@@ -142,6 +189,8 @@ class _PhotoCameraScreenState extends State<PhotoCameraScreen>
       // detector degrades to no-ops if the stream cannot start.
       _engine.reset();
       _lastProcessed = null;
+      _lastFrameAt = null;
+      _detectionStalled = false;
       await _detector.attach(controller);
       if (mounted) setState(() {});
       _detectionTimer?.cancel();
@@ -171,16 +220,21 @@ class _PhotoCameraScreenState extends State<PhotoCameraScreen>
   /// the feedback engine and refreshes the overlay + instruction panel.
   void _processLatestDetection() {
     final raw = _detector.latest;
-    if (raw == null || identical(raw, _lastProcessed)) return;
+    if (raw == null || identical(raw, _lastProcessed)) {
+      _checkDetectionStall();
+      return;
+    }
     _lastProcessed = raw;
+    _lastFrameAt = DateTime.now();
+    _detectionStalled = false;
 
     final controller = _controller;
     if (controller == null || !controller.value.isInitialized) return;
 
-    // The painter paints across the whole preview widget, whose aspect
-    // matches the detection image (see photo_framing_geometry.dart for
-    // the coordinate contract).
-    final preview = SizeF(1000, 1000 / controller.value.aspectRatio);
+    // Virtual preview with the upright image aspect: frame-normalized
+    // coordinates are invariant to the displayed size, and the 3:4
+    // frame rect is exactly the processor's crop.
+    final preview = SizeF(1000, 1000 / _uprightAspect);
     final frame = frameRectInPreview(preview);
     final mirror = _isFrontCamera;
 
@@ -265,6 +319,25 @@ class _PhotoCameraScreenState extends State<PhotoCameraScreen>
     }
   }
 
+  /// A detector that errors or stops producing results must not leave a
+  /// stale green verdict on screen: every check drops to neutral and the
+  /// operator is told to adjust lighting or framing (spec §8, FR-18).
+  /// Capture stays available throughout (FR-09).
+  void _checkDetectionStall() {
+    if (_detectionStalled) return;
+    final lastFrameAt = _lastFrameAt;
+    final stalled = _detector.lastError != null ||
+        (lastFrameAt != null &&
+            DateTime.now().difference(lastFrameAt) >
+                const Duration(milliseconds: 2000));
+    if (!stalled) return;
+    _detectionStalled = true;
+    _engine.reset();
+    _overlay.value = null;
+    _hapticsReady = true;
+    if (mounted) setState(() => _verdict = _stalledVerdict);
+  }
+
   Future<void> _loadCameraControls(CameraController controller) async {
     try {
       await controller.setFlashMode(FlashMode.off);
@@ -299,6 +372,9 @@ class _PhotoCameraScreenState extends State<PhotoCameraScreen>
     _overlay.value = null;
     _engine.reset();
     _lastProcessed = null;
+    _lastFrameAt = null;
+    _detectionStalled = false;
+    _verdict = null;
     await _detector.detach();
     if (mounted) setState(() {});
     try {
@@ -352,12 +428,19 @@ class _PhotoCameraScreenState extends State<PhotoCameraScreen>
     }
   }
 
-  Future<void> _focusAt(TapDownDetails details, Size size) async {
+  /// Tap-to-focus. The preview box shows only the centered 3:4 crop of
+  /// the upright camera image, so the tap is projected back into full
+  /// preview coordinates before handing it to the plugin.
+  Future<void> _focusAt(TapDownDetails details, Size boxSize) async {
     final controller = _controller;
     if (controller == null || _takingPicture) return;
+    if (boxSize.width <= 0 || boxSize.height <= 0) return;
+    final visibleFraction = _uprightAspect / kPhotoFrameAspect; // <= 1
+    final f = visibleFraction.clamp(0.01, 1.0);
     final point = Offset(
-      (details.localPosition.dx / size.width).clamp(0, 1),
-      (details.localPosition.dy / size.height).clamp(0, 1),
+      (details.localPosition.dx / boxSize.width).clamp(0, 1),
+      ((1 - f) / 2 + (details.localPosition.dy / boxSize.height) * f)
+          .clamp(0, 1),
     );
     try {
       await controller.setFocusPoint(point);
@@ -449,25 +532,21 @@ class _PhotoCameraScreenState extends State<PhotoCameraScreen>
     final ready = controller != null && controller.value.isInitialized;
     final verdict = _verdict;
     return Scaffold(
-      backgroundColor: const Color(0xFF0b0d12),
+      backgroundColor: _kBg,
       body: SafeArea(
         child: Column(
           children: [
-            _header(context, ready),
+            _header(ready),
             if (ready) ...[
-              _instructionPanel(verdict),
-              Expanded(
-                child: _previewArea(controller),
-              ),
-              _statusChips(verdict),
-              _sliders(),
-              _bottomControls(),
+              _instructionCard(verdict),
+              if (_controlsNotice != null) _noticeLine(),
+              Expanded(child: _previewArea(controller)),
+              _bottomBar(ready),
             ] else
               Expanded(
                 child: Center(
                   child: _error == null
-                      ? const CircularProgressIndicator(
-                          color: Color(0xFF22C55E))
+                      ? const CircularProgressIndicator(color: _kGreen)
                       : _CameraError(
                           message: _error!,
                           onRetry: () => _initializeCamera(
@@ -484,69 +563,83 @@ class _PhotoCameraScreenState extends State<PhotoCameraScreen>
 
   // --- Header (spec §4.1) ----------------------------------------------
 
-  Widget _header(BuildContext context, bool ready) => Padding(
-        padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+  Widget _header(bool ready) => Padding(
+        padding: const EdgeInsets.fromLTRB(14, 8, 12, 8),
         child: Row(
           children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.asset(
-                'assets/logo_school.png',
-                height: 30,
-                width: 30,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                  height: 30,
-                  width: 30,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF600000),
-                    shape: BoxShape.circle,
+            Container(
+              width: 56,
+              height: 56,
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: _kGold, width: 2),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.45),
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
                   ),
-                  alignment: Alignment.center,
-                  child: const Text(
-                    'F',
-                    style: TextStyle(
+                ],
+              ),
+              child: ClipOval(
+                child: Image.asset(
+                  'assets/logo_school.png',
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    color: const Color(0xFF600000),
+                    alignment: Alignment.center,
+                    child: const Text(
+                      'F',
+                      style: TextStyle(
                         color: Color(0xFFF0C000),
-                        fontWeight: FontWeight.w800),
+                        fontWeight: FontWeight.w800,
+                        fontSize: 22,
+                      ),
+                    ),
                   ),
                 ),
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 12),
             const Expanded(
-              child: Text(
-                'Photo Capture',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.2,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'FKSS',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 19,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.4,
+                      height: 1.1,
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    'Photo Capture',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: _kTextDim,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w500,
+                      height: 1.1,
+                    ),
+                  ),
+                ],
               ),
             ),
-            _OfflineChip(
-              state: _offlineState(ready),
-            ),
-            const SizedBox(width: 6),
-            IconButton.filledTonal(
+            _OfflinePill(state: _offlineState()),
+            const SizedBox(width: 8),
+            _RoundIconButton(
+              icon: Icons.settings,
               tooltip: 'Capture settings',
-              onPressed: _openSettings,
-              icon: const Icon(Icons.settings_outlined, size: 20),
-              style: IconButton.styleFrom(
-                backgroundColor: Colors.white12,
-                foregroundColor: Colors.white,
-              ),
-            ),
-            IconButton.filledTonal(
-              tooltip: 'Close camera',
-              onPressed: () => Navigator.of(context).pop(),
-              icon: const Icon(Icons.close),
-              style: IconButton.styleFrom(
-                backgroundColor: Colors.white12,
-                foregroundColor: Colors.white,
-              ),
+              onTap: _openSettings,
             ),
           ],
         ),
@@ -554,7 +647,7 @@ class _PhotoCameraScreenState extends State<PhotoCameraScreen>
 
   /// "Offline Ready" reflects on-device capture readiness — detection
   /// running with no errors — not network state (spec §4.1).
-  _ChipState _offlineState(bool ready) {
+  _ChipState _offlineState() {
     if (_detector.isReady && _detector.lastError == null) {
       return _ChipState.good;
     }
@@ -564,88 +657,159 @@ class _PhotoCameraScreenState extends State<PhotoCameraScreen>
     return _ChipState.neutral;
   }
 
+  Widget _noticeLine() => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+        child: Text(
+          _controlsNotice!,
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: _kAmber, fontSize: 11.5),
+        ),
+      );
+
   void _openSettings() {
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: const Color(0xFF161a22),
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF121826),
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) => SafeArea(
         child: StatefulBuilder(
-          builder: (ctx, setSheet) => Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Capture settings',
+          builder: (ctx, setSheet) {
+            final hasExposure = _maxExposure > _minExposure;
+            final hasZoom = _maxZoom > _minZoom;
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Capture settings',
                     style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700)),
-                const SizedBox(height: 12),
-                SwitchListTile(
-                  value: _hapticsReady == false ? false : true,
-                  onChanged: (v) async {
-                    final prefs = await SharedPreferences.getInstance();
-                    await prefs.setBool('photo_capture_haptics', v);
-                    setSheet(() {});
-                    if (mounted) setState(() {});
-                  },
-                  title: const Text('Vibrate when framing is ready',
-                      style: TextStyle(color: Colors.white, fontSize: 14)),
-                  subtitle: const Text('Off does not affect capture',
-                      style: TextStyle(color: Colors.white54, fontSize: 12)),
-                  activeThumbColor: const Color(0xFF22C55E),
-                ),
-                const Divider(color: Colors.white12),
-                const Text('Flash',
-                    style: TextStyle(color: Colors.white70, fontSize: 13)),
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    for (final mode in [FlashMode.off, FlashMode.auto, FlashMode.torch])
-                      ChoiceChip(
-                        label: Text(switch (mode) {
-                          FlashMode.off => 'Off',
-                          FlashMode.auto => 'Auto',
-                          FlashMode.torch || FlashMode.always => 'Torch',
-                        }),
-                        selected: _flashMode == mode,
-                        onSelected: (_) async {
-                          await _cycleFlashTo(mode);
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: _hapticsReady,
+                    onChanged: (v) async {
+                      final prefs = await SharedPreferences.getInstance();
+                      await prefs.setBool('photo_capture_haptics', v);
+                      if (mounted) setState(() => _hapticsReady = v);
+                      setSheet(() {});
+                    },
+                    title: const Text(
+                      'Vibrate when framing is ready',
+                      style: TextStyle(color: Colors.white, fontSize: 14),
+                    ),
+                    subtitle: const Text(
+                      'Off does not affect capture',
+                      style: TextStyle(color: Colors.white54, fontSize: 12),
+                    ),
+                    activeThumbColor: _kGreen,
+                  ),
+                  const Divider(color: Colors.white12),
+                  const Text(
+                    'Flash',
+                    style: TextStyle(color: Colors.white70, fontSize: 13),
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      for (final mode in [
+                        FlashMode.off,
+                        FlashMode.auto,
+                        FlashMode.torch,
+                      ])
+                        ChoiceChip(
+                          label: Text(switch (mode) {
+                            FlashMode.off => 'Off',
+                            FlashMode.auto => 'Auto',
+                            FlashMode.torch || FlashMode.always => 'Torch',
+                          }),
+                          selected: _flashMode == mode,
+                          onSelected: (_) async {
+                            await _setFlash(mode);
+                            setSheet(() {});
+                          },
+                          selectedColor: _kGreen,
+                        ),
+                    ],
+                  ),
+                  if (hasExposure) ...[
+                    const Divider(color: Colors.white12),
+                    _SheetSlider(
+                      label: 'Brightness',
+                      icon: Icons.brightness_6_outlined,
+                      value: _exposure.clamp(_minExposure, _maxExposure),
+                      min: _minExposure,
+                      max: _maxExposure,
+                      onChanged: (v) =>
+                          setSheet(() => _exposure = v.clamp(_minExposure, _maxExposure)),
+                      onChangeEnd: (v) async {
+                        await _setExposure(v);
+                        setSheet(() {});
+                      },
+                    ),
+                  ],
+                  if (hasZoom) ...[
+                    const Divider(color: Colors.white12),
+                    _SheetSlider(
+                      label: 'Zoom',
+                      icon: Icons.zoom_in,
+                      value: _zoom.clamp(_minZoom, _maxZoom),
+                      min: _minZoom,
+                      max: _maxZoom,
+                      onChanged: (v) =>
+                          setSheet(() => _zoom = v.clamp(_minZoom, _maxZoom)),
+                      onChangeEnd: (v) async {
+                        await _setZoom(v);
+                        setSheet(() {});
+                      },
+                    ),
+                  ],
+                  const Divider(color: Colors.white12),
+                  Row(
+                    children: [
+                      TextButton.icon(
+                        onPressed: () async {
+                          await _setZoom(_minZoom);
+                          if (_maxExposure > _minExposure) {
+                            await _setExposure(
+                                0.clamp(_minExposure, _maxExposure).toDouble());
+                          }
                           setSheet(() {});
                         },
-                        selectedColor: const Color(0xFF22C55E),
+                        icon: const Icon(Icons.restart_alt, size: 18),
+                        label: const Text('Reset zoom & brightness'),
                       ),
-                  ],
-                ),
-                const Divider(color: Colors.white12),
-                TextButton.icon(
-                  onPressed: () async {
-                    final controller = _controller;
-                    if (controller != null && _maxZoom > _minZoom) {
-                      await _setZoom(_minZoom);
-                    }
-                    if (_maxExposure > _minExposure) {
-                      await _setExposure(
-                          0.clamp(_minExposure, _maxExposure).toDouble());
-                    }
-                    if (ctx.mounted) Navigator.pop(ctx);
-                  },
-                  icon: const Icon(Icons.restart_alt, size: 18),
-                  label: const Text('Reset zoom & brightness'),
-                ),
-              ],
-            ),
-          ),
+                      const Spacer(),
+                      TextButton.icon(
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          Navigator.of(context).pop();
+                        },
+                        icon: const Icon(Icons.close, size: 18),
+                        label: const Text('Close camera'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
         ),
       ),
     );
   }
 
-  Future<void> _cycleFlashTo(FlashMode next) async {
+  Future<void> _setFlash(FlashMode next) async {
     final controller = _controller;
     if (controller == null) return;
     try {
@@ -659,59 +823,96 @@ class _PhotoCameraScreenState extends State<PhotoCameraScreen>
     }
   }
 
-  // --- Instruction panel (spec §4.2) -----------------------------------
+  // --- Instruction card (spec §4.2) ------------------------------------
 
-  Widget _instructionPanel(FramingVerdict? verdict) {
+  Widget _instructionCard(FramingVerdict? verdict) {
     final ready = verdict?.ready ?? false;
-    final message = ready
-        ? 'Good framing — ready to capture'
-        : (verdict?.message ?? 'Position the student inside the frame');
-    final color = ready
-        ? const Color(0xFF22C55E)
-        : (verdict == null ? Colors.white70 : const Color(0xFFF0C000));
+    var message = verdict == null
+        ? 'Place the student inside the frame'
+        : (verdict.message ?? 'Place the student inside the frame');
+    // UI wording for the engine's generic idle state.
+    if (message == 'Position the person in front of the camera') {
+      message = 'Place the student inside the frame';
+    }
+    if (ready) message = 'Perfect! Ready to capture';
+    final subtitle = ready
+        ? 'Good framing — hold still and tap the shutter'
+        : 'Keep the eyes on the guide line and shoulders visible';
+    final accent = ready ? _kGreen : _kBlue;
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 2, 16, 6),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      margin: const EdgeInsets.fromLTRB(14, 2, 14, 10),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.white12),
+        color: _kPanel,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _kPanelBorder),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            ready
-                ? Icons.check_circle
-                : (verdict == null
-                    ? Icons.center_focus_weak
-                    : Icons.adjust),
-            color: color,
-            size: 18,
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
+            alignment: Alignment.center,
+            child: Icon(
+              ready ? Icons.check : Icons.info_outline,
+              color: Colors.white,
+              size: 21,
+            ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 11),
           Expanded(
-            child: Text(
-              message,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: color,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  message,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: ready ? _kGreen : Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: _kTextDim,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    if (widget.memberName.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 110),
+                        child: Text(
+                          widget.memberName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.right,
+                          style: const TextStyle(
+                            color: Colors.white38,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
             ),
           ),
-          if (widget.memberName.isNotEmpty) ...[
-            const SizedBox(width: 8),
-            Flexible(
-              child: Text(
-                widget.memberName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Colors.white38, fontSize: 11),
-              ),
-            ),
-          ],
         ],
       ),
     );
@@ -719,176 +920,140 @@ class _PhotoCameraScreenState extends State<PhotoCameraScreen>
 
   // --- Preview (spec §4.3) ----------------------------------------------
 
+  /// Shows exactly the centered 3:4 region that `PhotoImageProcessor`
+  /// saves: the full-width preview is scaled into a 3:4 box and clipped
+  /// vertically, so the box edges ARE the crop edges (FR-03). The guide
+  /// paints in the same coordinate space.
   Widget _previewArea(CameraController controller) {
-    return Center(
-      child: AspectRatio(
-        aspectRatio: controller.value.aspectRatio,
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final previewSize = Size(
-              constraints.maxWidth,
-              constraints.maxHeight,
-            );
-            return GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTapDown: (details) => _focusAt(details, previewSize),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  CameraPreview(controller),
-                  // The overlay is painted in exact preview coordinates;
-                  // its 3:4 frame is the region that survives the
-                  // processor's 3:4 center crop (FR-03).
-                  CustomPaint(
-                    painter: _AdaptiveGuidePainter(_overlay),
+    final aspect = _uprightAspect;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Small gutter keeps the frame clear of the screen edges, as in
+        // the approved reference. The frame is the crop, only scaled.
+        final boxWidth = math.min(
+          constraints.maxWidth - 20,
+          constraints.maxHeight * kPhotoFrameAspect,
+        );
+        final boxHeight = boxWidth / kPhotoFrameAspect;
+        return Stack(
+          children: [
+            Center(
+              child: SizedBox(
+                width: boxWidth,
+                height: boxHeight,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTapDown: (details) =>
+                        _focusAt(details, Size(boxWidth, boxHeight)),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        ColoredBox(
+                          color: Colors.black,
+                          child: FittedBox(
+                            fit: BoxFit.fitWidth,
+                            alignment: Alignment.center,
+                            child: SizedBox(
+                              width: 1000,
+                              height: 1000 / aspect,
+                              child: CameraPreview(controller),
+                            ),
+                          ),
+                        ),
+                        CustomPaint(
+                          painter: _AdaptiveGuidePainter(_overlay),
+                        ),
+                        if (_verdict?.ready ?? false)
+                          const Positioned(
+                            top: 12,
+                            right: 12,
+                            child: _PerfectBadge(),
+                          ),
+                      ],
+                    ),
                   ),
-                ],
+                ),
               ),
-            );
-          },
-        ),
-      ),
+            ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.only(left: 6),
+                child: _StatusRail(verdict: _verdict),
+              ),
+            ),
+            const Align(
+              alignment: Alignment.centerRight,
+              child: Padding(
+                padding: EdgeInsets.only(right: 6),
+                child: _PassportCard(),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
-  // --- Status chips (spec §4.4) ------------------------------------------
+  // --- Bottom controls (spec §4.5) --------------------------------------
 
-  Widget _statusChips(FramingVerdict? verdict) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-      child: Row(
-        children: [
-          Expanded(
-            child: _StatusChip(
-              label: 'Face centered',
-              state: verdict == null
-                  ? _ChipState.neutral
-                  : _map(verdict.faceCentered),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _StatusChip(
-              label: 'Eyes aligned',
-              state: verdict == null
-                  ? _ChipState.neutral
-                  : _map(verdict.eyesAligned),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _StatusChip(
-              label: 'Shoulders visible',
-              state: verdict == null
-                  ? _ChipState.neutral
-                  : _map(verdict.shouldersVisible),
-            ),
-          ),
-        ],
+  Widget _bottomBar(bool ready) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+      decoration: BoxDecoration(
+        color: _kControl,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: _kPanelBorder),
       ),
-    );
-  }
-
-  _ChipState _map(CheckState state) => switch (state) {
-        CheckState.pass => _ChipState.good,
-        CheckState.warn => _ChipState.warn,
-        CheckState.neutral => _ChipState.neutral,
-      };
-
-  // --- Sliders + bottom controls (spec §4.5) -----------------------------
-
-  Widget _sliders() {
-    final hasExposure = _maxExposure > _minExposure;
-    final hasZoom = _maxZoom > _minZoom;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (hasExposure)
-            _CameraSlider(
-              label: 'Brightness',
-              value: _exposure.clamp(_minExposure, _maxExposure),
-              min: _minExposure,
-              max: _maxExposure,
-              icon: Icons.brightness_6_outlined,
-              onChanged: (value) => setState(() => _exposure = value),
-              onChangeEnd: _setExposure,
-            ),
-          if (hasZoom)
-            _CameraSlider(
-              label: 'Zoom',
-              value: _zoom.clamp(_minZoom, _maxZoom),
-              min: _minZoom,
-              max: _maxZoom,
-              icon: Icons.zoom_in,
-              onChanged: (value) => setState(() => _zoom = value),
-              onChangeEnd: _setZoom,
-            ),
-          if (_controlsNotice != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                _controlsNotice!,
-                textAlign: TextAlign.center,
-                style:
-                    const TextStyle(color: Colors.orangeAccent, fontSize: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              _ActionButton(
+                icon: Icons.photo_library_outlined,
+                label: 'Gallery',
+                onTap: _takingPicture ? null : _importFromGallery,
               ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _bottomControls() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 14),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          // Gallery import (spec §4.5)
-          IconButton.filledTonal(
-            tooltip: 'Import from gallery',
-            onPressed: _takingPicture ? null : _importFromGallery,
-            icon: const Icon(Icons.photo_library_outlined),
-            style: IconButton.styleFrom(
-              backgroundColor: Colors.white12,
-              foregroundColor: Colors.white,
-            ),
+              _ShutterButton(
+                busy: _takingPicture,
+                enabled: ready && _appResumed,
+                onTap: _takePicture,
+              ),
+              _ActionButton(
+                icon: Icons.cameraswitch_outlined,
+                label: 'Switch',
+                onTap:
+                    _cameras.length > 1 && !_takingPicture ? _switchCamera : null,
+              ),
+            ],
           ),
-          GestureDetector(
-            onTap: _takePicture,
-            child: Container(
-              width: 76,
-              height: 76,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: _takingPicture ? Colors.grey : Colors.white,
-                border: Border.all(
-                  color: const Color(0xFF22C55E),
-                  width: 5,
-                ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const _ModeTab(label: 'Photo', active: true),
+              const SizedBox(width: 36),
+              _ModeTab(
+                label: 'Video',
+                active: false,
+                onTap: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                          'Video capture is not used for member photos.'),
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                },
               ),
-              child: _takingPicture
-                  ? const Padding(
-                      padding: EdgeInsets.all(20),
-                      child: CircularProgressIndicator(strokeWidth: 3),
-                    )
-                  : const Icon(Icons.camera_alt, color: Color(0xFF600000)),
-            ),
+            ],
           ),
-          if (_cameras.length > 1)
-            IconButton.filledTonal(
-              tooltip: 'Switch camera',
-              onPressed: _switchCamera,
-              icon: const Icon(Icons.cameraswitch),
-              style: IconButton.styleFrom(
-                backgroundColor: Colors.white12,
-                foregroundColor: Colors.white,
-              ),
-            )
-          else
-            const SizedBox(width: 48),
         ],
       ),
     );
@@ -896,7 +1061,7 @@ class _PhotoCameraScreenState extends State<PhotoCameraScreen>
 }
 
 // ---------------------------------------------------------------------------
-// Overlay data + painter (spec §4.3, §5)
+// Overlay data + adaptive guide painter (spec §4.3, §5)
 // ---------------------------------------------------------------------------
 
 /// Landmarks mapped into 3:4 frame space, plus the front-camera mirror
@@ -917,218 +1082,196 @@ class FramingOverlayData {
   });
 }
 
-/// Adaptive guide painter. Static layer: dimmed surroundings, exact 3:4
-/// green frame with viewfinder brackets, centerline and level lines.
-/// Dynamic layer (when landmarks are available): a face outline derived
-/// from the detected bounding box, detected eye markers and a detected
-/// shoulder line — the outline adapts to the person instead of forcing
-/// one silhouette (spec §5.3). Without landmarks only the static manual
-/// guide is drawn.
+/// Adaptive guide painter. Static layer: cyan 3:4 frame (the exact saved
+/// crop) with corner brackets, centerline and eye-line guide. Dynamic
+/// layer (when landmarks are available): a head outline from the
+/// detected face box, a landmark eye line and a shoulder curve from pose
+/// landmarks — the guide adapts to the person instead of forcing one
+/// silhouette (spec §5.3). Without landmarks only the static guide is
+/// drawn (FR-18).
 class _AdaptiveGuidePainter extends CustomPainter {
-  _AdaptiveGuidePainter(this._data);
+  _AdaptiveGuidePainter(this._data) : super(repaint: _data);
 
   final ValueNotifier<FramingOverlayData?> _data;
 
-  static const Color _green = Color(0xFF22C55E);
-
   @override
   void paint(Canvas canvas, Size size) {
-    final preview = SizeF(size.width, size.height);
-    final frame = frameRectInPreview(preview);
-    final fRect = Rect.fromLTWH(
-        frame.left, frame.top, frame.width, frame.height);
-
-    _drawScrim(canvas, size, fRect);
-    _drawFrame(canvas, fRect);
-    _drawStaticMarks(canvas, fRect);
-    _drawDynamic(canvas, fRect);
+    final rect = Offset.zero & size;
+    _drawFrame(canvas, rect);
+    _drawGuideLines(canvas, rect);
+    _drawBrackets(canvas, rect);
+    _drawAdaptiveOutline(canvas, rect);
   }
 
-  void _drawScrim(Canvas canvas, Size size, Rect frame) {
-    final scrim = Paint()..color = Colors.black.withValues(alpha: 0.50);
-    final path = Path()
-      ..fillType = PathFillType.evenOdd
-      ..addRect(Offset.zero & size)
-      ..addRect(frame);
-    canvas.drawPath(path, scrim);
-  }
-
-  void _drawFrame(Canvas canvas, Rect frame) {
-    canvas.drawRect(
-      frame.inflate(3),
-      Paint()
-        ..color = _green.withValues(alpha: 0.22)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 9
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+  void _drawFrame(Canvas canvas, Rect rect) {
+    final frame = RRect.fromRectAndRadius(
+      rect.deflate(1.5),
+      const Radius.circular(21),
     );
-    canvas.drawRect(
+    // Soft glow, then the crisp cyan edge.
+    canvas.drawRRect(
       frame,
       Paint()
-        ..color = _green.withValues(alpha: 0.95)
+        ..color = _kCyan.withValues(alpha: 0.30)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
+        ..strokeWidth = 9
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
     );
-    final bracket = Paint()
-      ..color = Colors.white.withValues(alpha: 0.95)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 4.5
-      ..strokeCap = StrokeCap.round;
-    final len = math.min(frame.width, frame.height) * 0.09;
-    _drawBracket(canvas, frame.topLeft, 1, 1, len, bracket);
-    _drawBracket(canvas, frame.topRight, -1, 1, len, bracket);
-    _drawBracket(canvas, frame.bottomLeft, 1, -1, len, bracket);
-    _drawBracket(canvas, frame.bottomRight, -1, -1, len, bracket);
+    canvas.drawRRect(
+      frame,
+      Paint()
+        ..color = _kCyan.withValues(alpha: 0.95)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.6,
+    );
   }
 
-  void _drawBracket(
-      Canvas canvas, Offset corner, int sx, int sy, double len, Paint paint) {
-    canvas.drawLine(corner, corner + Offset(sx * len, 0), paint);
-    canvas.drawLine(corner, corner + Offset(0, sy * len), paint);
-  }
-
-  void _drawStaticMarks(Canvas canvas, Rect frame) {
-    final labelStyle = TextStyle(
-      color: Colors.white.withValues(alpha: 0.85),
-      fontSize: (frame.height * 0.026).clamp(9.0, 12.0),
-      fontWeight: FontWeight.w700,
-      letterSpacing: 1.5,
-      shadows: const [Shadow(blurRadius: 4, color: Colors.black)],
-    );
-
+  void _drawGuideLines(Canvas canvas, Rect rect) {
+    // Vertical centerline.
     _dashedLine(
       canvas,
-      Offset(frame.center.dx, frame.top + frame.height * 0.06),
-      Offset(frame.center.dx, frame.bottom - frame.height * 0.06),
+      Offset(rect.center.dx, rect.top + 2),
+      Offset(rect.center.dx, rect.bottom - 2),
       Paint()
-        ..color = Colors.white.withValues(alpha: 0.30)
-        ..strokeWidth = 1,
-    );
-
-    final eyeY = frame.top + frame.height * 0.42;
-    _dashedLine(
-      canvas,
-      Offset(frame.left, eyeY),
-      Offset(frame.right, eyeY),
-      Paint()
-        ..color = _green.withValues(alpha: 0.75)
-        ..strokeWidth = 1.5,
-    );
-    _label(canvas, 'EYE LEVEL', Offset(frame.right - 10, eyeY), labelStyle,
-        alignRight: true);
-
-    final shoulderY = frame.top + frame.height * 0.70;
-    _dashedLine(
-      canvas,
-      Offset(frame.left, shoulderY),
-      Offset(frame.right, shoulderY),
-      Paint()
-        ..color = _green.withValues(alpha: 0.45)
+        ..color = Colors.white.withValues(alpha: 0.80)
         ..strokeWidth = 1.2,
+      dash: 7,
+      gap: 6,
     );
-    _label(canvas, 'SHOULDERS', Offset(frame.right - 10, shoulderY),
-        labelStyle, alignRight: true, above: false);
+    // Eye-alignment line.
+    final eyeY = rect.top + rect.height * 0.42;
+    _dashedLine(
+      canvas,
+      Offset(rect.left + 2, eyeY),
+      Offset(rect.right - 2, eyeY),
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.88)
+        ..strokeWidth = 1.4,
+      dash: 8,
+      gap: 6,
+    );
   }
 
-  void _drawDynamic(Canvas canvas, Rect frame) {
+  void _drawBrackets(Canvas canvas, Rect rect) {
+    final paint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.92)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4.2
+      ..strokeCap = StrokeCap.round;
+    const inset = 16.0;
+    final len = math.min(rect.width, rect.height) * 0.075;
+    final l = rect.left + inset;
+    final r = rect.right - inset;
+    final t = rect.top + inset;
+    final b = rect.bottom - inset;
+    // Top-left
+    canvas.drawLine(Offset(l, t), Offset(l + len, t), paint);
+    canvas.drawLine(Offset(l, t), Offset(l, t + len), paint);
+    // Top-right
+    canvas.drawLine(Offset(r, t), Offset(r - len, t), paint);
+    canvas.drawLine(Offset(r, t), Offset(r, t + len), paint);
+    // Bottom-left
+    canvas.drawLine(Offset(l, b), Offset(l + len, b), paint);
+    canvas.drawLine(Offset(l, b), Offset(l, b - len), paint);
+    // Bottom-right
+    canvas.drawLine(Offset(r, b), Offset(r - len, b), paint);
+    canvas.drawLine(Offset(r, b), Offset(r, b - len), paint);
+  }
+
+  void _drawAdaptiveOutline(Canvas canvas, Rect rect) {
     final data = _data.value;
     if (data == null) return;
-    final faceBox = data.faceBox;
-    if (faceBox == null) return;
+    final mirror = data.mirror;
+    Offset map(OffsetF n) => Offset(
+          mirror ? rect.right - n.x * rect.width : rect.left + n.x * rect.width,
+          rect.top + n.y * rect.height,
+        );
 
-    // Face outline: a soft-cornered box traced from the DETECTED
-    // bounding box — adapts to head size, hairstyle and head coverings
-    // without becoming an opaque silhouette.
-    final frameF = RectF(
-      left: frame.left,
-      top: frame.top,
-      width: frame.width,
-      height: frame.height,
-    );
-    final box = Rect.fromLTRB(
-      frameXToPreview(faceBox.left, frameF, mirror: data.mirror),
-      frame.top + faceBox.top * frame.height,
-      frameXToPreview(faceBox.right, frameF, mirror: data.mirror),
-      frame.top + faceBox.bottom * frame.height,
-    );
     final outline = Paint()
-      ..color = Colors.white.withValues(alpha: 0.55)
+      ..color = _kCyan.withValues(alpha: 0.55)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.6;
-    final radius = Radius.circular(math.min(box.width, box.height) * 0.30);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(box, radius),
-      outline,
-    );
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
 
-    // Detected eye markers + eye line through the actual eyes.
-    final eyes = <Offset?>[
-      if (data.leftEye != null)
-        _toPreview(data.leftEye!, frame, data.mirror),
-      if (data.rightEye != null)
-        _toPreview(data.rightEye!, frame, data.mirror),
-    ];
-    if (eyes.isNotEmpty) {
-      final eyePaint = Paint()
-        ..color = _green
-        ..style = PaintingStyle.fill;
-      for (final e in eyes.whereType<Offset>()) {
-        canvas.drawCircle(e, 4, eyePaint);
-        canvas.drawCircle(
-          e,
-          4,
-          Paint()
-            ..color = Colors.black54
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1,
-        );
-      }
-      if (eyes.length == 2) {
-        final a = eyes[0]!;
-        final b = eyes[1]!;
-        canvas.drawLine(
-          a,
-          b,
-          Paint()
-            ..color = _green.withValues(alpha: 0.9)
-            ..strokeWidth = 1.4,
-        );
-      }
+    // Head contour from the detected face box — adapts to head size and
+    // head coverings rather than a fixed oval.
+    final faceBox = data.faceBox;
+    if (faceBox != null) {
+      final left = math.min(faceBox.left, faceBox.right);
+      final top = math.min(faceBox.top, faceBox.bottom);
+      final headRect = Rect.fromLTRB(
+        map(OffsetF(left, top)).dx,
+        rect.top + top * rect.height,
+        map(OffsetF(left + faceBox.width, top)).dx,
+        rect.top + (top + faceBox.height) * rect.height,
+      );
+      canvas.drawOval(
+        headRect.inflate(4),
+        Paint()
+          ..color = _kCyan.withValues(alpha: 0.30)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 6
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
+      );
+      canvas.drawOval(headRect, outline);
     }
 
-    // Detected shoulder line (pose landmarks, spec §5.2). Neutral manual
-    // shoulder guide remains visible underneath when pose is missing.
+    // Detected eye line (FR-06) — a short cyan segment through the real
+    // eye landmarks, drawn over the static alignment guide.
+    final leftEye = data.leftEye;
+    final rightEye = data.rightEye;
+    if (leftEye != null && rightEye != null) {
+      final a = map(leftEye);
+      final b = map(rightEye);
+      canvas.drawLine(
+        a,
+        b,
+        Paint()
+          ..color = _kCyan.withValues(alpha: 0.85)
+          ..strokeWidth = 2.2
+          ..strokeCap = StrokeCap.round,
+      );
+    }
+
+    // Shoulder curve from pose landmarks (FR-08), only when both are
+    // present — a partial or low-confidence pose leaves the neutral
+    // static guide in charge.
     final pose = data.pose;
     if (pose != null &&
         pose.leftShoulder != null &&
         pose.rightShoulder != null) {
-      final l = _toPreview(pose.leftShoulder!, frame, data.mirror);
-      final r = _toPreview(pose.rightShoulder!, frame, data.mirror);
-      final shoulderPaint = Paint()
-        ..color = const Color(0xFFF0C000).withValues(alpha: 0.9)
-        ..strokeWidth = 2.2
-        ..strokeCap = StrokeCap.round;
-      canvas.drawLine(l, r, shoulderPaint);
-      final dot = Paint()..color = const Color(0xFFF0C000);
-      canvas.drawCircle(l, 4, dot);
-      canvas.drawCircle(r, 4, dot);
+      final l = map(pose.leftShoulder!);
+      final r = map(pose.rightShoulder!);
+      final neckY = math.min(l.dy, r.dy) - rect.height * 0.045;
+      final centerX = (l.dx + r.dx) / 2;
+      final path = Path()
+        ..moveTo(l.dx - rect.width * 0.03, l.dy + rect.height * 0.03)
+        ..quadraticBezierTo(l.dx, l.dy, l.dx + (r.dx - l.dx) * 0.16,
+            l.dy - rect.height * 0.004)
+        ..quadraticBezierTo(centerX, neckY,
+            r.dx - (r.dx - l.dx) * 0.16, r.dy - rect.height * 0.004)
+        ..quadraticBezierTo(r.dx, r.dy,
+            r.dx + rect.width * 0.03, r.dy + rect.height * 0.03);
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = _kCyan.withValues(alpha: 0.25)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 6
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
+      );
+      canvas.drawPath(path, outline);
     }
   }
 
-  Offset _toPreview(OffsetF n, Rect frame, bool mirror) {
-    final p = framePointToPreview(n, frameF(frame), mirror: mirror);
-    return Offset(p.x, p.y);
-  }
-
-  static RectF frameF(Rect frame) => RectF(
-        left: frame.left,
-        top: frame.top,
-        width: frame.width,
-        height: frame.height,
-      );
-
-  void _dashedLine(Canvas canvas, Offset a, Offset b, Paint paint,
-      {double dash = 10, double gap = 7}) {
+  void _dashedLine(
+    Canvas canvas,
+    Offset a,
+    Offset b,
+    Paint paint, {
+    double dash = 10,
+    double gap = 7,
+  }) {
     final dx = b.dx - a.dx;
     final dy = b.dy - a.dy;
     final total = math.sqrt(dx * dx + dy * dy);
@@ -1147,134 +1290,50 @@ class _AdaptiveGuidePainter extends CustomPainter {
     }
   }
 
-  void _label(
-    Canvas canvas,
-    String text,
-    Offset anchor,
-    TextStyle style, {
-    bool alignRight = false,
-    bool center = false,
-    bool above = true,
-  }) {
-    final tp = TextPainter(
-      text: TextSpan(text: text, style: style),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    var dx = anchor.dx;
-    if (center) dx -= tp.width / 2;
-    if (alignRight) dx -= tp.width;
-    var dy = anchor.dy;
-    if (above) dy -= tp.height + 4;
-    tp.paint(canvas, Offset(dx, dy));
-  }
-
   @override
-  bool shouldRepaint(covariant _AdaptiveGuidePainter oldDelegate) => false;
+  bool shouldRepaint(covariant _AdaptiveGuidePainter oldDelegate) =>
+      oldDelegate._data != _data;
 }
 
 // ---------------------------------------------------------------------------
-// Shared UI pieces
+// Overlay widgets
 // ---------------------------------------------------------------------------
 
 enum _ChipState { good, warn, neutral }
 
-/// Status / offline chip — icon + text so meaning never relies on color
-/// alone (spec §13).
-class _StatusChip extends StatelessWidget {
-  final String label;
+class _OfflinePill extends StatelessWidget {
   final _ChipState state;
 
-  const _StatusChip({required this.label, required this.state});
+  const _OfflinePill({required this.state});
 
   @override
   Widget build(BuildContext context) {
-    final (color, icon, tooltip) = switch (state) {
-      _ChipState.good => (
-          const Color(0xFF22C55E),
-          Icons.check_circle,
-          'OK',
-        ),
-      _ChipState.warn => (
-          const Color(0xFFF0C000),
-          Icons.error_outline,
-          'Adjust',
-        ),
-      _ChipState.neutral => (
-          Colors.white38,
-          Icons.help_outline,
-          'Not detected',
-        ),
+    final (color, text) = switch (state) {
+      _ChipState.good => (_kGreen, 'Offline Ready'),
+      _ChipState.warn => (_kAmber, 'Detection limited'),
+      _ChipState.neutral => (_kTextDim, 'Starting…'),
     };
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withValues(alpha: 0.4)),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: color, size: 14),
-          const SizedBox(width: 5),
-          Expanded(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              semanticsLabel: '$label: $tooltip',
-              style: TextStyle(
-                color: color,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _OfflineChip extends StatelessWidget {
-  final _ChipState state;
-  const _OfflineChip({required this.state});
-
-  @override
-  Widget build(BuildContext context) {
-    final (color, icon, text) = switch (state) {
-      _ChipState.good => (
-          const Color(0xFF22C55E),
-          Icons.cloud_off,
-          'Offline Ready',
-        ),
-      _ChipState.warn => (
-          const Color(0xFFF0C000),
-          Icons.warning_amber_rounded,
-          'Detection limited',
-        ),
-      _ChipState.neutral => (
-          Colors.white38,
-          Icons.hourglass_empty,
-          'Starting…',
-        ),
-    };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withValues(alpha: 0.4)),
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: color, size: 13),
-          const SizedBox(width: 4),
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 6),
           Text(
             text,
             style: TextStyle(
               color: color,
-              fontSize: 10.5,
+              fontSize: 11.5,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -1284,21 +1343,368 @@ class _OfflineChip extends StatelessWidget {
   }
 }
 
-class _CameraSlider extends StatelessWidget {
+class _RoundIconButton extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  const _RoundIconButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) => Tooltip(
+        message: tooltip,
+        child: Material(
+          color: const Color(0xFF141B29),
+          shape: const CircleBorder(
+            side: BorderSide(color: _kPanelBorder),
+          ),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: onTap,
+            child: SizedBox(
+              width: 44,
+              height: 44,
+              child: Icon(icon, color: Colors.white, size: 21),
+            ),
+          ),
+        ),
+      );
+}
+
+/// One status card in the left rail — icon + text + state dot, so the
+/// meaning never relies on colour alone (spec §13).
+class _StatusRail extends StatelessWidget {
+  final FramingVerdict? verdict;
+
+  const _StatusRail({required this.verdict});
+
+  static _ChipState _map(CheckState? state) => switch (state) {
+        CheckState.pass => _ChipState.good,
+        CheckState.warn => _ChipState.warn,
+        _ => _ChipState.neutral,
+      };
+
+  @override
+  Widget build(BuildContext context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _StatusCard(
+            icon: Icons.face_outlined,
+            label: 'Face\nCentered',
+            state: _map(verdict?.faceCentered),
+          ),
+          const SizedBox(height: 10),
+          _StatusCard(
+            icon: Icons.visibility_outlined,
+            label: 'Eyes\nOn Line',
+            state: _map(verdict?.eyesAligned),
+          ),
+          const SizedBox(height: 10),
+          _StatusCard(
+            icon: Icons.accessibility_new,
+            label: 'Shoulders\nVisible',
+            state: _map(verdict?.shouldersVisible),
+          ),
+        ],
+      );
+}
+
+class _StatusCard extends StatelessWidget {
+  final IconData icon;
   final String label;
+  final _ChipState state;
+
+  const _StatusCard({
+    required this.icon,
+    required this.label,
+    required this.state,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final (color, dotIcon) = switch (state) {
+      _ChipState.good => (_kGreen, Icons.check_circle),
+      _ChipState.warn => (_kAmber, Icons.error_outline),
+      _ChipState.neutral => (_kTextDim, Icons.help_outline),
+    };
+    return Container(
+      width: 62,
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0B1018).withValues(alpha: 0.88),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white12),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: Colors.white70, size: 16),
+              const Spacer(),
+              Icon(dotIcon, color: color, size: 13),
+            ],
+          ),
+          const SizedBox(height: 5),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 9.5,
+              fontWeight: FontWeight.w600,
+              height: 1.15,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PassportCard extends StatelessWidget {
+  const _PassportCard();
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: 62,
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+        decoration: BoxDecoration(
+          color: const Color(0xFF0B1018).withValues(alpha: 0.88),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: _kCyan.withValues(alpha: 0.35)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.crop_portrait, color: _kCyan, size: 26),
+            const SizedBox(height: 4),
+            const Text(
+              '3:4',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 1),
+            Text(
+              '(Passport\nSize)',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.55),
+                fontSize: 8.5,
+                height: 1.15,
+              ),
+            ),
+          ],
+        ),
+      );
+}
+
+class _PerfectBadge extends StatelessWidget {
+  const _PerfectBadge();
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.fromLTRB(8, 5, 11, 5),
+        decoration: BoxDecoration(
+          color: _kGreen,
+          borderRadius: BorderRadius.circular(999),
+          boxShadow: [
+            BoxShadow(
+              color: _kGreen.withValues(alpha: 0.45),
+              blurRadius: 12,
+            ),
+          ],
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.check_circle, color: Colors.white, size: 15),
+            SizedBox(width: 5),
+            Text(
+              'Perfect!',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      );
+}
+
+// ---------------------------------------------------------------------------
+// Bottom bar widgets
+// ---------------------------------------------------------------------------
+
+class _ActionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+
+  const _ActionButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onTap != null;
+    return Opacity(
+      opacity: enabled ? 1 : 0.45,
+      child: Material(
+        color: _kButton,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: SizedBox(
+            width: 88,
+            height: 58,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, color: Colors.white, size: 22),
+                const SizedBox(height: 4),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ShutterButton extends StatelessWidget {
+  final bool busy;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  const _ShutterButton({
+    required this.busy,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: busy || !enabled ? null : onTap,
+      child: Container(
+        width: 84,
+        height: 84,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: _kCyan.withValues(alpha: 0.55),
+            width: 2,
+          ),
+        ),
+        alignment: Alignment.center,
+        child: Container(
+          width: 70,
+          height: 70,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: busy ? Colors.grey.shade400 : Colors.white,
+            boxShadow: [
+              BoxShadow(
+                color: _kCyan.withValues(alpha: 0.25),
+                blurRadius: 14,
+              ),
+            ],
+          ),
+          alignment: Alignment.center,
+          child: busy
+              ? const SizedBox(
+                  width: 26,
+                  height: 26,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 3,
+                    color: Color(0xFF0B111B),
+                  ),
+                )
+              : const Icon(
+                  Icons.camera_alt,
+                  color: Color(0xFF0B111B),
+                  size: 32,
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ModeTab extends StatelessWidget {
+  final String label;
+  final bool active;
+  final VoidCallback? onTap;
+
+  const _ModeTab({required this.label, required this.active, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = active ? _kBlue : Colors.white38;
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 13,
+              fontWeight: active ? FontWeight.w700 : FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Container(
+            height: 2.5,
+            width: 34,
+            decoration: BoxDecoration(
+              color: active ? _kBlue : Colors.transparent,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SheetSlider extends StatelessWidget {
+  final String label;
+  final IconData icon;
   final double value;
   final double min;
   final double max;
-  final IconData icon;
   final ValueChanged<double> onChanged;
   final ValueChanged<double> onChangeEnd;
 
-  const _CameraSlider({
+  const _SheetSlider({
     required this.label,
+    required this.icon,
     required this.value,
     required this.min,
     required this.max,
-    required this.icon,
     required this.onChanged,
     required this.onChangeEnd,
   });
@@ -1309,14 +1715,18 @@ class _CameraSlider extends StatelessWidget {
           Icon(icon, color: Colors.white, size: 18),
           const SizedBox(width: 8),
           SizedBox(
-            width: 78,
-            child: Text(label, style: const TextStyle(color: Colors.white)),
+            width: 82,
+            child: Text(
+              label,
+              style: const TextStyle(color: Colors.white70, fontSize: 12.5),
+            ),
           ),
           Expanded(
             child: Slider(
               value: value.clamp(min, max),
               min: min,
               max: max,
+              activeColor: _kCyan,
               onChanged: onChanged,
               onChangeEnd: onChangeEnd,
             ),
@@ -1340,9 +1750,11 @@ class _CameraError extends StatelessWidget {
             const Icon(Icons.camera_alt_outlined,
                 color: Colors.white70, size: 48),
             const SizedBox(height: 12),
-            Text(message,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white)),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white),
+            ),
             const SizedBox(height: 16),
             FilledButton(onPressed: onRetry, child: const Text('Try again')),
             TextButton(
