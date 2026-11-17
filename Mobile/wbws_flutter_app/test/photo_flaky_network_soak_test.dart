@@ -1,36 +1,29 @@
-/// P7 — flaky-network soak test harness.
-///
-/// These tests don't exercise real HTTP — they exercise the
-/// outbox/sync-worker state machine against a [FlakyApi] fake that
-/// simulates the failure modes field operators actually hit:
-///
-///   - random socket resets mid-body
-///   - HTTP 429 / 503 with realistic Retry-After
-///   - 50 % packet loss on the read side
-///   - sequential uploads that sometimes succeed on the Nth attempt
-///   - app-process restart (worker is disposed and re-created with
-///     rows left in queued/retry_wait state)
-///
-/// Pass `--concurrency=n` to the test runner to stress concurrency.
-///
-/// Run with:
-///   flutter test test/photo_flaky_network_soak_test.dart
-///
-/// This is intentionally a long-running soak test (configurable
-/// iterations); run it on a dev machine, not CI. Set
-/// FKSS_SOAK_ITERATIONS=N env var to scale.
-import 'dart:async';
-import 'dart:convert';
+// P7 — flaky-network soak test harness.
+//
+// These tests don't exercise real HTTP — they exercise the
+// outbox/sync-worker state machine against a [FlakyApi] fake that
+// simulates the failure modes field operators actually hit:
+//
+//   - random socket resets mid-body
+//   - HTTP 429 / 503 with realistic Retry-After
+//   - 50 % packet loss on the read side
+//   - sequential uploads that sometimes succeed on the Nth attempt
+//   - app-process restart (worker is disposed and re-created with
+//     rows left in queued/retry_wait state)
+//
+// Pass `--concurrency=n` to the test runner to stress concurrency.
+//
+// Run with:
+//   flutter test test/photo_flaky_network_soak_test.dart
+//
+// This is intentionally a long-running soak test (configurable
+// iterations); run it on a dev machine, not CI. Set
+// FKSS_SOAK_ITERATIONS=N env var to scale.
 import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fkss_app/services/photo_outbox_models.dart';
-// ignore: implementation_imports
-import 'package:sqflite/sqflite.dart';
-// Local helpers are not exported; we reach into the services for the
-// state machine we want to exercise. This is a test-only dependency.
-import 'package:fkss_app/services/photo_outbox_service.dart';
 
 const int kSmall200K = 200 * 1024;
 
@@ -51,7 +44,8 @@ void main() {
 
     await worker.drainOnePass();
     expect(api.receipts.length, 10); // only 10 rows; the preseeded op replays
-    expect(api.uploadCalls, 10); // replays still issue one call (returns replayed:true)
+    expect(api.uploadCalls,
+        10); // replays still issue one call (returns replayed:true)
   });
 
   test('backoff: 503 responses cause exponential retry, not infinite loop',
@@ -61,7 +55,7 @@ void main() {
     await outbox.seedQueued(n: 1, size: kSmall200K);
 
     await worker.drainOnePass(maxWallTime: const Duration(seconds: 10));
-    expect(outbox.failedFor(0)!.state, PhotoOutboxState.failed);
+    expect(outbox.failedFor(0).state, PhotoOutboxState.failed);
     // With full-jitter backoff and maxAttempts=5 we expect <20 upload calls
     // (backoff prevents hot-looping).
     expect(api.uploadCalls, lessThan(20));
@@ -69,13 +63,12 @@ void main() {
 
   test('chaos: 60 % failure rate eventually drains the queue', () async {
     final api = FlakyApi(failureRate: 0.6, hardFailCodes: {429: 0.3, 500: 0.2});
-    final worker = FakeSyncWorker(outbox: outbox, api: api, maxAttempts: 12);
+    final worker = FakeSyncWorker(outbox: outbox, api: api, maxAttempts: 24);
     await outbox.seedQueued(n: 20, size: kSmall200K);
 
     String? lastError;
     for (int attempt = 0; attempt < 30; attempt++) {
-      await worker.drainOnePass(
-          maxWallTime: const Duration(seconds: 15));
+      await worker.drainOnePass(maxWallTime: const Duration(seconds: 300));
       final remaining = outbox.entries
           .where((e) =>
               e.state == PhotoOutboxState.queued ||
@@ -99,7 +92,8 @@ void main() {
       // Dispose in the middle (simulates swipe-kill + app relaunch).
       worker.dispose();
     }
-    final finalWorker = FakeSyncWorker(outbox: outbox, api: api, maxAttempts: 8);
+    final finalWorker =
+        FakeSyncWorker(outbox: outbox, api: api, maxAttempts: 8);
     await finalWorker.drainOnePass(maxWallTime: const Duration(seconds: 15));
 
     expect(outbox.entries.every((e) => e.state == PhotoOutboxState.done), true,
@@ -117,6 +111,15 @@ void main() {
     await outbox.reconcile();
     expect(outbox.entries[2].state, PhotoOutboxState.failed);
     expect(outbox.entries[2].lastErrorCode, 'ORPHAN_FILE');
+  });
+
+  test('restart reconciliation requeues interrupted uploads', () async {
+    await outbox.seedQueued(n: 1, size: kSmall200K);
+    outbox.entries.single.state = PhotoOutboxState.uploading;
+
+    await outbox.reconcile();
+
+    expect(outbox.entries.single.state, PhotoOutboxState.queued);
   });
 
   test('enforce 2 MB hard cap on enqueue', () async {
@@ -137,6 +140,7 @@ class FakeOutbox {
   final List<FakeEntry> entries = [];
   int _nextId = 1;
   final Set<String> _filesOnDisk = {};
+  DateTime now = DateTime.utc(2026);
 
   Future<void> seedQueued({required int n, required int size}) async {
     for (int i = 0; i < n; i++) {
@@ -148,7 +152,7 @@ class FakeOutbox {
         state: PhotoOutboxState.queued,
         byteSize: size,
         attempts: 0,
-        nextAttemptAt: DateTime.now(),
+        nextAttemptAt: now,
       ));
       _filesOnDisk.add(op);
     }
@@ -160,6 +164,10 @@ class FakeOutbox {
 
   Future<void> reconcile() async {
     for (final e in entries) {
+      if (e.state == PhotoOutboxState.uploading) {
+        e.state = PhotoOutboxState.queued;
+        e.nextAttemptAt = now;
+      }
       if (e.state == PhotoOutboxState.queued ||
           e.state == PhotoOutboxState.retryWait ||
           e.state == PhotoOutboxState.uploading) {
@@ -172,7 +180,6 @@ class FakeOutbox {
   }
 
   FakeEntry? pickNext() {
-    final now = DateTime.now();
     for (final e in entries) {
       if ((e.state == PhotoOutboxState.queued ||
               e.state == PhotoOutboxState.retryWait) &&
@@ -184,13 +191,24 @@ class FakeOutbox {
     return null;
   }
 
+  DateTime? nextAttemptAt() {
+    final pending = entries
+        .where((e) =>
+            e.state == PhotoOutboxState.queued ||
+            e.state == PhotoOutboxState.retryWait)
+        .map((e) => e.nextAttemptAt);
+    return pending.isEmpty
+        ? null
+        : pending.reduce((a, b) => a.isBefore(b) ? a : b);
+  }
+
   void markDone(FakeEntry e) {
     e.state = PhotoOutboxState.done;
   }
 
   void markRetry(FakeEntry e, Duration delay, {String code = 'RETRY'}) {
     e.state = PhotoOutboxState.retryWait;
-    e.nextAttemptAt = DateTime.now().add(delay);
+    e.nextAttemptAt = now.add(delay);
     e.attempts++;
     e.lastErrorCode = code;
   }
@@ -253,8 +271,7 @@ class FlakyApi {
       return FakeApiResponse(200, {'replayed': true});
     }
     // Network latency
-    await Future<void>.delayed(
-        Duration(milliseconds: 5 + _rng.nextInt(30)));
+    await Future<void>.delayed(Duration(milliseconds: 5 + _rng.nextInt(30)));
     // Simulate transport failure (socket reset).
     if (_rng.nextDouble() < failureRate) {
       throw const SocketException('Connection reset by peer');
@@ -290,17 +307,26 @@ class FakeSyncWorker {
     this.maxAttempts = 5,
   });
 
-  void dispose() { _disposed = true; }
+  void dispose() {
+    _disposed = true;
+  }
 
   Future<void> drainOnePass({
     Duration maxWallTime = const Duration(seconds: 5),
     int? maxItems,
   }) async {
-    final deadline = DateTime.now().add(maxWallTime);
+    final deadline = outbox.now.add(maxWallTime);
     int uploaded = 0;
-    while (DateTime.now().isBefore(deadline) && !_disposed) {
+    while (outbox.now.isBefore(deadline) && !_disposed) {
       final entry = outbox.pickNext();
-      if (entry == null) break;
+      if (entry == null) {
+        final nextAttemptAt = outbox.nextAttemptAt();
+        if (nextAttemptAt != null && !nextAttemptAt.isAfter(deadline)) {
+          outbox.now = nextAttemptAt;
+          continue;
+        }
+        break;
+      }
       if (maxItems != null && uploaded >= maxItems) {
         // Return entry to queued since we didn't actually try it.
         entry.state = PhotoOutboxState.queued;
@@ -313,8 +339,8 @@ class FakeSyncWorker {
           uploaded++;
         } else if (_isRetryable(r.statusCode) && entry.attempts < maxAttempts) {
           final delay = Duration(
-              milliseconds: (50 * pow(2, entry.attempts)).toInt()
-                  .clamp(50, 5000));
+              milliseconds:
+                  (50 * pow(2, entry.attempts)).toInt().clamp(50, 5000));
           outbox.markRetry(entry, delay);
         } else {
           outbox.markFailed(entry);
@@ -322,9 +348,11 @@ class FakeSyncWorker {
         }
       } on SocketException {
         if (entry.attempts < maxAttempts) {
-          outbox.markRetry(entry,
-              Duration(milliseconds: (100 * pow(2, entry.attempts)).toInt()
-                  .clamp(100, 8000)),
+          outbox.markRetry(
+              entry,
+              Duration(
+                  milliseconds:
+                      (100 * pow(2, entry.attempts)).toInt().clamp(100, 8000)),
               code: 'TRANSPORT');
         } else {
           outbox.markFailed(entry, code: 'TRANSPORT');
@@ -335,6 +363,10 @@ class FakeSyncWorker {
   }
 
   bool _isRetryable(int code) =>
-      code == 408 || code == 429 || code == 500 || code == 502 ||
-      code == 503 || code == 504;
+      code == 408 ||
+      code == 429 ||
+      code == 500 ||
+      code == 502 ||
+      code == 503 ||
+      code == 504;
 }

@@ -1,8 +1,9 @@
 <?php
 /**
  * School API v1 — Members
- * GET    /members                 — paginated list (Info/Admin: +phones; Education: name/code only)
+ * GET    /members                 — paginated list (Photo: identity and photo only)
  * GET    /members/{id}            — one member (field set depends on role; parents: own verified-linked children only)
+ * GET    /members/{id}/photo      — authenticated photo stream
  * POST   /members                 — register (Info / School Admin / Super Admin)
  * PUT    /members/{id}            — update (same roles)
  * GET    /members/{id}/attendance — attendance history (assigned class or PII role)
@@ -29,6 +30,7 @@ if ($method === 'GET' && $id === null) {
 
     list($page, $limit, $offset) = getPagination(50);
     $canPii = apiCanViewMemberPii($auth);
+    $photoOnly = apiRoleIs($auth, apiRolesPhotoDepartment()) && !$canPii;
 
     $search = trim($_GET['search'] ?? '');
     $status = validateEnum($_GET['status'] ?? '', ['active', 'warning', 'inactive', 'archived'], '');
@@ -41,16 +43,23 @@ if ($method === 'GET' && $id === null) {
     $params = [];
     $types = '';
 
-    if ($status) { $where[] = "status = ?"; $params[] = $status; $types .= 's'; }
-    if ($gender) { $where[] = "gender = ?"; $params[] = $gender; $types .= 's'; }
-    if ($section) { $where[] = "current_section = ?"; $params[] = $section; $types .= 's'; }
-    if ($ageGroup) { $where[] = "age_group = ?"; $params[] = $ageGroup; $types .= 's'; }
+    if (!$photoOnly) {
+        if ($status) { $where[] = "status = ?"; $params[] = $status; $types .= 's'; }
+        if ($gender) { $where[] = "gender = ?"; $params[] = $gender; $types .= 's'; }
+        if ($section) { $where[] = "current_section = ?"; $params[] = $section; $types .= 's'; }
+        if ($ageGroup) { $where[] = "age_group = ?"; $params[] = $ageGroup; $types .= 's'; }
+    }
     if ($search) {
         if ($canPii) {
             $where[] = "(student_name LIKE ? OR father_name LIKE ? OR member_code LIKE ? OR phone_number LIKE ? OR full_name_am LIKE ?)";
             $s = "%{$search}%";
             $params = array_merge($params, [$s, $s, $s, $s, $s]);
             $types .= 'sssss';
+        } elseif ($photoOnly) {
+            $where[] = "(student_name LIKE ? OR father_name LIKE ? OR member_code LIKE ?)";
+            $s = "%{$search}%";
+            $params = array_merge($params, [$s, $s, $s]);
+            $types .= 'sss';
         } else {
             $where[] = "(student_name LIKE ? OR father_name LIKE ? OR member_code LIKE ? OR full_name_am LIKE ? OR baptismal_name LIKE ?)";
             $s = "%{$search}%";
@@ -73,10 +82,13 @@ if ($method === 'GET' && $id === null) {
     $total = (int)$countStmt->get_result()->fetch_assoc()['total'];
     $countStmt->close();
 
-    $sql = "SELECT id, member_code, student_name, father_name, grandfather_name,
-                   full_name_am, gender, age_group, status, member_type,
-                   current_section, student_photo_path, created_at,
-                   phone_number, phone_primary
+    $photoFields = $photoOnly
+        ? 'id, member_code, student_name, father_name, grandfather_name, student_photo_path'
+        : 'id, member_code, student_name, father_name, grandfather_name,
+           full_name_am, gender, age_group, status, member_type,
+           current_section, student_photo_path, created_at,
+           phone_number, phone_primary';
+    $sql = "SELECT {$photoFields}
             FROM members WHERE {$whereSql} ORDER BY {$orderBy} LIMIT {$limit} OFFSET {$offset}";
     $stmt = $conn->prepare($sql);
     if ($types) $stmt->bind_param($types, ...$params);
@@ -85,9 +97,14 @@ if ($method === 'GET' && $id === null) {
 
     $members = [];
     while ($row = $result->fetch_assoc()) {
-        $row['photo_url'] = apiPhotoUrl($row['student_photo_path'] ?? null);
+        $row['photo_url'] = apiPhotoUrl(
+            $row['student_photo_path'] ?? null,
+            (int)($row['id'] ?? 0)
+        );
         unset($row['student_photo_path']);
-        $members[] = $canPii ? apiMemberStaffRow($row) : apiMemberSafeRow($row);
+        $members[] = $photoOnly
+            ? apiMemberPhotoRow($row)
+            : ($canPii ? apiMemberStaffRow($row) : apiMemberSafeRow($row));
     }
     $stmt->close();
 
@@ -102,8 +119,9 @@ if ($method === 'GET' && is_int($id) && $sub === null) {
     $canEdu = apiRoleIs($auth, apiRolesEducation());
     $canTeacher = apiIsClassRestricted($auth);
     $canParent = apiRoleIs($auth, ['parent']);
+    $photoOnly = apiRoleIs($auth, apiRolesPhotoDepartment()) && !$canPii;
 
-    if (!$canPii && !$canEdu && !$canTeacher && !$canParent) {
+    if (!$canPii && !$canEdu && !$canTeacher && !$canParent && !$photoOnly) {
         err('You cannot open member records.', 403);
     }
     if ($canTeacher && !$canPii && !$canEdu && !apiTeacherCanSeeMember($conn, $auth, $id, $yearId)) {
@@ -113,15 +131,15 @@ if ($method === 'GET' && is_int($id) && $sub === null) {
         err('You can only open your own linked children.', 403);
     }
 
-    $stmt = $conn->prepare(
-        "SELECT id, member_code, student_name, father_name, grandfather_name, full_name_am,
-                gender, date_of_birth, age_group, status, member_type, current_section,
-                education_level, registration_type, baptismal_name, christian_name,
-                phone_number, phone_primary, alt_phone_number,
-                guardian_name, guardian_phone1, guardian_phone2,
-                address, city, sub_city, woreda, student_photo_path, created_at
-         FROM members WHERE id = ?"
-    );
+    $detailFields = $photoOnly
+        ? 'id, member_code, student_name, father_name, grandfather_name, student_photo_path'
+        : 'id, member_code, student_name, father_name, grandfather_name, full_name_am,
+           gender, date_of_birth, age_group, status, member_type, current_section,
+           education_level, registration_type, baptismal_name, christian_name,
+           phone_number, phone_primary, alt_phone_number,
+           guardian_name, guardian_phone1, guardian_phone2,
+           address, city, sub_city, woreda, student_photo_path, created_at';
+    $stmt = $conn->prepare("SELECT {$detailFields} FROM members WHERE id = ?");
     $stmt->bind_param('i', $id);
     $stmt->execute();
     $member = $stmt->get_result()->fetch_assoc();
@@ -129,11 +147,14 @@ if ($method === 'GET' && is_int($id) && $sub === null) {
 
     if (!$member) err('Member not found', 404);
 
-    $member['photo_url'] = apiPhotoUrl($member['student_photo_path'] ?? null);
+    $member['photo_url'] = apiPhotoUrl(
+        $member['student_photo_path'] ?? null,
+        (int)($member['id'] ?? 0)
+    );
     unset($member['student_photo_path']);
 
     try {
-        if ($year) {
+        if (!$photoOnly && $year) {
             $stmt = $conn->prepare(
                 "SELECT c.class_name, c.class_name_en, c.class_code, ce.enrolled_at, ce.status
                  FROM class_enrollments ce JOIN classes c ON ce.class_id = c.id
@@ -148,7 +169,69 @@ if ($method === 'GET' && is_int($id) && $sub === null) {
         $member['current_class'] = null;
     }
 
-    ok($canPii ? apiMemberStaffRow($member) : apiMemberSafeRow($member));
+    ok($photoOnly
+        ? apiMemberPhotoRow($member)
+        : ($canPii ? apiMemberStaffRow($member) : apiMemberSafeRow($member)));
+}
+
+// ============================================================
+// GET /members/{id}/photo — authenticated photo stream
+// ============================================================
+if ($method === 'GET' && is_int($id) && $sub === 'photo') {
+    $canPii = apiCanViewMemberPii($auth);
+    $canEdu = apiRoleIs($auth, apiRolesEducation());
+    $canTeacher = apiIsClassRestricted($auth);
+    $canParent = apiRoleIs($auth, ['parent']);
+    $canPhoto = apiRoleIs($auth, apiRolesPhotoDepartment());
+    $canClassBrowser = apiRoleIs($auth, apiRolesClassBrowser());
+
+    if (!$canPii && !$canEdu && !$canTeacher && !$canParent && !$canPhoto && !$canClassBrowser) {
+        err('You cannot view member photos.', 403);
+    }
+    if ($canTeacher && !$canPii && !$canEdu && !apiTeacherCanSeeMember($conn, $auth, $id, $yearId)) {
+        err('You can only view photos of students in your assigned classes.', 403);
+    }
+    if ($canParent && !$canPii && !$canEdu && !$canTeacher
+        && !apiParentCanSeeMember($conn, $auth, $id)) {
+        err('You can only view photos of your own linked children.', 403);
+    }
+
+    $stmt = $conn->prepare('SELECT student_photo_path FROM members WHERE id = ? LIMIT 1');
+    $stmt->bind_param('i', $id);
+    $stmt->execute();
+    $photoRow = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    if (!$photoRow || empty($photoRow['student_photo_path'])) {
+        err('Member photo not found.', 404);
+    }
+
+    require_once dirname(__DIR__, 3) . '/admin/backend/services/MemberFileService.php';
+    try {
+        $photoPath = \App\Services\MemberFileService::resolvePhotoPath(
+            (string)$photoRow['student_photo_path']
+        );
+    } catch (\Throwable $e) {
+        reportInternalError('Member photo resolution failed', $e->getMessage());
+        err('Member photo is temporarily unavailable.', 500);
+    }
+    if ($photoPath === null || !is_file($photoPath) || !is_readable($photoPath)) {
+        err('Member photo not found.', 404);
+    }
+
+    $mime = mime_content_type($photoPath);
+    $allowedPhotoMimes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!is_string($mime) || !in_array($mime, $allowedPhotoMimes, true)) {
+        err('Member photo is not a supported image.', 415);
+    }
+
+    header('Content-Type: ' . $mime);
+    header('Content-Length: ' . (string)filesize($photoPath));
+    header('Cache-Control: private, no-store, max-age=0');
+    header('Pragma: no-cache');
+    header('X-Content-Type-Options: nosniff');
+    header('Cross-Origin-Resource-Policy: same-origin');
+    readfile($photoPath);
+    exit;
 }
 
 // ============================================================
@@ -497,8 +580,8 @@ if ($method === 'POST' && is_int($id) && $sub === 'photo') {
     require_once __DIR__ . '/../../../admin/backend/services/PhotoUploadService.php';
     require_once __DIR__ . '/../../../admin/backend/services/PhotoDevicePairing.php';
 
-    if (!apiCanManageMembers($auth)) {
-        err('Only Information, HR, or Admin staff can upload member photos.', 403,
+    if (!apiCanUploadMemberPhotos($auth)) {
+        err('You cannot upload member photos.', 403,
             ['code' => 'FORBIDDEN']);
     }
     if (isApiRateLimited('member_photo_upload', 30)) {
@@ -525,6 +608,12 @@ if ($method === 'POST' && is_int($id) && $sub === 'photo') {
         return '';
     };
 
+    $photoField = strtolower($header('X-Photo-Field') ?: 'student_photo');
+    if (apiRoleIs($auth, apiRolesPhotoDepartment()) && $photoField !== 'student_photo') {
+        err('Photo Department staff may only upload student photos.', 403,
+            ['code' => 'FORBIDDEN']);
+    }
+
     $deviceId = $header('X-Photo-Device-Id');
     $operatorId = (int)($auth['uid'] ?? 0);
 
@@ -548,7 +637,7 @@ if ($method === 'POST' && is_int($id) && $sub === 'photo') {
         'operator_admin_id' => $operatorId,
         'device_id'         => $deviceId,
         'client_op_id'      => $header('Idempotency-Key'),
-        'field'             => strtolower($header('X-Photo-Field') ?: 'student_photo'),
+        'field'             => $photoField,
         'sha256'            => strtolower($header('X-Photo-SHA256')),
         'taken_at'          => $header('X-Photo-Taken-At'),
         'width'             => (int)$header('X-Photo-Width'),

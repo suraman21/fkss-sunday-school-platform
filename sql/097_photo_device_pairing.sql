@@ -15,14 +15,15 @@
 -- stolen device UUID cannot be re-used by a different account.
 
 CREATE TABLE IF NOT EXISTS photo_device_identities (
-  id                INTEGER PRIMARY KEY AUTOINCREMENT,
-  operator_admin_id INTEGER NOT NULL,
+  id                INT(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+  operator_admin_id INT(10) UNSIGNED NOT NULL,
   device_id         VARCHAR(64) NOT NULL,
   hmac_key_hex      CHAR(64) NOT NULL,                 -- 32 random bytes, hex-encoded
   first_seen_at     DATETIME NOT NULL,
   last_seen_at      DATETIME NOT NULL,
   UNIQUE KEY uq_photo_device (operator_admin_id, device_id),
   KEY idx_photo_device_device (device_id),
+  PRIMARY KEY (id),
   CONSTRAINT fk_photo_device_admin
     FOREIGN KEY (operator_admin_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

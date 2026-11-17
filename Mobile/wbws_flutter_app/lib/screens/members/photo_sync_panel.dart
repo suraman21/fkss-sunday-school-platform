@@ -29,6 +29,8 @@ class _PhotoSyncPanelScreenState extends State<PhotoSyncPanelScreen> {
 
   PhotoSyncPolicyState _policy = PhotoSyncPolicyState.seeded();
   PhotoOutboxCounters _counters = PhotoOutboxCounters.zero;
+  List<PhotoOutboxEntry> _entries = [];
+  final Set<String> _retrying = {};
   StreamSubscription<PhotoSyncEvent>? _events;
   StreamSubscription<bool>? _radio;
   Timer? _tick;
@@ -57,12 +59,18 @@ class _PhotoSyncPanelScreenState extends State<PhotoSyncPanelScreen> {
 
   Future<void> _load() async {
     _policy = await _outbox.readPolicy();
-    _counters = await _outbox.counters();
+    await _refresh();
     if (mounted) setState(() {});
   }
 
-  void _refresh() {
-    if (mounted) setState(() {});
+  Future<void> _refresh() async {
+    final counters = await _outbox.counters();
+    final entries = await _outbox.listVisibleEntries();
+    if (!mounted) return;
+    setState(() {
+      _counters = counters;
+      _entries = entries;
+    });
   }
 
   Future<void> _toggleSync(bool enabled) async {
@@ -110,6 +118,7 @@ class _PhotoSyncPanelScreenState extends State<PhotoSyncPanelScreen> {
 
   Future<void> _startSync() async {
     final check = await _worker.canStart();
+    if (!mounted) return;
     if (!check.ok) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(check.reason ?? 'Cannot start sync.'),
@@ -119,6 +128,23 @@ class _PhotoSyncPanelScreenState extends State<PhotoSyncPanelScreen> {
     }
     _startedAt = DateTime.now();
     await _worker.start();
+  }
+
+  Future<void> _retryFailed(PhotoOutboxEntry entry) async {
+    setState(() => _retrying.add(entry.clientOpId));
+    try {
+      await _outbox.retryFailed(entry.clientOpId);
+      await _refresh();
+      await _startSync();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Photo retry failed: $error'),
+        backgroundColor: Colors.red,
+      ));
+    } finally {
+      if (mounted) setState(() => _retrying.remove(entry.clientOpId));
+    }
   }
 
   bool _exportingZip = false;
@@ -171,6 +197,17 @@ class _PhotoSyncPanelScreenState extends State<PhotoSyncPanelScreen> {
           ),
           const SizedBox(height: 12),
           _CountersCard(counters: _counters),
+          if (_entries
+              .any((entry) => entry.state == PhotoOutboxState.failed)) ...[
+            const SizedBox(height: 12),
+            _FailedPhotosCard(
+              entries: _entries
+                  .where((entry) => entry.state == PhotoOutboxState.failed)
+                  .toList(),
+              retrying: _retrying,
+              onRetry: _retryFailed,
+            ),
+          ],
           const SizedBox(height: 12),
           _ActionsCard(
             running: running,
@@ -234,7 +271,9 @@ class _PhotoSyncPanelScreenState extends State<PhotoSyncPanelScreen> {
             'Enable "Sync over cellular" to upload now, or connect to Wi-Fi.',
       );
     }
-    if (_policy.syncEnabled && _connectivity.isUnmetered && _counters.unsynced > 0) {
+    if (_policy.syncEnabled &&
+        _connectivity.isUnmetered &&
+        _counters.unsynced > 0) {
       return _Banner(
         icon: Icons.wifi,
         color: Colors.green.shade50,
@@ -318,11 +357,68 @@ class _PolicyCard extends StatelessWidget {
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('Sync over cellular'),
-              subtitle: const Text('May use your data plan. Wi-Fi only when off.'),
+              subtitle:
+                  const Text('May use your data plan. Wi-Fi only when off.'),
               value: policy.allowCellular,
               activeColor: _Colors.maroon,
               onChanged: policy.syncEnabled ? onToggleCellular : null,
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FailedPhotosCard extends StatelessWidget {
+  final List<PhotoOutboxEntry> entries;
+  final Set<String> retrying;
+  final Future<void> Function(PhotoOutboxEntry) onRetry;
+
+  const _FailedPhotosCard({
+    required this.entries,
+    required this.retrying,
+    required this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Failed photos',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 8),
+            for (final entry in entries)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(entry.memberCode?.isNotEmpty == true
+                    ? entry.memberCode!
+                    : 'Member #${entry.memberId}'),
+                subtitle: Text(
+                  entry.lastError?.isNotEmpty == true
+                      ? entry.lastError!
+                      : 'Upload failed. Retry when ready.',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                trailing: TextButton.icon(
+                  onPressed: retrying.contains(entry.clientOpId)
+                      ? null
+                      : () => onRetry(entry),
+                  icon: retrying.contains(entry.clientOpId)
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.refresh),
+                  label: const Text('Retry'),
+                ),
+              ),
           ],
         ),
       ),
@@ -336,8 +432,7 @@ class _CountersCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    String mb(int bytes) =>
-        (bytes / (1024 * 1024)).toStringAsFixed(1);
+    String mb(int bytes) => (bytes / (1024 * 1024)).toStringAsFixed(1);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -350,9 +445,18 @@ class _CountersCard extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 _Stat(label: 'Queued', value: '${counters.queued}'),
-                _Stat(label: 'Synced', value: '${counters.done}', color: Colors.green.shade700),
-                _Stat(label: 'Review', value: '${counters.conflictPending}', color: Colors.orange.shade800),
-                _Stat(label: 'Failed', value: '${counters.failed}', color: Colors.red.shade700),
+                _Stat(
+                    label: 'Synced',
+                    value: '${counters.done}',
+                    color: Colors.green.shade700),
+                _Stat(
+                    label: 'Review',
+                    value: '${counters.conflictPending}',
+                    color: Colors.orange.shade800),
+                _Stat(
+                    label: 'Failed',
+                    value: '${counters.failed}',
+                    color: Colors.red.shade700),
               ],
             ),
             const SizedBox(height: 8),
@@ -382,7 +486,8 @@ class _Stat extends StatelessWidget {
                 fontSize: 22,
                 fontWeight: FontWeight.w700,
                 color: color ?? Colors.black87)),
-        Text(label, style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+        Text(label,
+            style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
       ],
     );
   }
@@ -466,8 +571,8 @@ class _ActionsCard extends StatelessWidget {
                       onPressed: onCancel,
                       icon: const Icon(Icons.stop),
                       label: const Text('Cancel'),
-                      style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.red),
+                      style:
+                          OutlinedButton.styleFrom(foregroundColor: Colors.red),
                     ),
                   ),
                 ],
@@ -535,10 +640,12 @@ class _ProgressCard extends StatelessWidget {
                 children: [
                   if (currentLabel != null)
                     Text('Now: $currentLabel',
-                        style: TextStyle(color: Colors.grey.shade700, fontSize: 12)),
+                        style: TextStyle(
+                            color: Colors.grey.shade700, fontSize: 12)),
                   if (eta.isNotEmpty)
                     Text(eta,
-                        style: TextStyle(color: Colors.grey.shade700, fontSize: 12)),
+                        style: TextStyle(
+                            color: Colors.grey.shade700, fontSize: 12)),
                 ],
               ),
             ],
@@ -582,7 +689,8 @@ class _EventLog extends StatelessWidget {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(_iconFor(e.type), size: 14, color: _colorFor(e.type)),
+                      Icon(_iconFor(e.type),
+                          size: 14, color: _colorFor(e.type)),
                       const SizedBox(width: 6),
                       Expanded(
                         child: Text(e.message,

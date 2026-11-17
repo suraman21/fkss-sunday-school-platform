@@ -37,6 +37,30 @@ function apiRolesGrades(): array
     return ['teacher', 'edu_dept', 'school_admin', 'super_admin'];
 }
 
+function apiRolesPhotoDepartment(): array
+{
+    return ['photo_dept', 'photo_importer'];
+}
+
+function apiRolesMobileDashboard(): array
+{
+    return [
+        'teacher', 'attendance_taker', 'super_admin', 'school_admin',
+        'edu_dept', 'info_dept', 'finance_dept', 'material_dept',
+        'mezmur_dept', 'mezmur_attendance_taker', 'hr_dept',
+        'hr_attendance_taker',
+    ];
+}
+
+function apiRolesClassBrowser(): array
+{
+    return [
+        'teacher', 'attendance_taker', 'super_admin', 'school_admin',
+        'edu_dept', 'info_dept', 'hr_dept', 'mezmur_dept',
+        'mezmur_attendance_taker', 'hr_attendance_taker',
+    ];
+}
+
 function apiCanViewMemberPii(array $auth): bool
 {
     return apiRoleIs($auth, apiRolesPii());
@@ -44,12 +68,37 @@ function apiCanViewMemberPii(array $auth): bool
 
 function apiCanBrowseMembers(array $auth): bool
 {
-    return apiRoleIs($auth, array_merge(apiRolesPii(), ['edu_dept']));
+    return apiRoleIs($auth, array_merge(
+        apiRolesPii(),
+        ['edu_dept'],
+        apiRolesPhotoDepartment()
+    ));
 }
 
 function apiCanManageMembers(array $auth): bool
 {
     return apiRoleIs($auth, apiRolesPii());
+}
+
+function apiCanUploadMemberPhotos(array $auth): bool
+{
+    return apiRoleIs($auth, array_merge(
+        apiRolesPii(),
+        ['hr_dept'],
+        apiRolesPhotoDepartment()
+    ));
+}
+
+function apiMemberPhotoRow(array $row): array
+{
+    return [
+        'id' => isset($row['id']) ? (int)$row['id'] : 0,
+        'member_code' => $row['member_code'] ?? '',
+        'student_name' => $row['student_name'] ?? '',
+        'father_name' => $row['father_name'] ?? '',
+        'grandfather_name' => $row['grandfather_name'] ?? '',
+        'photo_url' => $row['photo_url'] ?? null,
+    ];
 }
 
 function apiIsClassRestricted(array $auth): bool
@@ -200,7 +249,10 @@ function apiParentChildren($conn, array $auth): array
     $out = [];
     $result = $stmt->get_result();
     while ($row = $result->fetch_assoc()) {
-        $row['photo_url'] = apiPhotoUrl($row['student_photo_path'] ?? null);
+        $row['photo_url'] = apiPhotoUrl(
+            $row['student_photo_path'] ?? null,
+            (int)($row['id'] ?? 0)
+        );
         unset($row['student_photo_path']);
         $child = apiMemberSafeRow($row);
         $child['relation'] = $row['relation'] ?? 'other';
@@ -272,10 +324,14 @@ function apiRosterStudentRow(array $row): array
     ];
 }
 
-function apiPhotoUrl(?string $path): ?string
+function apiPhotoUrl(?string $path, ?int $memberId = null): ?string
 {
     if (!$path) {
         return null;
+    }
+    if ($memberId !== null && $memberId > 0) {
+        $base = defined('SITE_URL') ? rtrim(SITE_URL, '/') : '';
+        return $base . '/api/v1/members/' . $memberId . '/photo';
     }
     if (defined('SITE_URL')) {
         return SITE_URL . '/' . ltrim($path, '/');

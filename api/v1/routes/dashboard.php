@@ -10,6 +10,10 @@
 $auth = apiRequireAuth();
 $action = $ROUTE['id'] ?? '';
 
+if (!apiRoleIs($auth, apiRolesMobileDashboard())) {
+    err('Dashboard data is not available for this role.', 403);
+}
+
 // ============================================================
 // GET /dashboard/stats — Role-aware dashboard stats
 // ============================================================

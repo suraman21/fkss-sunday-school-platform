@@ -4315,8 +4315,8 @@ function showDuplicateWarning(matches) {
         const isArchived = m.is_archived || m.status === 'archived';
         const statusClass = isArchived ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700';
         const statusText = isArchived ? 'ARCHIVED' : 'ACTIVE';
-        const photoHtml = m.student_photo_path 
-            ? `<img src="${escapeAttr(m.student_photo_path)}" class="w-full h-full object-cover">`
+        const photoHtml = m.student_photo_path
+            ? `<img src="/admin/photo_file.php?member_id=${encodeURIComponent(m.id)}" class="w-full h-full object-cover">`
             : `<i class="fa-solid fa-user text-slate-400 text-xl"></i>`;
         
         return `

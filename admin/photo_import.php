@@ -16,7 +16,7 @@ if (session_status() === PHP_SESSION_NONE) @session_start();
 // case the file is reached through a misnamed path.
 $userName = $_SESSION['admin_full_name'] ?? $_SESSION['admin_username'] ?? 'Admin';
 $role = (string)($_SESSION['admin_role'] ?? '');
-$canImport = in_array($role, ['super_admin','school_admin','info_dept','hr_dept','photo_importer'], true);
+$canImport = in_array($role, ['super_admin','school_admin','info_dept','hr_dept','photo_dept','photo_importer'], true);
 if (!$canImport) { http_response_code(403); exit('Access denied.'); }
 
 $schoolName = defined('SCHOOL_NAME_SHORT') ? SCHOOL_NAME_SHORT : 'FKSS';
@@ -101,7 +101,7 @@ ul.errors{margin:8px 0 0 18px;padding:0;font-size:12px;}
     <div class="result" id="result"></div>
     <p class="note" style="margin-top:12px">
       <i class="fa-solid fa-info-circle"></i>
-      ZIPs are extracted server-side. Each photo is validated (size ≤ 2 MB, WebP/JPEG, SHA-256 matches manifest)
+      ZIP entries are streamed into private staging. Each photo is validated (size ≤ 2 MB, WebP/JPEG, SHA-256 matches manifest)
       and routed through the same audit + conflict pipeline as online uploads. Duplicate uploads (same client
       operation ID or same file hash from the same operator) are safely skipped.
     </p>
@@ -114,6 +114,7 @@ ul.errors{margin:8px 0 0 18px;padding:0;font-size:12px;}
 </div>
 
 <script>
+const csrfToken = <?= json_encode(generateCsrfToken(), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
 const drop = document.getElementById('drop');
 const fileInput = document.getElementById('file');
 const pick = document.getElementById('pick');
@@ -126,37 +127,92 @@ fileInput.addEventListener('change', ()=>{ if (fileInput.files[0]) upload(fileIn
 ['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('dragover');}));
 drop.addEventListener('drop',e=>{const f=e.dataTransfer.files[0];if(f)upload(f);});
 
+let selectedZip = null;
+let requestInFlight = false;
+
 async function upload(file) {
   if (!file.name.toLowerCase().endsWith('.zip')) {
     result.className='result err'; result.textContent='Please choose a .zip file.'; return;
   }
+  selectedZip = file;
   result.className='result'; result.textContent='';
+  sendZip(file, 'preview', (j, status, responseText) => {
+    if (j && j.status === 'preview') {
+      const blocked = (j.items || []).filter(item => item.status !== 'ready');
+      let html = '<strong>Preview: '+j.ready+' of '+j.total+' photos are valid.</strong>';
+      if (j.sig_warning) html += '<div class="sig-warn"><i class="fa-solid fa-triangle-exclamation"></i> ' + escapeHtml(j.sig_warning) + '</div>';
+      if (blocked.length) {
+        html += '<ul class="errors">' + blocked.map(item =>
+          '<li>Photo '+escapeHtml(item.seq)+
+          (item.code ? ' ('+escapeHtml(item.code)+')' : '')+
+          ': '+escapeHtml(item.reason || 'Not ready')+'</li>').join('') + '</ul>';
+      }
+      if (j.can_commit) {
+        html += '<p class="note">Review the count and signature warning before committing. Import changes cannot be undone.</p>' +
+          '<button class="btn btn-primary" type="button" onclick="commitZip()"><i class="fa-solid fa-check"></i> Confirm and import</button>';
+      } else {
+        html += '<p class="note">Fix the blocked entries and export the bundle again. Nothing has been imported.</p>';
+      }
+      result.className = j.can_commit ? 'result ok' : 'result err';
+      result.innerHTML = html;
+      return;
+    }
+    selectedZip = null;
+    result.className='result err';
+    result.textContent='Preview failed: '+((j && j.message) || responseText.slice(0,300) || 'unknown error');
+  });
+}
+
+function commitZip() {
+  if (!selectedZip) {
+    result.className='result err';
+    result.textContent='Choose and preview a ZIP before importing.';
+    return;
+  }
+  sendZip(selectedZip, 'commit', (j, status, responseText) => {
+    if (j && j.status === 'success') {
+      let html = '<strong><i class="fa-solid fa-circle-check"></i> Import complete</strong> — '
+        + j.committed + ' accepted, ' + j.conflicts + ' flagged for review, '
+        + j.replays + ' duplicates skipped, ' + j.failures + ' failed.';
+      if (j.sig_warning) html += '<div class="sig-warn"><i class="fa-solid fa-triangle-exclamation"></i> ' + escapeHtml(j.sig_warning) + '</div>';
+      if (j.errors && j.errors.length) html += '<ul class="errors">' + j.errors.map(e=>'<li>'+escapeHtml(e)+'</li>').join('') + '</ul>';
+      result.className='result ok'; result.innerHTML=html;
+      selectedZip = null;
+      fileInput.value = '';
+      loadRecent();
+      return;
+    }
+    result.className='result err';
+    result.textContent='Import failed: '+((j && j.message) || responseText.slice(0,300) || 'unknown error')+
+      (status === 409 ? ' Please preview the ZIP again.' : '');
+  });
+}
+
+function sendZip(file, action, onResult) {
+  if (requestInFlight) return;
+  requestInFlight = true;
   prog.style.display='block'; bar.style.width='5%';
   const fd = new FormData(); fd.append('zip', file);
+  fd.append('csrf_token', csrfToken);
   const xhr = new XMLHttpRequest();
-  xhr.open('POST', '/admin/api_photo_zip_import.php?action=upload');
+  xhr.open('POST', '/admin/api_photo_zip_import.php?action='+encodeURIComponent(action));
   xhr.upload.onprogress = e=>{ if(e.lengthComputable) bar.style.width=(90*e.loaded/e.total + 5)+'%'; };
   xhr.onload = ()=>{
     bar.style.width='100%';
     setTimeout(()=>prog.style.display='none',400);
+    requestInFlight = false;
     try {
       const j = JSON.parse(xhr.responseText);
-      if (j.status === 'success') {
-        let html = '<strong><i class="fa-solid fa-circle-check"></i> Import complete</strong> — '
-          + j.committed + ' accepted, ' + j.conflicts + ' flagged for review, '
-          + j.replays + ' duplicates skipped, ' + j.failures + ' failed.';
-        if (j.sig_warning) html += '<div class="sig-warn"><i class="fa-solid fa-triangle-exclamation"></i> ' + escapeHtml(j.sig_warning) + '</div>';
-        if (j.errors && j.errors.length) html += '<ul class="errors">' + j.errors.map(e=>'<li>'+escapeHtml(e)+'</li>').join('') + '</ul>';
-        result.className='result ok'; result.innerHTML=html;
-        loadRecent();
-      } else {
-        result.className='result err'; result.textContent='Import failed: '+(j.message||'unknown error');
-      }
+      onResult(j, xhr.status, xhr.responseText);
     } catch(e) {
-      result.className='result err'; result.textContent='Unexpected response: '+xhr.responseText.slice(0,500);
+      onResult(null, xhr.status, xhr.responseText);
     }
   };
-  xhr.onerror = ()=>{ result.className='result err'; result.textContent='Network error.'; prog.style.display='none'; };
+  xhr.onerror = ()=>{
+    requestInFlight = false;
+    result.className='result err'; result.textContent='Network error.';
+    prog.style.display='none';
+  };
   xhr.send(fd);
 }
 

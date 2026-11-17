@@ -4,6 +4,7 @@ import '../../services/api_service.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/local_db.dart';
 import '../../services/photo_outbox_models.dart';
+import '../../utils/config.dart';
 import '../../utils/ethiopian_calendar.dart';
 import '../../utils/theme.dart';
 import '../../utils/transitions.dart';
@@ -29,6 +30,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   bool _fromCache = false; // current view came from the local cache
   bool _isOffline = false; // OS radio down / network error
   String? _error;
+  bool get _photoOnly => UserRoles.canManageMemberPhotos(_api.userRole);
+  bool get _canUploadPhotos => UserRoles.canUploadMemberPhotos(_api.userRole);
 
   // Attendance alerting Phase 2: per-department streak / month / year.
   // Loaded independently; a 403 (role outside the warning readers) or
@@ -43,12 +46,16 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   }
 
   Future<void> _loadRisk() async {
+    if (_photoOnly) return;
     if (!ConnectivityService().hasLink) return;
     final res = await _api.getMemberAttendanceRisk(widget.memberId);
     if (!mounted) return;
-    if (res.success && res.data is Map && (res.data as Map)['available'] == true &&
+    if (res.success &&
+        res.data is Map &&
+        (res.data as Map)['available'] == true &&
         (res.data as Map)['risk'] is Map) {
-      setState(() => _risk = Map<String, dynamic>.from((res.data as Map)['risk'] as Map));
+      setState(() =>
+          _risk = Map<String, dynamic>.from((res.data as Map)['risk'] as Map));
     }
   }
 
@@ -71,7 +78,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           Row(children: [
             const Expanded(
                 child: Text('Attendance risk & warnings',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600))),
+                    style:
+                        TextStyle(fontSize: 14, fontWeight: FontWeight.w600))),
             TextButton(
               style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
               onPressed: () => Navigator.of(context).push(
@@ -100,7 +108,10 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     setState(() => _error = null);
 
     // ── 1. LOCAL READ (instant; offline-capable) ───────────────────
-    final cached = await _db.getCachedMemberById(widget.memberId);
+    final cachedRaw = await _db.getCachedMemberById(widget.memberId);
+    final cached = cachedRaw == null
+        ? null
+        : (_photoOnly ? _photoMemberProjection(cachedRaw) : cachedRaw);
     if (!mounted) return;
     if (cached != null) {
       setState(() {
@@ -133,13 +144,16 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     if (!mounted) return;
     setState(() => _refreshing = false);
     if (res.success && res.data != null) {
+      final member = _photoOnly
+          ? _photoMemberProjection(res.data!)
+          : Map<String, dynamic>.from(res.data!);
       // Upsert the full detail response — the cached row keeps the
       // richest projection this role is allowed to see (merge/upsert
       // semantics unchanged; no deletion/eviction work here).
-      await _db.cacheMembers([res.data]);
+      await _db.cacheMembers([member]);
       if (!mounted) return;
       setState(() {
-        _member = res.data;
+        _member = member;
         _fromCache = false;
         _loading = false;
         _error = null;
@@ -156,6 +170,21 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     }
     // else: fetch failed but a cached row is on screen — keep it and
     // keep the cached banner up (stale, honestly labeled).
+  }
+
+  Map<String, dynamic> _photoMemberProjection(Map<String, dynamic> member) {
+    const allowed = {
+      'id',
+      'member_code',
+      'student_name',
+      'father_name',
+      'grandfather_name',
+      'photo_url',
+      'local_updated_at',
+    };
+    return Map<String, dynamic>.fromEntries(
+      member.entries.where((entry) => allowed.contains(entry.key)),
+    );
   }
 
   /// '… · updated 14:32' — from the cached row's local stamp.
@@ -199,7 +228,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     await Navigator.of(context).push(
       SmoothPageRoute(
         page: const PhotoBatchCaptureScreen(),
-        settings: RouteSettings(arguments: {'startFromMemberId': widget.memberId}),
+        settings:
+            RouteSettings(arguments: {'startFromMemberId': widget.memberId}),
       ),
     );
   }
@@ -216,23 +246,26 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(_member?['student_name'] ?? 'Member Details'),
-        actions: [
-          IconButton(
-            tooltip: 'Take photo',
-            icon: const Icon(Icons.camera_alt_outlined),
-            onPressed: _member == null ? null : _openSingleCapture,
-          ),
-          IconButton(
-            tooltip: 'Batch capture roster',
-            icon: const Icon(Icons.photo_library_outlined),
-            onPressed: _member == null ? null : _openBatchCapture,
-          ),
-        ],
+        actions: _canUploadPhotos
+            ? [
+                IconButton(
+                  tooltip: 'Take photo',
+                  icon: const Icon(Icons.camera_alt_outlined),
+                  onPressed: _member == null ? null : _openSingleCapture,
+                ),
+                IconButton(
+                  tooltip: 'Batch capture roster',
+                  icon: const Icon(Icons.photo_library_outlined),
+                  onPressed: _member == null ? null : _openBatchCapture,
+                ),
+              ]
+            : const [],
       ),
       body: _loading
           ? const MemberDetailSkeleton()
           : _error != null
-              ? Center(child: Column(
+              ? Center(
+                  child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(_isOffline ? Icons.cloud_off : Icons.error_outline,
@@ -245,7 +278,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                             color:
                                 _isOffline ? AppTheme.warning : AppTheme.danger,
                             fontSize: 14)),
-                    TextButton(onPressed: _loadMember, child: const Text('Retry')),
+                    TextButton(
+                        onPressed: _loadMember, child: const Text('Retry')),
                   ],
                 ))
               : RefreshIndicator(
@@ -258,58 +292,83 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                       if (_fromCache)
                         Container(
                           margin: const EdgeInsets.only(bottom: 12),
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 10),
                           decoration: BoxDecoration(
                             color: AppTheme.warning.withOpacity(0.12),
                             borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: AppTheme.warning.withOpacity(0.25)),
+                            border: Border.all(
+                                color: AppTheme.warning.withOpacity(0.25)),
                           ),
                           child: Row(children: [
-                            Icon(Icons.cloud_off, size: 16, color: AppTheme.warning),
+                            Icon(Icons.cloud_off,
+                                size: 16, color: AppTheme.warning),
                             const SizedBox(width: 8),
-                            Expanded(child: Text(_cachedBannerText,
-                                style: TextStyle(fontSize: 11, color: AppTheme.warning, fontWeight: FontWeight.w500))),
+                            Expanded(
+                                child: Text(_cachedBannerText,
+                                    style: TextStyle(
+                                        fontSize: 11,
+                                        color: AppTheme.warning,
+                                        fontWeight: FontWeight.w500))),
                           ]),
                         ),
                       _buildHeader(),
                       const SizedBox(height: 16),
-                      _buildSection('Personal Information', [
-                        _field('Full Name (Amharic)', _member?['full_name_am']),
-                        _field('Student Name', _member?['student_name']),
-                        _field('Father Name', _member?['father_name']),
-                        _field('Grandfather', _member?['grandfather_name']),
-                        _field('Gender', _member?['gender']),
-                        _field('Date of Birth', _formatEcDate(_member?['date_of_birth'])),
-                        _field('Age Group', _member?['age_group']),
-                        _field('Member Code', _member?['member_code']),
-                        _field('Member Type', _member?['member_type']),
-                        _field('Registration', _member?['registration_type']),
-                      ]),
-                      const SizedBox(height: 12),
-                      _buildSection('Contact', [
-                        _field('Phone', _member?['phone_number']),
-                        _field('Alt Phone', _member?['alt_phone_number']),
-                        _field('Guardian', _member?['guardian_name']),
-                        _field('Guardian Phone', _member?['guardian_phone1']),
-                      ]),
-                      const SizedBox(height: 12),
-                      _buildSection('Education', [
-                        _field('Section', _member?['current_section']),
-                        _field('Education Level', _member?['education_level']),
-                        if (_member?['current_class'] != null) ...[
-                          _field('Class', _member?['current_class']?['class_name']),
-                          _field('Enrolled At', _formatEcDate(_member?['current_class']?['enrolled_at'])),
-                        ],
-                      ]),
-                      const SizedBox(height: 12),
-                      _riskSection(),
-                      if (_risk != null) const SizedBox(height: 12),
-                      _buildSection('Address', [
-                        _field('City', _member?['city']),
-                        _field('Sub City', _member?['sub_city']),
-                        _field('Woreda', _member?['woreda']),
-                        _field('Address', _member?['address']),
-                      ]),
+                      if (_photoOnly)
+                        _buildSection('Photo', [
+                          _field(
+                            'Photo',
+                            _member?['photo_url'] == null
+                                ? 'No photo uploaded'
+                                : 'Photo on file',
+                          ),
+                        ])
+                      else ...[
+                        _buildSection('Personal Information', [
+                          _field(
+                              'Full Name (Amharic)', _member?['full_name_am']),
+                          _field('Student Name', _member?['student_name']),
+                          _field('Father Name', _member?['father_name']),
+                          _field('Grandfather', _member?['grandfather_name']),
+                          _field('Gender', _member?['gender']),
+                          _field('Date of Birth',
+                              _formatEcDate(_member?['date_of_birth'])),
+                          _field('Age Group', _member?['age_group']),
+                          _field('Member Code', _member?['member_code']),
+                          _field('Member Type', _member?['member_type']),
+                          _field('Registration', _member?['registration_type']),
+                        ]),
+                        const SizedBox(height: 12),
+                        _buildSection('Contact', [
+                          _field('Phone', _member?['phone_number']),
+                          _field('Alt Phone', _member?['alt_phone_number']),
+                          _field('Guardian', _member?['guardian_name']),
+                          _field('Guardian Phone', _member?['guardian_phone1']),
+                        ]),
+                        const SizedBox(height: 12),
+                        _buildSection('Education', [
+                          _field('Section', _member?['current_section']),
+                          _field(
+                              'Education Level', _member?['education_level']),
+                          if (_member?['current_class'] != null) ...[
+                            _field('Class',
+                                _member?['current_class']?['class_name']),
+                            _field(
+                                'Enrolled At',
+                                _formatEcDate(
+                                    _member?['current_class']?['enrolled_at'])),
+                          ],
+                        ]),
+                        const SizedBox(height: 12),
+                        _riskSection(),
+                        if (_risk != null) const SizedBox(height: 12),
+                        _buildSection('Address', [
+                          _field('City', _member?['city']),
+                          _field('Sub City', _member?['sub_city']),
+                          _field('Woreda', _member?['woreda']),
+                          _field('Address', _member?['address']),
+                        ]),
+                      ],
                       const SizedBox(height: 20),
                     ],
                   ),
@@ -319,8 +378,11 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
 
   Widget _buildHeader() {
     final status = _member?['status'] ?? 'active';
-    final statusColor = status == 'active' ? AppTheme.success
-        : status == 'warning' ? AppTheme.warning : AppTheme.danger;
+    final statusColor = status == 'active'
+        ? AppTheme.success
+        : status == 'warning'
+            ? AppTheme.warning
+            : AppTheme.danger;
 
     return Card(
       child: Padding(
@@ -332,7 +394,10 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               backgroundColor: AppTheme.primary.withOpacity(0.15),
               child: Text(
                 (_member?['student_name'] ?? '?')[0].toUpperCase(),
-                style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w700, fontSize: 28),
+                style: const TextStyle(
+                    color: AppTheme.primary,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 28),
               ),
             ),
             const SizedBox(height: 12),
@@ -341,31 +406,44 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
               textAlign: TextAlign.center,
             ),
-            if (_member?['full_name_am'] != null) ...[
+            if (!_photoOnly && _member?['full_name_am'] != null) ...[
               const SizedBox(height: 4),
-              Text(_member!['full_name_am'], style: TextStyle(fontSize: 14, color: AppTheme.textSecondary)),
+              Text(_member!['full_name_am'],
+                  style:
+                      TextStyle(fontSize: 14, color: AppTheme.textSecondary)),
             ],
             const SizedBox(height: 8),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: statusColor.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(8),
+                if (!_photoOnly)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: statusColor.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(status,
+                        style: TextStyle(
+                            color: statusColor,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12)),
                   ),
-                  child: Text(status, style: TextStyle(color: statusColor, fontWeight: FontWeight.w600, fontSize: 12)),
-                ),
                 if (_member?['member_code'] != null) ...[
                   const SizedBox(width: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
                       color: AppTheme.info.withOpacity(0.15),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Text(_member!['member_code'], style: TextStyle(color: AppTheme.info, fontWeight: FontWeight.w600, fontSize: 12)),
+                    child: Text(_member!['member_code'],
+                        style: TextStyle(
+                            color: AppTheme.info,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12)),
                   ),
                 ],
               ],
@@ -387,7 +465,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+            Text(title,
+                style:
+                    const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
             const SizedBox(height: 10),
             ...children,
           ],
@@ -407,7 +487,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   }
 
   Widget _field(String label, dynamic value) {
-    if (value == null || value.toString().trim().isEmpty) return const SizedBox.shrink();
+    if (value == null || value.toString().trim().isEmpty)
+      return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
@@ -415,10 +496,13 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
         children: [
           SizedBox(
             width: 120,
-            child: Text(label, style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+            child: Text(label,
+                style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
           ),
           Expanded(
-            child: Text(value.toString(), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+            child: Text(value.toString(),
+                style:
+                    const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
           ),
         ],
       ),

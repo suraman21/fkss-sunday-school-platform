@@ -18,10 +18,20 @@ if (!function_exists('chk')) {
     function chk($val) { return (!empty($val) && (int)$val === 1) ? 'checked' : ''; }
 }
 if (!function_exists('fixPath')) {
-    function fixPath($path) {
+    function fixPath($path, $memberId = 0) {
         if (empty($path)) return '';
         if (strpos($path, 'http') === 0) return $path;
         $path = ltrim($path, '/');
+        if (strpos($path, 'admin/') === 0) {
+            $path = substr($path, 6);
+        }
+        if (
+            (strpos($path, 'private://members/photos/') === 0
+                || preg_match('#^uploads/members/photos/#', $path))
+            && (int)$memberId > 0
+        ) {
+            return '/admin/photo_file.php?member_id=' . (int)$memberId;
+        }
         if (strpos($path, 'uploads/') === 0) return '/admin/' . $path;
         if (strpos($path, 'admin/') === 0) return '/' . $path;
         return '/' . $path;
@@ -893,9 +903,9 @@ $mmRoles = [
     <div class="mm-hero">
         <div class="mm-hero-row">
             <div class="mm-photo-stack">
-                <div class="mm-photo" title="Student photo" onclick="openDocFullscreen('<?= fixPath($m['student_photo_path']) ?>')">
+                <div class="mm-photo" title="Student photo" onclick="openDocFullscreen('<?= fixPath($m['student_photo_path'], $m['id']) ?>')">
                     <?php if (!empty($m['student_photo_path'])): ?>
-                        <img src="<?= fixPath($m['student_photo_path']) ?>" alt="Student">
+                        <img src="<?= fixPath($m['student_photo_path'], $m['id']) ?>" alt="Student">
                     <?php else: ?>
                         <i class="fas fa-user"></i>
                     <?php endif; ?>
@@ -1226,9 +1236,9 @@ $mmRoles = [
                         <div class="mm-card-body">
                             <div class="mm-photos">
                                 <div class="mm-photo-wrap">
-                                    <div class="ph" onclick="openDocFullscreen('<?= fixPath($m['student_photo_path']) ?>')">
+                                    <div class="ph" onclick="openDocFullscreen('<?= fixPath($m['student_photo_path'], $m['id']) ?>')">
                                         <?php if (!empty($m['student_photo_path'])): ?>
-                                            <img src="<?= fixPath($m['student_photo_path']) ?>" alt="Student">
+                                            <img src="<?= fixPath($m['student_photo_path'], $m['id']) ?>" alt="Student">
                                             <span class="zoom"><i class="fas fa-magnifying-glass-plus"></i></span>
                                         <?php else: ?>
                                             <div class="ph-empty"><i class="fas fa-user"></i><span>No Photo</span></div>
@@ -1570,7 +1580,7 @@ $mmRoles = [
                                 <div class="mm-photos">
                                     <div class="mm-photo-wrap">
                                         <div class="ph" style="cursor:default">
-                                            <?php if (!empty($m['student_photo_path'])): ?><img src="<?= fixPath($m['student_photo_path']) ?>" alt="Student">
+                                            <?php if (!empty($m['student_photo_path'])): ?><img src="<?= fixPath($m['student_photo_path'], $m['id']) ?>" alt="Student">
                                             <?php else: ?><div class="ph-empty"><i class="fas fa-user"></i><span>No Photo</span></div><?php endif; ?>
                                         </div>
                                         <div class="lbl">Student</div>

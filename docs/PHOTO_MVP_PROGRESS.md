@@ -1,4 +1,8 @@
-# FKSS Offline Photo Capture — Production Status (updated 2026-11-14)
+# FKSS Offline Photo Capture — Production Status
+
+> The entries under “What's shipped to `main`” are historical milestones. The
+> current working-tree hardening below is not deployed; verify the code and
+> rollout gates before treating the photo workflow as production-ready.
 
 > NOT MVP — production-grade. Acceptance: WebP q92 @ 1200×1500 / JPEG fallback, 2 MB cap;
 > sync OFF by default (3-gate opt-in); multi-photographer conflict picker; ZIP airlock with
@@ -58,13 +62,52 @@
 - `admin/uploads/members/photos/` — canonical WebP/JPEG storage
 - `admin/uploads/members/photo_imports/` — audit archive of imported ZIPs (created on demand)
 
-## Remaining (post-P7 polish — none blocking production field use)
+## Current working-tree hardening (not yet released)
+
+- Mobile recognizes `photo_dept` and legacy `photo_importer` as photo-only roles,
+  exposes member photo capture/sync, and fails closed for unknown roles.
+- API member projections, dashboard/class access, photo uploads, and authenticated
+  photo streams enforce role-specific limits.
+- The Photo Department dashboard omits individual gender/age details and scopes
+  import/device history to the signed-in operator.
+- New member photos and ZIP imports use private storage. Legacy web photo views
+  now use the authenticated photo endpoint; Apache denies direct requests to the
+  legacy photos directory via `admin/uploads/members/photos/.htaccess`.
+- ZIP imports use a validated preview/commit flow rather than extracting the
+  whole archive. Review actions and batch attribution have also been corrected.
+- Focused PHP ACL and Flutter role tests pass. The debug APK builds and launches
+  on the connected Android 15 target, but its live API request still receives
+  the old member-list 403 because these working-tree changes have not been
+  deployed. The screen renders despite repeated emulator Impeller/GLES shader
+  errors.
+
+## Rollout blockers
+
+1. **Do not assume legacy files are private.** Existing photos have not been
+   migrated out of the web root. The `.htaccess` rule applies to Apache only;
+   deployments using Nginx or another server must add and verify an equivalent
+   deny rule before release. Plan and verify a controlled legacy-photo migration.
+2. **Database rollout is unverified.** Review and apply the SQL migrations only
+   through the normal deployment process after testing them on the target
+   MySQL/MariaDB version; they have not been run against a database here.
+3. **Run integration acceptance before release.** Verify paired and unpaired ZIP
+   imports, role-scoped mobile browsing/capture, upload retries, private image
+   delivery, and web review against a non-production database and a real device.
+    The deployed API must first include the photo-role member-list ACL and
+    projection changes; do not validate this by sending test data to production.
+
+## Remaining polish
 
 1. **POST_NOTIFICATIONS runtime prompt on Android 13+** — foreground-service notifications show without the permission on Android 12-; on Android 13+ users see a generic "app running" notification until they grant POST_NOTIFICATIONS. Prompt on first sync start if we get reports of missing notifications.
 2. **Notification-tap opens Sync Panel** — tapping the notification currently brings the task to foreground; deep-linking straight to the Sync Panel requires the same route plumbing used by the app's notifications system. Nice-to-have.
-3. **Local Flutter test/analyze pass** — run `flutter pub get && flutter analyze && flutter test test/photo_flaky_network_soak_test.dart` on a machine with the Flutter SDK (sandbox has no SDK).
 
 ## Test status
 
-- **PHP well-formedness (security suite):** 8 passed / 384 subtests (green after every commit).
-- **Dart/Flutter:** SDK not present in sandbox — run `flutter pub get && flutter analyze && flutter test` locally / CI. Soak tests in `test/photo_flaky_network_soak_test.dart` cover idempotency, backoff, chaos drain, restart double-delivery, orphan reconciliation, and the 2 MB cap.
+- **PHP:** All changed PHP files pass `php -l`; the Photo Department API ACL regression
+  test passes. No database-backed integration test was run.
+- **Flutter:** The focused role, outbox, and network-soak tests pass (17 tests);
+  analysis of the photo sync services/config/tests reports no issues. Analysis of
+  the changed UI files reports informational style/deprecation lints only.
+- **Android:** Debug build and install succeeded; a screenshot confirmed the
+  member/photo UI renders. Production API behavior and Android emulator renderer
+  compatibility still need verification.

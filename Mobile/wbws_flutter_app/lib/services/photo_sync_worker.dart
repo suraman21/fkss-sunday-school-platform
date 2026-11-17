@@ -102,7 +102,9 @@ class PhotoSyncWorker extends ChangeNotifier {
   Future<void> _stopForegroundService() async {
     if (!_fgServiceStarted) return;
     _fgServiceStarted = false;
-    try { await _foregroundChannel.invokeMethod('stop'); } catch (_) {}
+    try {
+      await _foregroundChannel.invokeMethod('stop');
+    } catch (_) {}
   }
 
   Stream<PhotoSyncEvent> get progressStream => _eventController.stream;
@@ -262,7 +264,8 @@ class PhotoSyncWorker extends ChangeNotifier {
         _emit(PhotoSyncEvent(PhotoSyncEventType.completed,
             'Done. $_done synced, $_conflicts waiting for admin review.'));
       } else {
-        _emit(PhotoSyncEvent(PhotoSyncEventType.completedWithErrors,
+        _emit(PhotoSyncEvent(
+            PhotoSyncEventType.completedWithErrors,
             'Finished with issues. $_done synced, $_conflicts pending review, '
             '$_failed failed (tap to retry).'));
       }
@@ -282,7 +285,8 @@ class PhotoSyncWorker extends ChangeNotifier {
       final policy = await _outbox.readPolicy();
       final connectivity = ConnectivityService();
       if (!connectivity.hasLink) {
-        _emit(PhotoSyncEvent(PhotoSyncEventType.waiting, 'Waiting for network…'));
+        _emit(
+            PhotoSyncEvent(PhotoSyncEventType.waiting, 'Waiting for network…'));
         await _waitFor(const Duration(seconds: 5));
         continue;
       }
@@ -303,17 +307,25 @@ class PhotoSyncWorker extends ChangeNotifier {
         }
       }
       if (claimed == null) {
-        // No work available. If any other slot is in-flight, wait; otherwise
-        // we're done.
-        if (_inFlight == 0) break;
-        await Future<void>.delayed(const Duration(milliseconds: 300));
-        continue;
+        // No work is due. Wait for in-flight uploads or scheduled retries
+        // before ending this explicit sync run.
+        if (_inFlight > 0) {
+          await Future<void>.delayed(const Duration(milliseconds: 300));
+          continue;
+        }
+        final counters = await _outbox.counters();
+        if (counters.queued + counters.retryWait > 0) {
+          await Future<void>.delayed(const Duration(seconds: 1));
+          continue;
+        }
+        break;
       }
 
       _inFlight++;
       _currentMemberLabel = claimed.memberCode ?? '#${claimed.memberId}';
       notifyListeners();
-      _emit(PhotoSyncEvent(PhotoSyncEventType.uploading,
+      _emit(PhotoSyncEvent(
+          PhotoSyncEventType.uploading,
           'Uploading ${claimed.memberCode ?? claimed.memberId} '
           '(${claimed.humanSize})…',
           entry: claimed));
@@ -366,7 +378,9 @@ class PhotoSyncWorker extends ChangeNotifier {
         if (conflict) _conflicts++;
         _bytesUploaded += entry.byteSize;
         _emit(PhotoSyncEvent(
-          conflict ? PhotoSyncEventType.uploadedConflict : PhotoSyncEventType.uploaded,
+          conflict
+              ? PhotoSyncEventType.uploadedConflict
+              : PhotoSyncEventType.uploaded,
           conflict
               ? '${entry.memberCode ?? entry.memberId} uploaded (admin review needed)'
               : replayed
@@ -381,10 +395,10 @@ class PhotoSyncWorker extends ChangeNotifier {
       // Classify response: retryable vs needsAttention.
       final code = response.statusCode;
       final errMsg = response.message ?? 'Upload failed';
-      final errCode = (response.data is Map &&
-              (response.data as Map)['code'] != null)
-          ? '${(response.data as Map)['code']}'
-          : null;
+      final errCode =
+          (response.data is Map && (response.data as Map)['code'] != null)
+              ? '${(response.data as Map)['code']}'
+              : null;
 
       if (_isRetryable(code, errCode)) {
         final nextAt = nextOutboxAttemptAt(
@@ -435,22 +449,35 @@ class PhotoSyncWorker extends ChangeNotifier {
   }
 
   bool _isRetryable(int code, String? errCode) {
-    if (code == 0 || code == 408 || code == 425 || code == 429) return true;
-    if (code >= 500 && code <= 599) return true;
+    if (code == 0 || code == 408 || code == 425 || code == 429) {
+      return true;
+    }
+    if (code >= 500 && code <= 599) {
+      return true;
+    }
     // 401 after refresh-failure is treated as pauseForAuth in higher layer;
     // here we mark retry so a later app foreground with a fresh token can
     // continue.
-    if (code == 401) return true;
+    if (code == 401) {
+      return true;
+    }
     // Definitive non-retryable codes.
-    if (code == 400 || code == 403 || code == 404 || code == 410 ||
-        code == 413 || code == 415 || code == 422) return false;
+    if (code == 400 ||
+        code == 403 ||
+        code == 404 ||
+        code == 410 ||
+        code == 413 ||
+        code == 415 ||
+        code == 422) {
+      return false;
+    }
     return false;
   }
 
   Future<void> _waitFor(Duration d) async {
     final end = DateTime.now().add(d);
     while (DateTime.now().isBefore(end)) {
-      if (_cancelled || !_paused && ConnectivityService().hasLink) return;
+      if (_cancelled) return;
       await Future<void>.delayed(const Duration(milliseconds: 500));
     }
   }

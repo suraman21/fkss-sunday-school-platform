@@ -17,22 +17,9 @@ import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart' as sqflite;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-import 'package:fkss_app/services/local_db.dart';
 import 'package:fkss_app/services/local_schema_v43.dart';
 import 'package:fkss_app/services/photo_outbox_models.dart';
 import 'package:fkss_app/services/photo_outbox_service.dart';
-
-/// Writes a small JPEG-ish byte payload to disk and returns its path. The
-/// bytes don't need to be a real JPEG because P1's enqueue method only
-/// validates size + non-empty + hashes the bytes (full decode-verify lands
-/// in P2 capture service).
-Future<String> _writeFakePhotoBytes(Directory dir, String name, int kb) async {
-  final f = File(p.join(dir.path, name));
-  // Non-trivial byte pattern so sha256 is unique per file.
-  final bytes = List<int>.generate(kb * 1024, (i) => (i % 251) & 0xFF);
-  await f.writeAsBytes(bytes);
-  return f.path;
-}
 
 void main() {
   late Directory tempDir;
@@ -45,16 +32,9 @@ void main() {
   setUp(() async {
     tempDir = await Directory.systemTemp.createTemp('photo-p1-');
     await databaseFactoryFfi.setDatabasesPath(tempDir.path);
-    PhotoOutboxService.instance = PhotoOutboxService();
-    // Reset the LocalDb singleton's initialization state by creating a
-    // fresh instance pointing at our temp path. LocalDb uses a singleton
-    // pattern; for test isolation we construct a fresh path per test.
   });
 
   tearDown(() async {
-    try {
-      await (await LocalDb.instance.database).close();
-    } catch (_) {}
     try {
       await tempDir.delete(recursive: true);
     } catch (_) {}
@@ -206,8 +186,14 @@ void main() {
       expect(PhotoOutboxCounters.zero.unsynced, 0);
       expect(PhotoOutboxCounters.zero.terminalIssues, 0);
       const c = PhotoOutboxCounters(
-        queued: 3, uploading: 1, retryWait: 2, done: 10,
-        conflictPending: 1, failed: 1, discarded: 5, totalBytesQueued: 7000,
+        queued: 3,
+        uploading: 1,
+        retryWait: 2,
+        done: 10,
+        conflictPending: 1,
+        failed: 1,
+        discarded: 5,
+        totalBytesQueued: 7000,
       );
       expect(c.unsynced, 3 + 1 + 2 + 1);
       expect(c.terminalIssues, 1);

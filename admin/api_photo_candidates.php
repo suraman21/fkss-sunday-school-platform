@@ -9,7 +9,7 @@
  *                                transactional and update the denormalized
  *                                members.student_photo_path.
  *
- * Access: super_admin, school_admin, info_dept, hr_dept, photo_importer.
+ * Access: super_admin, school_admin, info_dept, hr_dept, photo_dept.
  */
 
 require_once __DIR__ . '/../config.php';
@@ -22,9 +22,11 @@ if (session_status() === PHP_SESSION_NONE) @session_start();
 header('Content-Type: application/json; charset=utf-8');
 
 $action = (string)($_REQUEST['action'] ?? 'list-pending');
+$role = (string)($_SESSION['admin_role'] ?? '');
+$photoOnly = in_array($role, ['photo_dept', 'photo_importer'], true);
 $canDecide = in_array(
-    (string)($_SESSION['admin_role'] ?? ''),
-    ['super_admin', 'school_admin', 'info_dept', 'hr_dept', 'photo_importer'],
+    $role,
+    ['super_admin', 'school_admin', 'info_dept', 'hr_dept', 'photo_dept', 'photo_importer'],
     true
 );
 if (!$canDecide) {
@@ -34,12 +36,19 @@ if (!$canDecide) {
 }
 
 if ($action === 'list-pending') {
-    $list = pendingCandidates($conn);
+    if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+        http_response_code(405);
+        header('Allow: GET');
+        echo json_encode(['status' => 'error', 'message' => 'Method not allowed.']);
+        exit;
+    }
+    $list = pendingCandidates($conn, $photoOnly);
     echo json_encode(['status' => 'success', 'items' => $list]);
     exit;
 }
 
 if ($action === 'decide' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    requireCsrfForPost();
     $body = json_decode(file_get_contents('php://input'), true);
     if (!is_array($body)) {
         http_response_code(400);
@@ -54,9 +63,9 @@ if ($action === 'decide' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
     $adminId = (int)($_SESSION['admin_id'] ?? 0);
-    $result = decideCandidate($conn, $candidateId, $decision, $adminId);
-    if (!$result['ok']) {
-        http_response_code(400);
+    $result = decideCandidate($conn, $candidateId, $decision, $adminId, $photoOnly);
+    if (($result['status'] ?? '') === 'error') {
+        http_response_code(($result['code'] ?? '') === 'forbidden' ? 403 : 400);
     }
     echo json_encode($result);
     exit;
@@ -67,7 +76,8 @@ echo json_encode(['status' => 'error', 'message' => 'Unknown action.']);
 exit;
 
 // ------------------------------------------------------------------
-function pendingCandidates(mysqli $conn): array {
+function pendingCandidates(mysqli $conn, bool $photoOnly): array {
+    $fieldFilter = $photoOnly ? " AND c.field = 'student_photo'" : '';
     $sql = "SELECT c.id,
                    c.member_id,
                    c.field,
@@ -78,8 +88,8 @@ function pendingCandidates(mysqli $conn): array {
                    c.height,
                    c.taken_at,
                    c.operator_admin_id,
-                   a.username AS operator_username,
-                   a.full_name AS operator_name,
+                   u.username AS operator_username,
+                   u.full_name AS operator_name,
                    c.device_id,
                    m.student_name,
                    m.member_code,
@@ -90,11 +100,11 @@ function pendingCandidates(mysqli $conn): array {
                    cur.operator_admin_id AS current_operator_id
               FROM member_photo_candidates c
               JOIN members m ON m.id = c.member_id
-              LEFT JOIN admins a ON a.id = c.operator_admin_id
+              LEFT JOIN users u ON u.id = c.operator_admin_id
               LEFT JOIN member_photo_candidates cur
                 ON cur.member_id = c.member_id AND cur.field = c.field
                AND cur.is_current = 1 AND cur.archived = 0
-             WHERE c.decision_pending = 1 AND c.archived = 0
+             WHERE c.decision_pending = 1 AND c.archived = 0{$fieldFilter}
              ORDER BY c.created_at DESC
              LIMIT 200";
     $res = $conn->query($sql);
@@ -107,7 +117,7 @@ function pendingCandidates(mysqli $conn): array {
             'member_code' => $row['member_code'] ?? '',
             'father_name' => $row['father_name'] ?? '',
             'field' => $row['field'],
-            'path' => '/' . ltrim((string)$row['stored_path'], '/'),
+            'path' => '/admin/photo_file.php?candidate_id=' . (int)$row['id'],
             'mime' => $row['mime'],
             'byte_size' => (int)$row['byte_size'],
             'width' => (int)$row['width'],
@@ -115,7 +125,9 @@ function pendingCandidates(mysqli $conn): array {
             'taken_at' => $row['taken_at'],
             'operator_admin_id' => (int)$row['operator_admin_id'],
             'operator_name' => $row['operator_name'] ?: $row['operator_username'] ?: ('Admin #' . (int)$row['operator_admin_id']),
-            'current_path' => $row['current_path'] ? '/' . ltrim((string)$row['current_path'], '/') : null,
+            'current_path' => !empty($row['current_id'])
+                ? '/admin/photo_file.php?candidate_id=' . (int)$row['current_id']
+                : null,
             'current_taken_at' => $row['current_taken_at'],
             'has_current' => !empty($row['current_id']),
         ];
@@ -123,13 +135,47 @@ function pendingCandidates(mysqli $conn): array {
     return $items;
 }
 
-function decideCandidate(mysqli $conn, int $candidateId, string $decision, int $adminId): array {
+function decideCandidate(mysqli $conn, int $candidateId, string $decision, int $adminId, bool $photoOnly): array {
     $conn->begin_transaction();
     try {
+        $lookup = $conn->prepare(
+            'SELECT member_id FROM member_photo_candidates
+              WHERE id = ? AND archived = 0 AND decision_pending = 1 LIMIT 1'
+        );
+        if (!$lookup) {
+            throw new RuntimeException('candidate_lookup_prepare_failed');
+        }
+        $lookup->bind_param('i', $candidateId);
+        $lookup->execute();
+        $candidateRef = $lookup->get_result()->fetch_assoc();
+        $lookup->close();
+        if (!$candidateRef) {
+            $conn->rollback();
+            return ['status' => 'error', 'message' => 'Candidate not found.'];
+        }
+
+        $memberLock = $conn->prepare('SELECT id FROM members WHERE id = ? FOR UPDATE');
+        if (!$memberLock) {
+            throw new RuntimeException('member_lock_prepare_failed');
+        }
+        $memberId = (int)$candidateRef['member_id'];
+        $memberLock->bind_param('i', $memberId);
+        $memberLock->execute();
+        $memberExists = $memberLock->get_result()->fetch_assoc();
+        $memberLock->close();
+        if (!$memberExists) {
+            $conn->rollback();
+            return ['status' => 'error', 'message' => 'Member not found.'];
+        }
+
         $sel = $conn->prepare(
             "SELECT id, member_id, field, stored_path FROM member_photo_candidates
-              WHERE id = ? AND archived = 0 LIMIT 1"
+              WHERE id = ? AND archived = 0 AND decision_pending = 1
+              LIMIT 1 FOR UPDATE"
         );
+        if (!$sel) {
+            throw new RuntimeException('candidate_lock_prepare_failed');
+        }
         $sel->bind_param('i', $candidateId);
         $sel->execute();
         $cand = $sel->get_result()->fetch_assoc();
@@ -137,6 +183,10 @@ function decideCandidate(mysqli $conn, int $candidateId, string $decision, int $
         if (!$cand) {
             $conn->rollback();
             return ['status' => 'error', 'message' => 'Candidate not found.'];
+        }
+        if ($photoOnly && $cand['field'] !== 'student_photo') {
+            $conn->rollback();
+            return ['status' => 'error', 'code' => 'forbidden', 'message' => 'You cannot review guardian photos.'];
         }
         $memberId = (int)$cand['member_id'];
         $field = (string)$cand['field'];
@@ -190,6 +240,7 @@ function decideCandidate(mysqli $conn, int $candidateId, string $decision, int $
         return ['status' => 'success', 'decision' => $decision];
     } catch (Throwable $e) {
         $conn->rollback();
-        return ['status' => 'error', 'message' => 'Could not save decision: ' . $e->getMessage()];
+        error_log('Photo candidate decision failed: ' . $e->getMessage());
+        return ['status' => 'error', 'message' => 'Could not save the photo decision.'];
     }
 }
