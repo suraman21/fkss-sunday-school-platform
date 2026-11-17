@@ -27,6 +27,7 @@ class AppConfig {
   static const String userDataKey = 'fkss_user';
   static const int defaultPageSize = 20;
   static const int maxPageSize = 100;
+
   /// Slow Ethiopian 4G (≈18 KB/s) needs TLS + PHP room. 5s made the app
   /// lie about "no internet". Telegram keeps sockets open; Apple uses 60s.
   /// Screenshot showed ~8 KB/s. TLS + PHP on that radio needs a full minute.
@@ -51,48 +52,103 @@ class UserRoles {
   static const String mezmurTaker = 'mezmur_attendance_taker';
   static const String hrTaker = 'hr_attendance_taker';
   static const String hrDept = 'hr_dept';
+  static const String photoDept = 'photo_dept';
+  static const String photoImporter = 'photo_importer';
 
   static String displayName(String role) {
     switch (role) {
-      case superAdmin: return 'Super Admin';
-      case schoolAdmin: return 'School Admin';
-      case infoDept: return 'Info Department';
-      case eduDept: return 'Education Department';
-      case financeDept: return 'Finance Department';
-      case materialDept: return 'Material Department';
-      case mezmurDept: return 'Mezmur Department';
-      case teacher: return 'Teacher';
-      case attendanceTaker: return 'Attendance Taker';
-      case mezmurTaker: return 'Mezmur Attendance Taker';
-      case hrTaker: return 'HR Attendance Taker';
-      case hrDept: return 'HR Department';
-      default: return role;
+      case superAdmin:
+        return 'Super Admin';
+      case schoolAdmin:
+        return 'School Admin';
+      case infoDept:
+        return 'Info Department';
+      case eduDept:
+        return 'Education Department';
+      case financeDept:
+        return 'Finance Department';
+      case materialDept:
+        return 'Material Department';
+      case mezmurDept:
+        return 'Mezmur Department';
+      case teacher:
+        return 'Teacher';
+      case attendanceTaker:
+        return 'Attendance Taker';
+      case mezmurTaker:
+        return 'Mezmur Attendance Taker';
+      case hrTaker:
+        return 'HR Attendance Taker';
+      case hrDept:
+        return 'HR Department';
+      case photoDept:
+        return 'Photo Department';
+      case photoImporter:
+        return 'Photo Department';
+      default:
+        return role;
     }
   }
 
   static String displayNameAmharic(String role) {
     switch (role) {
-      case superAdmin: return 'ዋና አስተዳዳሪ';
-      case schoolAdmin: return 'የትምህርት ቤት አስተዳዳሪ';
-      case infoDept: return 'የመረጃ ክፍል';
-      case eduDept: return 'የትምህርት ክፍል';
-      case financeDept: return 'የፋይናንስ ክፍል';
-      case materialDept: return 'የቁሳቁስ ክፍል';
-      case mezmurDept: return 'መዝሙር ክፍል';
-      case teacher: return 'መምህር';
-      case attendanceTaker: return 'ቅጥረት ያዥ';
-      case mezmurTaker: return 'የመዝሙር ቅጥረት ያዥ';
-      case hrTaker: return 'የኤችአር ቅጥረት ያዥ';
-      default: return role;
+      case superAdmin:
+        return 'ዋና አስተዳዳሪ';
+      case schoolAdmin:
+        return 'የትምህርት ቤት አስተዳዳሪ';
+      case infoDept:
+        return 'የመረጃ ክፍል';
+      case eduDept:
+        return 'የትምህርት ክፍል';
+      case financeDept:
+        return 'የፋይናንስ ክፍል';
+      case materialDept:
+        return 'የቁሳቁስ ክፍል';
+      case mezmurDept:
+        return 'መዝሙር ክፍል';
+      case teacher:
+        return 'መምህር';
+      case attendanceTaker:
+        return 'ቅጥረት ያዥ';
+      case mezmurTaker:
+        return 'የመዝሙር ቅጥረት ያዥ';
+      case hrTaker:
+        return 'የኤችአር ቅጥረት ያዥ';
+      case photoDept:
+      case photoImporter:
+        return 'የፎቶ ክፍል';
+      default:
+        return role;
     }
   }
 
   static bool canManageMembers(String role) =>
       [superAdmin, schoolAdmin, infoDept].contains(role);
-  static bool canBrowseMembers(String role) =>
-      [superAdmin, schoolAdmin, infoDept, eduDept].contains(role);
-  static bool canTakeAttendance(String role) =>
-      [superAdmin, schoolAdmin, teacher, attendanceTaker, eduDept].contains(role);
+  static bool canBrowseMembers(String role) => [
+        superAdmin,
+        schoolAdmin,
+        infoDept,
+        eduDept,
+        photoDept,
+        photoImporter
+      ].contains(role);
+  static bool canManageMemberPhotos(String role) =>
+      [photoDept, photoImporter].contains(role);
+  static bool canUploadMemberPhotos(String role) => [
+        superAdmin,
+        schoolAdmin,
+        infoDept,
+        hrDept,
+        photoDept,
+        photoImporter
+      ].contains(role);
+  static bool canTakeAttendance(String role) => [
+        superAdmin,
+        schoolAdmin,
+        teacher,
+        attendanceTaker,
+        eduDept
+      ].contains(role);
   static bool canManageGrades(String role) =>
       [superAdmin, schoolAdmin, teacher, eduDept].contains(role);
   static bool canManageEducation(String role) =>
@@ -108,7 +164,11 @@ class NavTab {
   final String label;
   final IconData icon;
   final IconData activeIcon;
-  const NavTab({required this.id, required this.label, required this.icon, IconData? activeIcon})
+  const NavTab(
+      {required this.id,
+      required this.label,
+      required this.icon,
+      IconData? activeIcon})
       : activeIcon = activeIcon ?? icon;
 }
 
@@ -117,28 +177,76 @@ List<NavTab> _baseTabsForRole(String role) {
     // ---- TEACHER ----
     case UserRoles.teacher:
       return const [
-        NavTab(id: 'home', label: 'Home', icon: Icons.home_outlined, activeIcon: Icons.home_rounded),
-        NavTab(id: 'attendance', label: 'Attendance', icon: Icons.fact_check_outlined, activeIcon: Icons.fact_check_rounded),
-        NavTab(id: 'grades', label: 'Grades', icon: Icons.grading_outlined, activeIcon: Icons.grading_rounded),
-        NavTab(id: 'timetable', label: 'Timetable', icon: Icons.calendar_month_outlined, activeIcon: Icons.calendar_month_rounded),
-        NavTab(id: 'profile', label: 'Profile', icon: Icons.person_outline, activeIcon: Icons.person_rounded),
+        NavTab(
+            id: 'home',
+            label: 'Home',
+            icon: Icons.home_outlined,
+            activeIcon: Icons.home_rounded),
+        NavTab(
+            id: 'attendance',
+            label: 'Attendance',
+            icon: Icons.fact_check_outlined,
+            activeIcon: Icons.fact_check_rounded),
+        NavTab(
+            id: 'grades',
+            label: 'Grades',
+            icon: Icons.grading_outlined,
+            activeIcon: Icons.grading_rounded),
+        NavTab(
+            id: 'timetable',
+            label: 'Timetable',
+            icon: Icons.calendar_month_outlined,
+            activeIcon: Icons.calendar_month_rounded),
+        NavTab(
+            id: 'profile',
+            label: 'Profile',
+            icon: Icons.person_outline,
+            activeIcon: Icons.person_rounded),
       ];
 
     // ---- ATTENDANCE TAKER ----
     case UserRoles.attendanceTaker:
       return const [
-        NavTab(id: 'home', label: 'Home', icon: Icons.home_outlined, activeIcon: Icons.home_rounded),
-        NavTab(id: 'attendance', label: 'Attendance', icon: Icons.fact_check_outlined, activeIcon: Icons.fact_check_rounded),
-        NavTab(id: 'mezmur_attendance', label: 'Mezmur', icon: Icons.music_note_outlined, activeIcon: Icons.music_note),
-        NavTab(id: 'profile', label: 'Profile', icon: Icons.person_outline, activeIcon: Icons.person_rounded),
+        NavTab(
+            id: 'home',
+            label: 'Home',
+            icon: Icons.home_outlined,
+            activeIcon: Icons.home_rounded),
+        NavTab(
+            id: 'attendance',
+            label: 'Attendance',
+            icon: Icons.fact_check_outlined,
+            activeIcon: Icons.fact_check_rounded),
+        NavTab(
+            id: 'mezmur_attendance',
+            label: 'Mezmur',
+            icon: Icons.music_note_outlined,
+            activeIcon: Icons.music_note),
+        NavTab(
+            id: 'profile',
+            label: 'Profile',
+            icon: Icons.person_outline,
+            activeIcon: Icons.person_rounded),
       ];
 
     // ---- MEZMUR ATTENDANCE TAKER (department-owned) ----
     case UserRoles.mezmurTaker:
       return const [
-        NavTab(id: 'home', label: 'Home', icon: Icons.home_outlined, activeIcon: Icons.home_rounded),
-        NavTab(id: 'mezmur_attendance', label: 'Attendance', icon: Icons.fact_check_outlined, activeIcon: Icons.fact_check_rounded),
-        NavTab(id: 'profile', label: 'Profile', icon: Icons.person_outline, activeIcon: Icons.person_rounded),
+        NavTab(
+            id: 'home',
+            label: 'Home',
+            icon: Icons.home_outlined,
+            activeIcon: Icons.home_rounded),
+        NavTab(
+            id: 'mezmur_attendance',
+            label: 'Attendance',
+            icon: Icons.fact_check_outlined,
+            activeIcon: Icons.fact_check_rounded),
+        NavTab(
+            id: 'profile',
+            label: 'Profile',
+            icon: Icons.person_outline,
+            activeIcon: Icons.person_rounded),
       ];
 
     // ---- HR ATTENDANCE TAKER (retired 2026-10-07) ----
@@ -147,41 +255,121 @@ List<NavTab> _baseTabsForRole(String role) {
     // only — no attendance tab anymore.
     case UserRoles.hrTaker:
       return const [
-        NavTab(id: 'home', label: 'Home', icon: Icons.home_outlined, activeIcon: Icons.home_rounded),
-        NavTab(id: 'profile', label: 'Profile', icon: Icons.person_outline, activeIcon: Icons.person_rounded),
+        NavTab(
+            id: 'home',
+            label: 'Home',
+            icon: Icons.home_outlined,
+            activeIcon: Icons.home_rounded),
+        NavTab(
+            id: 'profile',
+            label: 'Profile',
+            icon: Icons.person_outline,
+            activeIcon: Icons.person_rounded),
       ];
 
     // ---- EDUCATION DEPARTMENT ----
     case UserRoles.eduDept:
       return const [
-        NavTab(id: 'home', label: 'Home', icon: Icons.home_outlined, activeIcon: Icons.home_rounded),
-        NavTab(id: 'attendance', label: 'Attend.', icon: Icons.fact_check_outlined, activeIcon: Icons.fact_check_rounded),
-        NavTab(id: 'grades', label: 'Grades', icon: Icons.grading_outlined, activeIcon: Icons.grading_rounded),
-        NavTab(id: 'reviews', label: 'Reviews', icon: Icons.inbox_outlined, activeIcon: Icons.inbox_rounded),
-        NavTab(id: 'members', label: 'Students', icon: Icons.people_outline, activeIcon: Icons.people_rounded),
-        NavTab(id: 'profile', label: 'Profile', icon: Icons.person_outline, activeIcon: Icons.person_rounded),
+        NavTab(
+            id: 'home',
+            label: 'Home',
+            icon: Icons.home_outlined,
+            activeIcon: Icons.home_rounded),
+        NavTab(
+            id: 'attendance',
+            label: 'Attend.',
+            icon: Icons.fact_check_outlined,
+            activeIcon: Icons.fact_check_rounded),
+        NavTab(
+            id: 'grades',
+            label: 'Grades',
+            icon: Icons.grading_outlined,
+            activeIcon: Icons.grading_rounded),
+        NavTab(
+            id: 'reviews',
+            label: 'Reviews',
+            icon: Icons.inbox_outlined,
+            activeIcon: Icons.inbox_rounded),
+        NavTab(
+            id: 'members',
+            label: 'Students',
+            icon: Icons.people_outline,
+            activeIcon: Icons.people_rounded),
+        NavTab(
+            id: 'profile',
+            label: 'Profile',
+            icon: Icons.person_outline,
+            activeIcon: Icons.person_rounded),
       ];
 
     // ---- SUPER ADMIN ----
     case UserRoles.superAdmin:
       return const [
-        NavTab(id: 'home', label: 'Home', icon: Icons.home_outlined, activeIcon: Icons.home_rounded),
-        NavTab(id: 'members', label: 'Members', icon: Icons.people_outline, activeIcon: Icons.people_rounded),
-        NavTab(id: 'attendance', label: 'Attend.', icon: Icons.fact_check_outlined, activeIcon: Icons.fact_check_rounded),
-        NavTab(id: 'grades', label: 'Grades', icon: Icons.grading_outlined, activeIcon: Icons.grading_rounded),
-        NavTab(id: 'reviews', label: 'Reviews', icon: Icons.inbox_outlined, activeIcon: Icons.inbox_rounded),
-        NavTab(id: 'profile', label: 'Profile', icon: Icons.person_outline, activeIcon: Icons.person_rounded),
+        NavTab(
+            id: 'home',
+            label: 'Home',
+            icon: Icons.home_outlined,
+            activeIcon: Icons.home_rounded),
+        NavTab(
+            id: 'members',
+            label: 'Members',
+            icon: Icons.people_outline,
+            activeIcon: Icons.people_rounded),
+        NavTab(
+            id: 'attendance',
+            label: 'Attend.',
+            icon: Icons.fact_check_outlined,
+            activeIcon: Icons.fact_check_rounded),
+        NavTab(
+            id: 'grades',
+            label: 'Grades',
+            icon: Icons.grading_outlined,
+            activeIcon: Icons.grading_rounded),
+        NavTab(
+            id: 'reviews',
+            label: 'Reviews',
+            icon: Icons.inbox_outlined,
+            activeIcon: Icons.inbox_rounded),
+        NavTab(
+            id: 'profile',
+            label: 'Profile',
+            icon: Icons.person_outline,
+            activeIcon: Icons.person_rounded),
       ];
 
     // ---- SCHOOL ADMIN ----
     case UserRoles.schoolAdmin:
       return const [
-        NavTab(id: 'home', label: 'Home', icon: Icons.home_outlined, activeIcon: Icons.home_rounded),
-        NavTab(id: 'members', label: 'Members', icon: Icons.people_outline, activeIcon: Icons.people_rounded),
-        NavTab(id: 'attendance', label: 'Attend.', icon: Icons.fact_check_outlined, activeIcon: Icons.fact_check_rounded),
-        NavTab(id: 'grades', label: 'Grades', icon: Icons.grading_outlined, activeIcon: Icons.grading_rounded),
-        NavTab(id: 'reviews', label: 'Reviews', icon: Icons.inbox_outlined, activeIcon: Icons.inbox_rounded),
-        NavTab(id: 'profile', label: 'Profile', icon: Icons.person_outline, activeIcon: Icons.person_rounded),
+        NavTab(
+            id: 'home',
+            label: 'Home',
+            icon: Icons.home_outlined,
+            activeIcon: Icons.home_rounded),
+        NavTab(
+            id: 'members',
+            label: 'Members',
+            icon: Icons.people_outline,
+            activeIcon: Icons.people_rounded),
+        NavTab(
+            id: 'attendance',
+            label: 'Attend.',
+            icon: Icons.fact_check_outlined,
+            activeIcon: Icons.fact_check_rounded),
+        NavTab(
+            id: 'grades',
+            label: 'Grades',
+            icon: Icons.grading_outlined,
+            activeIcon: Icons.grading_rounded),
+        NavTab(
+            id: 'reviews',
+            label: 'Reviews',
+            icon: Icons.inbox_outlined,
+            activeIcon: Icons.inbox_rounded),
+        NavTab(
+            id: 'profile',
+            label: 'Profile',
+            icon: Icons.person_outline,
+            activeIcon: Icons.person_rounded),
       ];
 
     // ---- HR DEPARTMENT (attendance retired 2026-10-07) ----
@@ -189,53 +377,131 @@ List<NavTab> _baseTabsForRole(String role) {
     // the mobile review inbox is gone with the workflow it reviewed.
     case UserRoles.hrDept:
       return const [
-        NavTab(id: 'home', label: 'Home', icon: Icons.home_outlined, activeIcon: Icons.home_rounded),
-        NavTab(id: 'profile', label: 'Profile', icon: Icons.person_outline, activeIcon: Icons.person_rounded),
+        NavTab(
+            id: 'home',
+            label: 'Home',
+            icon: Icons.home_outlined,
+            activeIcon: Icons.home_rounded),
+        NavTab(
+            id: 'profile',
+            label: 'Profile',
+            icon: Icons.person_outline,
+            activeIcon: Icons.person_rounded),
+      ];
+
+    // ---- PHOTO DEPARTMENT ----
+    // Photo staff can identify members and capture/sync photos, but do not
+    // receive a general-purpose dashboard or member-management controls.
+    case UserRoles.photoDept:
+    case UserRoles.photoImporter:
+      return const [
+        NavTab(
+            id: 'members',
+            label: 'Members',
+            icon: Icons.people_outline,
+            activeIcon: Icons.people_rounded),
+        NavTab(
+            id: 'profile',
+            label: 'Profile',
+            icon: Icons.person_outline,
+            activeIcon: Icons.person_rounded),
       ];
 
     // ---- INFO DEPARTMENT ----
     case UserRoles.infoDept:
       return const [
-        NavTab(id: 'home', label: 'Home', icon: Icons.home_outlined, activeIcon: Icons.home_rounded),
-        NavTab(id: 'members', label: 'Members', icon: Icons.people_outline, activeIcon: Icons.people_rounded),
-        NavTab(id: 'attendance', label: 'Attend.', icon: Icons.fact_check_outlined, activeIcon: Icons.fact_check_rounded),
-        NavTab(id: 'profile', label: 'Profile', icon: Icons.person_outline, activeIcon: Icons.person_rounded),
+        NavTab(
+            id: 'home',
+            label: 'Home',
+            icon: Icons.home_outlined,
+            activeIcon: Icons.home_rounded),
+        NavTab(
+            id: 'members',
+            label: 'Members',
+            icon: Icons.people_outline,
+            activeIcon: Icons.people_rounded),
+        NavTab(
+            id: 'attendance',
+            label: 'Attend.',
+            icon: Icons.fact_check_outlined,
+            activeIcon: Icons.fact_check_rounded),
+        NavTab(
+            id: 'profile',
+            label: 'Profile',
+            icon: Icons.person_outline,
+            activeIcon: Icons.person_rounded),
       ];
 
     // ---- FINANCE DEPARTMENT ----
     case UserRoles.financeDept:
       return const [
-        NavTab(id: 'home', label: 'Home', icon: Icons.home_outlined, activeIcon: Icons.home_rounded),
-        NavTab(id: 'profile', label: 'Profile', icon: Icons.person_outline, activeIcon: Icons.person_rounded),
+        NavTab(
+            id: 'home',
+            label: 'Home',
+            icon: Icons.home_outlined,
+            activeIcon: Icons.home_rounded),
+        NavTab(
+            id: 'profile',
+            label: 'Profile',
+            icon: Icons.person_outline,
+            activeIcon: Icons.person_rounded),
       ];
 
     // ---- MATERIAL DEPARTMENT ----
     case UserRoles.materialDept:
       return const [
-        NavTab(id: 'home', label: 'Home', icon: Icons.home_outlined, activeIcon: Icons.home_rounded),
-        NavTab(id: 'profile', label: 'Profile', icon: Icons.person_outline, activeIcon: Icons.person_rounded),
+        NavTab(
+            id: 'home',
+            label: 'Home',
+            icon: Icons.home_outlined,
+            activeIcon: Icons.home_rounded),
+        NavTab(
+            id: 'profile',
+            label: 'Profile',
+            icon: Icons.person_outline,
+            activeIcon: Icons.person_rounded),
       ];
 
     // ---- MEZMUR DEPARTMENT ----
     case UserRoles.mezmurDept:
       return const [
-        NavTab(id: 'home', label: 'Home', icon: Icons.home_outlined, activeIcon: Icons.home_rounded),
-        NavTab(id: 'mezmur_attendance', label: 'Attend.', icon: Icons.fact_check_outlined, activeIcon: Icons.fact_check_rounded),
-        NavTab(id: 'mezmur_hymns', label: 'Hymns', icon: Icons.music_note_outlined, activeIcon: Icons.music_note),
-        NavTab(id: 'mezmur_analytics', label: 'Insights', icon: Icons.insights_outlined, activeIcon: Icons.insights),
-        NavTab(id: 'reviews', label: 'Reviews', icon: Icons.inbox_outlined, activeIcon: Icons.inbox_rounded),
-        NavTab(id: 'profile', label: 'Profile', icon: Icons.person_outline, activeIcon: Icons.person_rounded),
+        NavTab(
+            id: 'home',
+            label: 'Home',
+            icon: Icons.home_outlined,
+            activeIcon: Icons.home_rounded),
+        NavTab(
+            id: 'mezmur_attendance',
+            label: 'Attend.',
+            icon: Icons.fact_check_outlined,
+            activeIcon: Icons.fact_check_rounded),
+        NavTab(
+            id: 'mezmur_hymns',
+            label: 'Hymns',
+            icon: Icons.music_note_outlined,
+            activeIcon: Icons.music_note),
+        NavTab(
+            id: 'mezmur_analytics',
+            label: 'Insights',
+            icon: Icons.insights_outlined,
+            activeIcon: Icons.insights),
+        NavTab(
+            id: 'reviews',
+            label: 'Reviews',
+            icon: Icons.inbox_outlined,
+            activeIcon: Icons.inbox_rounded),
+        NavTab(
+            id: 'profile',
+            label: 'Profile',
+            icon: Icons.person_outline,
+            activeIcon: Icons.person_rounded),
       ];
 
-    // ---- FALLBACK ----
+    // ---- DENY UNKNOWN ROLES ----
     default:
-      return const [
-        NavTab(id: 'home', label: 'Home', icon: Icons.home_outlined, activeIcon: Icons.home_rounded),
-        NavTab(id: 'profile', label: 'Profile', icon: Icons.person_outline, activeIcon: Icons.person_rounded),
-      ];
+      return const [];
   }
 }
-
 
 List<NavTab> getTabsForRole(
   String role, {

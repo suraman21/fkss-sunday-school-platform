@@ -133,6 +133,20 @@ class PhotoOutboxService {
   Future<void> _reconcileOrphans() async {
     try {
       final db = await LocalDb().database;
+      final now = DateTime.now().toUtc().toIso8601String();
+
+      // A killed process may leave a claimed upload behind. The server
+      // idempotency key makes retrying that payload safe.
+      await db.update(
+        'photo_outbox',
+        {
+          'state': PhotoOutboxState.queued.storageValue,
+          'next_attempt_at': now,
+          'updated_at': now,
+        },
+        where: 'state = ?',
+        whereArgs: [PhotoOutboxState.uploading.storageValue],
+      );
 
       // 2. Missing-file rows → failed.
       final knownPaths = <String>{};
@@ -173,8 +187,7 @@ class PhotoOutboxService {
         }
         if (knownPaths.contains(entity.path)) continue;
         // File must be older than 1 hour to avoid racing an enqueue.
-        final age = DateTime.now().difference(
-            await entity.lastModified());
+        final age = DateTime.now().difference(await entity.lastModified());
         if (age < const Duration(hours: 1)) continue;
         try {
           await entity.delete();
@@ -199,8 +212,8 @@ class PhotoOutboxService {
   Future<String?> savedHmacKey() async {
     await ensureInitialized();
     final db = await LocalDb().database;
-    final rows = await db.query('photo_device_identity',
-        where: 'id = 1', limit: 1);
+    final rows =
+        await db.query('photo_device_identity', where: 'id = 1', limit: 1);
     if (rows.isEmpty) return null;
     final k = rows.first['photo_hmac_key'] as String?;
     return (k != null && k.isNotEmpty) ? k : null;
@@ -210,10 +223,13 @@ class PhotoOutboxService {
     if (hexKey.isEmpty) return;
     await ensureInitialized();
     final db = await LocalDb().database;
-    await db.update('photo_device_identity', {
-      'photo_hmac_key': hexKey,
-      'updated_at': DateTime.now().toUtc().toIso8601String(),
-    }, where: 'id = 1');
+    await db.update(
+        'photo_device_identity',
+        {
+          'photo_hmac_key': hexKey,
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
+        },
+        where: 'id = 1');
   }
 
   /// Absolute path to the queue directory (app-private).
@@ -353,7 +369,7 @@ class PhotoOutboxService {
 
     final clientOpId = newClientOpId();
     final canonicalName =
-        'photo_${memberId}_${field.storageValue}_${clientOpId}.${format.extension}';
+        'photo_${memberId}_${field.storageValue}_$clientOpId.${format.extension}';
     final destPath = p.join(_queueDirPath!, canonicalName);
     await file.rename(destPath);
 
@@ -517,7 +533,8 @@ class PhotoOutboxService {
   /// (queued, uploaded, conflict_pending, or failed). Used by the batch
   /// capture roster to skip members who already have a capture pending
   /// review or upload.
-  Future<Set<int>> memberIdsWithPhoto({PhotoField field = PhotoField.student}) async {
+  Future<Set<int>> memberIdsWithPhoto(
+      {PhotoField field = PhotoField.student}) async {
     await ensureInitialized();
     final db = await LocalDb().database;
     final rows = await db.query(
@@ -664,8 +681,9 @@ class PhotoOutboxService {
   /// files so the operator can retry or review.
   static const _platform = MethodChannel('app.fkss.photo/nocloud');
   Future<void> _markNoCloudBackup(String dirPath) async {
-    try { await _platform.invokeMethod('excludeFromBackup', {'path': dirPath}); }
-    catch (_) {} // no-op when channel not registered
+    try {
+      await _platform.invokeMethod('excludeFromBackup', {'path': dirPath});
+    } catch (_) {} // no-op when channel not registered
   }
 
   Future<int> _evictOldDelivered() async {
@@ -676,7 +694,8 @@ class PhotoOutboxService {
       final rows = await db.query(
         'photo_outbox',
         columns: ['id', 'local_path'],
-        where: 'state IN (?, ?) AND updated_at < ? AND local_path IS NOT NULL AND local_path != ?',
+        where:
+            'state IN (?, ?) AND updated_at < ? AND local_path IS NOT NULL AND local_path != ?',
         whereArgs: [
           PhotoOutboxState.done.storageValue,
           PhotoOutboxState.discarded.storageValue,
@@ -691,7 +710,9 @@ class PhotoOutboxService {
         if (p == null) continue;
         final f = File(p);
         if (await f.exists()) {
-          try { await f.delete(); } catch (_) {}
+          try {
+            await f.delete();
+          } catch (_) {}
         }
         await db.update('photo_outbox', {'local_path': ''},
             where: 'id = ?', whereArgs: [r['id']]);
@@ -762,6 +783,22 @@ class PhotoOutboxService {
   Future<void> retryFailed(String clientOpId) async {
     await ensureInitialized();
     final db = await LocalDb().database;
+    final rows = await db.query(
+      'photo_outbox',
+      columns: ['state', 'local_path'],
+      where: 'client_op_id = ?',
+      whereArgs: [clientOpId],
+      limit: 1,
+    );
+    if (rows.isEmpty ||
+        rows.first['state'] != PhotoOutboxState.failed.storageValue) {
+      return;
+    }
+    final localPath = (rows.first['local_path'] ?? '').toString();
+    if (localPath.isEmpty || !await File(localPath).exists()) {
+      throw StateError(
+          'The local photo file is missing. Capture this photo again.');
+    }
     await db.update(
       'photo_outbox',
       {
@@ -806,5 +843,4 @@ class PhotoOutboxService {
       } catch (_) {}
     }
   }
-
 }

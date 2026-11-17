@@ -10,6 +10,8 @@ require_once __DIR__ . '/../backend/calendar_system.php';
 $userName = (string) ($_SESSION['admin_full_name'] ?? $_SESSION['admin_username'] ?? 'Photo Department');
 $userRole = (string) ($_SESSION['admin_role'] ?? 'Photo Department');
 $username = $_SESSION['admin_username'] ?? '';
+$photoRoleViewOnly = in_array($userRole, ['photo_dept', 'photo_importer'], true);
+$operatorAdminId = (int) ($_SESSION['admin_id'] ?? 0);
 
 $today = new DateTime('now', new DateTimeZone('Africa/Addis_Ababa'));
 $todayFormatted = ethio_date_format($today, 'F j, Y');
@@ -122,24 +124,30 @@ if (isset($conn)) {
                      && pd_table_exists($conn, 'photo_import_batches')
                      && pd_table_exists($conn, 'photo_import_items');
     $devicesTableReady = pd_table_exists($conn, 'photo_device_identities');
+    $operatorScope = $photoRoleViewOnly ? ' WHERE operator_admin_id = ?' : '';
+    $operatorParams = $photoRoleViewOnly ? [$operatorAdminId] : [];
 
     if ($photoTablesReady) {
         // Pending review queue (cross-photographer conflicts awaiting decision)
+        $studentPhotoFilter = $photoRoleViewOnly ? " AND field = 'student_photo'" : '';
         $pr = pd_fetch_one($conn,
             "SELECT COUNT(*) AS c FROM member_photo_candidates
-             WHERE decision_pending = 1 AND archived = 0");
+             WHERE decision_pending = 1 AND archived = 0" . $studentPhotoFilter);
         $kpi['pending_review'] = (int)($pr['c'] ?? 0);
 
         // ZIP import items still pending
         $pz = pd_fetch_one($conn,
-            "SELECT COUNT(*) AS c FROM photo_import_items WHERE decision = 'pending'");
+            "SELECT COUNT(*) AS c FROM photo_import_items WHERE decision = 'pending'" .
+            ($photoRoleViewOnly ? " AND field = 'student_photo'" : ''));
         $kpi['pending_zip_items'] = (int)($pz['c'] ?? 0);
 
         // Batches
-        $bt = pd_fetch_one($conn, "SELECT COUNT(*) AS c FROM photo_import_batches");
+        $bt = pd_fetch_one($conn, "SELECT COUNT(*) AS c FROM photo_import_batches" . $operatorScope, $operatorParams);
         $kpi['total_batches'] = (int)($bt['c'] ?? 0);
         $bt2 = pd_fetch_one($conn,
-            "SELECT COUNT(*) AS c FROM photo_import_batches WHERE DATE(created_at) = CURDATE()");
+            "SELECT COUNT(*) AS c FROM photo_import_batches" .
+            ($photoRoleViewOnly ? ' WHERE operator_admin_id = ? AND DATE(created_at) = CURDATE()' : ' WHERE DATE(created_at) = CURDATE()'),
+            $operatorParams);
         $kpi['batches_today'] = (int)($bt2['c'] ?? 0);
 
         // Receipts (all photos on server, regardless of path)
@@ -158,7 +166,9 @@ if (isset($conn)) {
                     u.full_name AS operator_name
              FROM photo_import_batches b
              LEFT JOIN users u ON u.id = b.operator_admin_id
-             ORDER BY b.created_at DESC LIMIT 8");
+             " . ($photoRoleViewOnly ? 'WHERE b.operator_admin_id = ? ' : '') . "
+             ORDER BY b.created_at DESC LIMIT 8",
+            $operatorParams);
 
         // Pending review candidates (top 8)
         $pendingCandidates = pd_fetch_all($conn,
@@ -170,14 +180,25 @@ if (isset($conn)) {
              LEFT JOIN users u ON u.id = c.operator_admin_id
              LEFT JOIN members m ON m.id = c.member_id
              WHERE c.decision_pending = 1 AND c.archived = 0
+             " . ($photoRoleViewOnly ? "AND c.field = 'student_photo' " : '') . "
              ORDER BY c.created_at ASC LIMIT 8");
     }
 
     // Paired devices (separate table from 097)
     if ($devicesTableReady) {
         $dv = pd_fetch_one($conn,
-            "SELECT COUNT(DISTINCT device_id) AS c FROM photo_device_identities");
+            "SELECT COUNT(DISTINCT device_id) AS c FROM photo_device_identities" . $operatorScope,
+            $operatorParams);
         $kpi['paired_devices'] = (int)($dv['c'] ?? 0);
+
+        $devices = pd_fetch_all($conn,
+            "SELECT d.id, d.device_id, d.first_seen_at, d.last_seen_at,
+                    u.full_name AS operator_name, u.username
+             FROM photo_device_identities d
+             LEFT JOIN users u ON u.id = d.operator_admin_id
+             " . ($photoRoleViewOnly ? 'WHERE d.operator_admin_id = ? ' : '') . "
+             ORDER BY d.last_seen_at DESC LIMIT 100",
+            $operatorParams);
     }
 
     // Missing-photos list (uses only members table — always available)
@@ -189,14 +210,9 @@ if (isset($conn)) {
                     u.full_name AS operator_name
              FROM photo_import_batches b
              LEFT JOIN users u ON u.id = b.operator_admin_id
-             ORDER BY b.created_at DESC LIMIT 100");
-
-        $devices = pd_fetch_all($conn,
-            "SELECT d.id, d.device_id, d.first_seen_at, d.last_seen_at,
-                    u.full_name AS operator_name, u.username
-             FROM photo_device_identities d
-             LEFT JOIN users u ON u.id = d.operator_admin_id
-             ORDER BY d.last_seen_at DESC LIMIT 100");
+             " . ($photoRoleViewOnly ? 'WHERE b.operator_admin_id = ? ' : '') . "
+             ORDER BY b.created_at DESC LIMIT 100",
+            $operatorParams);
     }
 }
 
@@ -646,8 +662,11 @@ $DEPT_SUB_AM  = 'የአባላት ፎቶ ማስተዳደሪያ · ከስልክ �
                     Members Missing Photos (sample, oldest-first)
                 </h3>
                 <?php
+                $missingFields = $photoRoleViewOnly
+                    ? 'id, student_name, father_name, grandfather_name, member_code'
+                    : 'id, student_name, father_name, grandfather_name, member_code, age_group, gender';
                 $missing = pd_fetch_all($conn,
-                    "SELECT id, student_name, father_name, grandfather_name, member_code, age_group, gender
+                    "SELECT $missingFields
                      FROM members
                      WHERE status != 'archived'
                        AND (student_photo_path IS NULL OR student_photo_path = '')
@@ -661,22 +680,26 @@ $DEPT_SUB_AM  = 'የአባላት ፎቶ ማስተዳደሪያ · ከስልክ �
                 <?php else: ?>
                 <div class="overflow-x-auto">
                 <table class="pd-table">
-                    <thead><tr><th>#</th><th>Name</th><th>Code</th><th>Section</th><th>Gender</th></tr></thead>
+                    <thead><tr><th>#</th><th>Name</th><th>Code</th><?php if (!$photoRoleViewOnly): ?><th>Section</th><th>Gender</th><?php endif; ?></tr></thead>
                     <tbody>
                     <?php foreach ($missing as $i => $m):
-                        switch ($m['age_group'] ?? '') {
-                            case '7_13':    $ageLabel = 'Children (A)'; break;
-                            case '14_17':   $ageLabel = 'Youth (B)'; break;
-                            case '18_plus': $ageLabel = 'Adults (C)'; break;
-                            default:        $ageLabel = '—';
+                        if (!$photoRoleViewOnly) {
+                            switch ($m['age_group'] ?? '') {
+                                case '7_13':    $ageLabel = 'Children (A)'; break;
+                                case '14_17':   $ageLabel = 'Youth (B)'; break;
+                                case '18_plus': $ageLabel = 'Adults (C)'; break;
+                                default:        $ageLabel = '—';
+                            }
                         }
                     ?>
                         <tr>
                             <td class="text-slate-400 text-xs"><?= $i+1 ?></td>
                             <td><div class="font-semibold text-xs"><?= htmlspecialchars(trim(($m['student_name']??'').' '.($m['father_name']??'').' '.($m['grandfather_name']??''))) ?></div></td>
                             <td class="text-xs text-slate-600"><?= htmlspecialchars($m['member_code'] ?? '—') ?></td>
+                            <?php if (!$photoRoleViewOnly): ?>
                             <td><span class="badge badge-slate"><?= htmlspecialchars($ageLabel) ?></span></td>
                             <td class="text-xs text-slate-600"><?= htmlspecialchars(ucfirst($m['gender'] ?? '—')) ?></td>
+                            <?php endif; ?>
                         </tr>
                     <?php endforeach; ?>
                     </tbody>

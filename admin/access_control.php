@@ -168,6 +168,7 @@ if (!defined('ACCESS_CONTROL_LOADED')) {
             'members_check.php'       => ['super_admin', 'school_admin', 'hr_dept'],
             'info_manage_member.php'        => ['super_admin', 'school_admin', 'info_dept', 'hr_dept'],
             'member_file.php'               => ['super_admin', 'school_admin', 'info_dept', 'hr_dept'],
+            'photo_file.php'                => ['super_admin', 'school_admin', 'info_dept', 'hr_dept', 'edu_dept', 'photo_dept', 'photo_importer'],
             // Photo department: ZIP airlock import and multi-photographer
             // conflict resolution. photo_dept is the primary role;
             // photo_importer is kept as a legacy alias for accounts

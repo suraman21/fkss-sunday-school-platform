@@ -22,6 +22,8 @@
 
 namespace App\Services;
 
+require_once __DIR__ . '/MemberFileService.php';
+
 use mysqli;
 
 final class PhotoUploadService
@@ -161,22 +163,17 @@ final class PhotoUploadService
         }
 
         // ---------- Store ----------
-        // We move/copy into a private area first, then flip it into the
-        // public photos directory inside the transaction. Using
-        // MemberFileService::storeRequestUpload would re-encode and
-        // randomize the name; we use the same underlying logic but pass
-        // through our own filename so sha256 remains stable.
         $randomName = bin2hex(random_bytes(16)) . '.' . $ext;
-        $publicDir  = self::publicPhotoRoot();
-        if (!self::ensureDir($publicDir, 0755)) {
-            return self::err(500, 'storage_unavailable', 'Photo storage directory is not writable.');
+        $privateDir = MemberFileService::photoStorageDirectory();
+        if ($privateDir === null) {
+            return self::err(500, 'storage_unavailable', 'Private photo storage is unavailable.');
         }
-        $targetPath = $publicDir . '/' . $randomName;
+        $targetPath = $privateDir . '/' . $randomName;
         if (!move_uploaded_file($tmp, $targetPath)) {
             return self::err(500, 'storage_failed', 'Could not save the uploaded photo.');
         }
-        @chmod($targetPath, 0644);
-        $webPath = 'uploads/members/photos/' . $randomName;
+        @chmod($targetPath, 0600);
+        $storedPath = MemberFileService::PRIVATE_PREFIX . 'photos/' . $randomName;
 
         // ---------- Transaction ----------
         // Always open our own transaction. The route does not wrap us in
@@ -185,6 +182,8 @@ final class PhotoUploadService
         $conn->begin_transaction();
         $ownedTransaction = true;
         try {
+            self::lockMemberForPhoto($conn, $memberId);
+
             // Insert receipt.
             $stmt = $conn->prepare(
                 'INSERT INTO photo_upload_receipts
@@ -193,12 +192,13 @@ final class PhotoUploadService
                     byte_size, width, height, taken_at, created_at)
                  VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())'
             );
+            $takenAtSql = $takenAt ? $takenAt->format('Y-m-d H:i:s') : null;
             $stmt->bind_param(
-                'sisssssssiiis',
+                'sissssssiiis',
                 $clientOpId, $memberId, $field,
-                $operatorId, $deviceId, $claimedSha256, $webPath, $mime,
+                $operatorId, $deviceId, $claimedSha256, $storedPath, $mime,
                 $size, $width, $height,
-                $takenAt ? $takenAt->format('Y-m-d H:i:s') : null
+                $takenAtSql
             );
             if (!$stmt->execute()) {
                 throw new \RuntimeException('receipt_insert_failed');
@@ -240,11 +240,12 @@ final class PhotoUploadService
             );
             $isCurrentInt = $shouldBecomeCurrent ? 1 : 0;
             $pendingInt  = $isConflict ? 1 : 0;
+            $takenAtSql = $takenAt ? $takenAt->format('Y-m-d H:i:s') : null;
             $stmt->bind_param(
-                'isiissssiiisi',
+                'isiissssiiisii',
                 $memberId, $field, $receiptId, $operatorId, $deviceId,
-                $claimedSha256, $webPath, $mime, $size, $width, $height,
-                $takenAt ? $takenAt->format('Y-m-d H:i:s') : null,
+                $claimedSha256, $storedPath, $mime, $size, $width, $height,
+                $takenAtSql,
                 $isCurrentInt, $pendingInt
             );
             if (!$stmt->execute()) {
@@ -270,7 +271,7 @@ final class PhotoUploadService
                 // Update members.student_photo_path denormalized cache.
                 $col = $field === 'guardian_photo' ? 'guardian_photo_path' : 'student_photo_path';
                 $u = $conn->prepare("UPDATE members SET $col = ? WHERE id = ?");
-                $u->bind_param('si', $webPath, $memberId);
+                $u->bind_param('si', $storedPath, $memberId);
                 $u->execute();
                 $u->close();
             }
@@ -281,7 +282,7 @@ final class PhotoUploadService
                 'ok' => true, 'status' => 200,
                 'replayed' => false,
                 'conflict' => $isConflict,
-                'path' => $webPath,
+                'path' => $storedPath,
                 'receipt_id' => $receiptId,
                 'error' => null, 'code' => null,
             ];
@@ -289,7 +290,8 @@ final class PhotoUploadService
             if ($ownedTransaction) $conn->rollback();
             // Remove the moved file since we didn't commit.
             if (is_file($targetPath)) @unlink($targetPath);
-            return self::err(500, 'server_error', 'Photo could not be saved: ' . $e->getMessage());
+            error_log('PhotoUploadService::ingest failed: ' . $e->getMessage());
+            return self::err(500, 'server_error', 'Photo could not be saved.');
         }
     }
 
@@ -318,6 +320,9 @@ final class PhotoUploadService
 
         if ($memberId <= 0) return self::err(400,'invalid_member','Member id is required.');
         if ($operatorId <= 0) return self::err(401,'auth_required','You must be logged in.');
+        if ($clientOpId !== '' && !preg_match('/^[a-f0-9\-]{32,64}$/D', $clientOpId)) {
+            return self::err(400,'invalid_idempotency_key','Client operation id is invalid.');
+        }
         if ($field !== 'student_photo' && $field !== 'guardian_photo') {
             return self::err(400,'invalid_field','Field must be student_photo or guardian_photo.');
         }
@@ -378,21 +383,24 @@ final class PhotoUploadService
                 'error'=>null,'code'=>null];
         }
 
-        // Copy into public photos directory.
+        // Copy into private photos directory.
         $randomName = bin2hex(random_bytes(16)) . '.' . $ext;
-        $publicDir  = self::publicPhotoRoot();
-        if (!self::ensureDir($publicDir, 0755)) {
-            return self::err(500,'storage_unavailable','Photo storage directory is not writable.');
+        $privateDir = MemberFileService::photoStorageDirectory();
+        if ($privateDir === null) {
+            return self::err(500,'storage_unavailable','Private photo storage is unavailable.');
         }
-        $targetPath = $publicDir . '/' . $randomName;
+        $targetPath = $privateDir . '/' . $randomName;
         if (!copy($srcPath, $targetPath)) {
             return self::err(500,'storage_failed','Could not save the photo.');
         }
-        @chmod($targetPath, 0644);
-        $webPath = 'uploads/members/photos/' . $randomName;
+        @chmod($targetPath, 0600);
+        $storedPath = MemberFileService::PRIVATE_PREFIX . 'photos/' . $randomName;
+        $clientOpIdSql = $clientOpId !== '' ? $clientOpId : null;
 
         $conn->begin_transaction();
         try {
+            self::lockMemberForPhoto($conn, $memberId);
+
             $stmt = $conn->prepare(
                 'INSERT INTO photo_upload_receipts
                    (client_op_id, import_item_id, member_id, field,
@@ -400,12 +408,13 @@ final class PhotoUploadService
                     byte_size, width, height, taken_at, created_at)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())'
             );
+            $takenAtSql = $takenAt ? $takenAt->format('Y-m-d H:i:s') : null;
             $stmt->bind_param(
-                'siisssssssiiis',
-                $clientOpId, $importItemId, $memberId, $field,
-                $operatorId, $deviceId, $claimedSha256, $webPath, $mime,
+                'siisissssiiis',
+                $clientOpIdSql, $importItemId, $memberId, $field,
+                $operatorId, $deviceId, $claimedSha256, $storedPath, $mime,
                 $size, $width, $height,
-                $takenAt ? $takenAt->format('Y-m-d H:i:s') : null
+                $takenAtSql
             );
             if (!$stmt->execute()) throw new \RuntimeException('receipt_insert_failed');
             $receiptId = (int)$conn->insert_id;
@@ -437,11 +446,12 @@ final class PhotoUploadService
             );
             $isCurrentInt = $shouldBecomeCurrent ? 1 : 0;
             $pendingInt = $isConflict ? 1 : 0;
+            $takenAtSql = $takenAt ? $takenAt->format('Y-m-d H:i:s') : null;
             $stmt->bind_param(
-                'isiissssiiisi',
+                'isiissssiiisii',
                 $memberId, $field, $receiptId, $operatorId, $deviceId,
-                $claimedSha256, $webPath, $mime, $size, $width, $height,
-                $takenAt ? $takenAt->format('Y-m-d H:i:s') : null,
+                $claimedSha256, $storedPath, $mime, $size, $width, $height,
+                $takenAtSql,
                 $isCurrentInt, $pendingInt
             );
             if (!$stmt->execute()) throw new \RuntimeException('candidate_insert_failed');
@@ -457,21 +467,37 @@ final class PhotoUploadService
                 $conn->query("UPDATE member_photo_candidates SET is_current = 1 WHERE id = $candidateId");
                 $col = $field === 'guardian_photo' ? 'guardian_photo_path' : 'student_photo_path';
                 $u = $conn->prepare("UPDATE members SET $col = ? WHERE id = ?");
-                $u->bind_param('si', $webPath, $memberId);
+                $u->bind_param('si', $storedPath, $memberId);
                 $u->execute(); $u->close();
             }
 
             $conn->commit();
             return ['ok'=>true,'status'=>200,'replayed'=>false,'conflict'=>$isConflict,
-                'path'=>$webPath,'receipt_id'=>$receiptId,'error'=>null,'code'=>null];
+                'path'=>$storedPath,'receipt_id'=>$receiptId,'error'=>null,'code'=>null];
         } catch (\Throwable $e) {
             $conn->rollback();
             if (is_file($targetPath)) @unlink($targetPath);
-            return self::err(500,'server_error','Photo could not be saved: '.$e->getMessage());
+            error_log('PhotoUploadService::ingestFromFile failed: ' . $e->getMessage());
+            return self::err(500,'server_error','Photo could not be saved.');
         }
     }
 
     // ---------- Helpers ----------
+
+    private static function lockMemberForPhoto(mysqli $conn, int $memberId): void
+    {
+        $stmt = $conn->prepare('SELECT id FROM members WHERE id = ? FOR UPDATE');
+        if (!$stmt) {
+            throw new \RuntimeException('member_lock_prepare_failed');
+        }
+        $stmt->bind_param('i', $memberId);
+        $stmt->execute();
+        $member = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$member) {
+            throw new \RuntimeException('member_not_found_during_photo_ingest');
+        }
+    }
 
     /** @return array{id:int,operator_admin_id:int,taken_at:?string}|null */
     private static function findCurrentCandidate(mysqli $conn, int $memberId, string $field): ?array
@@ -531,16 +557,6 @@ final class PhotoUploadService
                 return function_exists('imagecreatefromwebp') && (@imagecreatefromwebp($path) !== false);
         }
         return false;
-    }
-
-    private static function publicPhotoRoot(): string
-    {
-        if (defined('ADMIN_PATH')) {
-            $base = ADMIN_PATH . '/uploads/members/photos';
-        } else {
-            $base = dirname(__DIR__, 2) . '/admin/uploads/members/photos';
-        }
-        return $base;
     }
 
     private static function ensureDir(string $dir, int $mode): bool

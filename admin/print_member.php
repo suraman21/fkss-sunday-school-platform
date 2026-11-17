@@ -38,10 +38,20 @@ $m['spiritual_education'] = $m['spiritual_education'] ?? '';
 $m['age_group'] = $m['age_group'] ?? '';
 
 // Helper for image paths
-function fixPath($path) {
+function fixPath($path, $memberId = 0) {
     if (empty($path)) return '';
     if (strpos($path, 'http') === 0) return $path;
     $path = ltrim($path, '/');
+    if (strpos($path, 'admin/') === 0) {
+        $path = substr($path, 6);
+    }
+    if (
+        (strpos($path, 'private://members/photos/') === 0
+            || preg_match('#^uploads/members/photos/#', $path))
+        && (int)$memberId > 0
+    ) {
+        return '/admin/photo_file.php?member_id=' . (int)$memberId;
+    }
     if (strpos($path, 'uploads/') === 0) return '/admin/' . $path;
     return '/' . $path;
 }
@@ -539,7 +549,7 @@ $fullAddress = !empty($addressParts) ? implode('፣ ', $addressParts) : '—';
             <div class="photo-section">
                 <div class="photo-box">
                     <?php if (!empty($m['student_photo_path'])): ?>
-                        <img src="<?= fixPath($m['student_photo_path']) ?>" alt="Photo">
+                        <img src="<?= fixPath($m['student_photo_path'], $m['id']) ?>" alt="Photo">
                     <?php else: ?>
                         <i class="fas fa-user"></i>
                     <?php endif; ?>

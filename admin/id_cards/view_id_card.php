@@ -143,35 +143,9 @@ if (!empty($member['house_number'])) $address_parts[] = 'H.No ' . $member['house
 
 $member['address'] = !empty($address_parts) ? implode(', ', $address_parts) : ($member['address'] ?? '---');
 
-// Fix Image Path for ID Card (needs to be relative to this file or absolute)
-// This file is in admin/id_cards/
-// Images are in admin/uploads/members/photos/
-// DB path is usually uploads/members/photos/...
-// So we need ../uploads/members/photos/...
-
+// Serve the photo through the authenticated endpoint, including legacy files.
 if (!empty($member['student_photo_path'])) {
-    // 1. Normalize: remove leading slash
-    $p = ltrim($member['student_photo_path'], '/');
-    
-    // 2. Remove 'admin/' prefix if present (to get clean 'uploads/...')
-    if (strpos($p, 'admin/') === 0) {
-        $p = substr($p, 6);
-    }
-    
-    // 3. Build BOTH a relative path (for file_exists check) and an absolute URL
-    // Relative from id_cards/ to admin/: ../uploads/...
-    $relativePath = '../' . $p;
-    
-    // 4. Check if file actually exists on disk
-    $absCheck = __DIR__ . '/' . $relativePath;
-    if (file_exists($absCheck)) {
-        // Use absolute web URL for background-image (html2canvas resolves bg-images
-        // from the page URL context, so absolute URLs are most reliable)
-        $member['student_photo_path'] = '/admin/' . $p;
-    } else {
-        // File missing — clear the path so template shows empty placeholder
-        $member['student_photo_path'] = '';
-    }
+    $member['student_photo_path'] = '/admin/photo_file.php?member_id=' . (int)$member['id'];
 }
 
 // Fix QR Code Path (same logic as photo path above)

@@ -85,7 +85,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
     if (_tabs.isEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        SessionCoordinator().enterReauthentication(reason: 'no_authorized_tabs');
+        SessionCoordinator()
+            .enterReauthentication(reason: 'no_authorized_tabs');
       });
     }
     AppUpdateService().revision.addListener(_applyReleaseConfig);
@@ -114,8 +115,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     // used to setState the whole shell — rebuilding every kept-alive tab in
     // the IndexedStack — even when the tab set was identical. That surprise
     // rebuild visibly hitched whatever was on screen at the moment.
-    final sameTabs = next.length == _tabs.length &&
-        _sameTabIds(next, _tabs);
+    final sameTabs = next.length == _tabs.length && _sameTabIds(next, _tabs);
     if (sameTabs && _currentIndex < _tabs.length) return;
     final currentId = _tabs.isNotEmpty && _currentIndex < _tabs.length
         ? _tabs[_currentIndex].id
@@ -189,7 +189,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         _refreshHome();
         break;
       case 'attendance':
-        if (AppNav().shouldReload('attendance') || AppNav().attendanceClassId != null) {
+        if (AppNav().shouldReload('attendance') ||
+            AppNav().attendanceClassId != null) {
           _attendanceKey.currentState?.refresh();
         }
         break;
@@ -292,8 +293,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       UserRoles.mezmurDept: 'mezmur',
       UserRoles.mezmurTaker: 'mezmur',
     }[_api.userRole];
-    if (roleFeature != null
-        && !AppUpdateService().featureEnabled(roleFeature)) {
+    if (roleFeature != null &&
+        !AppUpdateService().featureEnabled(roleFeature)) {
       return _buildDisabledFeature(roleFeature);
     }
     switch (_api.userRole) {
@@ -324,7 +325,31 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       case UserRoles.hrDept:
         return const HrDeptHomeScreen();
       default:
-        return TeacherHomeScreen(key: _teacherHomeKey);
+        return Scaffold(
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.lock_outline_rounded,
+                      size: 52, color: AppTheme.textSecondary),
+                  const SizedBox(height: 14),
+                  const Text(
+                    'No mobile access is configured for this account.',
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: () => SessionCoordinator()
+                        .enterReauthentication(reason: 'unknown_mobile_role'),
+                    child: const Text('Sign in again'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
     }
   }
 
@@ -339,7 +364,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                 size: 52, color: AppTheme.textSecondary),
             const SizedBox(height: 14),
             Text('$label is not enabled',
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                style:
+                    const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
             const SizedBox(height: 8),
             Text('This module is unavailable for this school deployment.',
                 textAlign: TextAlign.center,
@@ -357,8 +383,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           Icon(Icons.construction_rounded,
               size: 48, color: AppTheme.textSecondary),
           const SizedBox(height: 12),
-          Text(
-              '${tabId[0].toUpperCase()}${tabId.substring(1)} — Coming Soon',
+          Text('${tabId[0].toUpperCase()}${tabId.substring(1)} — Coming Soon',
               style: TextStyle(fontSize: 16, color: AppTheme.textSecondary)),
         ]),
       ),
@@ -368,8 +393,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     if (_tabs.isEmpty) {
-      return const Scaffold(
-          body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     if (_currentIndex >= _tabs.length) _currentIndex = 0;
 
@@ -405,68 +429,74 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           ),
         ],
       ),
-      bottomNavigationBar: hideMainNav ? null : SafeArea(
-        child: Container(
-          margin: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(30),
-            boxShadow: [
-              BoxShadow(
-                color: AppTheme.primaryDark.withOpacity(0.08),
-                blurRadius: 20,
-                spreadRadius: 2,
-                offset: const Offset(0, 8),
-              )
-            ],
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: List.generate(_tabs.length, (index) {
-                final tab = _tabs[index];
-                final isSelected = _currentIndex == index;
-                return GestureDetector(
-                  onTap: () => _onTabChanged(index),
-                  behavior: HitTestBehavior.opaque,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 250),
-                    curve: Curves.easeOutCubic,
-                    padding: EdgeInsets.symmetric(
-                        horizontal: isSelected ? 16 : 10, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: isSelected ? AppTheme.primary.withOpacity(0.12) : Colors.transparent,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          isSelected ? tab.activeIcon : tab.icon,
-                          color: isSelected ? AppTheme.primary : AppTheme.textSecondary.withOpacity(0.6),
-                          size: 24,
-                        ),
-                        if (isSelected) ...[
-                          const SizedBox(width: 6),
-                          Text(
-                            tab.label,
-                            style: const TextStyle(
-                                color: AppTheme.primary,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 13),
+      bottomNavigationBar: hideMainNav
+          ? null
+          : SafeArea(
+              child: Container(
+                margin: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(30),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppTheme.primaryDark.withOpacity(0.08),
+                      blurRadius: 20,
+                      spreadRadius: 2,
+                      offset: const Offset(0, 8),
+                    )
+                  ],
+                ),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: List.generate(_tabs.length, (index) {
+                      final tab = _tabs[index];
+                      final isSelected = _currentIndex == index;
+                      return GestureDetector(
+                        onTap: () => _onTabChanged(index),
+                        behavior: HitTestBehavior.opaque,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 250),
+                          curve: Curves.easeOutCubic,
+                          padding: EdgeInsets.symmetric(
+                              horizontal: isSelected ? 16 : 10, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? AppTheme.primary.withOpacity(0.12)
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(20),
                           ),
-                        ]
-                      ],
-                    ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                isSelected ? tab.activeIcon : tab.icon,
+                                color: isSelected
+                                    ? AppTheme.primary
+                                    : AppTheme.textSecondary.withOpacity(0.6),
+                                size: 24,
+                              ),
+                              if (isSelected) ...[
+                                const SizedBox(width: 6),
+                                Text(
+                                  tab.label,
+                                  style: const TextStyle(
+                                      color: AppTheme.primary,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 13),
+                                ),
+                              ]
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
                   ),
-                );
-              }),
+                ),
+              ),
             ),
-          ),
-        ),
-      ),
     );
   }
 }
-

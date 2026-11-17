@@ -14,8 +14,8 @@ $auth = apiRequireAuth();
 $id = $ROUTE['id'];
 $sub = $ROUTE['sub'];
 
-if (apiRoleIs($auth, ['finance_dept', 'material_dept'])) {
-    err('Classes are not available for this role. Use the website.', 403);
+if (!apiRoleIs($auth, apiRolesClassBrowser())) {
+    err('Classes are not available for this role.', 403);
 }
 
 // ============================================================
@@ -203,7 +203,10 @@ if ($method === 'GET' && $id !== null && $sub === 'students') {
             $scope = \App\Services\EnrollmentService::resolveRosterYear($conn, $id, $year ? (int)$year['id'] : null);
             $rows = \App\Services\EnrollmentService::fetchRoster($conn, $id, $scope['year_id'] ?? null);
             foreach ($rows as $row) {
-                $row['photo_url'] = apiPhotoUrl($row['student_photo_path'] ?? null);
+                $row['photo_url'] = apiPhotoUrl(
+                    $row['student_photo_path'] ?? null,
+                    (int)($row['id'] ?? 0)
+                );
                 unset($row['student_photo_path']);
                 $students[] = apiRosterStudentRow($row);
             }
@@ -232,7 +235,10 @@ if ($method === 'GET' && $id !== null && $sub === 'students') {
             $stmt->execute();
             $r = $stmt->get_result();
             while ($row = $r->fetch_assoc()) {
-                $row['photo_url'] = apiPhotoUrl($row['student_photo_path'] ?? null);
+                $row['photo_url'] = apiPhotoUrl(
+                    $row['student_photo_path'] ?? null,
+                    (int)($row['id'] ?? 0)
+                );
                 unset($row['student_photo_path']);
                 $students[] = apiRosterStudentRow($row);
             }

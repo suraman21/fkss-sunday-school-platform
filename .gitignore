@@ -38,6 +38,9 @@ admin/uploads/members/
 # Keep denial rules, never uploaded content.
 !admin/uploads/members/
 admin/uploads/members/*
+!admin/uploads/members/photos/
+admin/uploads/members/photos/*
+!admin/uploads/members/photos/.htaccess
 !admin/uploads/members/docs/
 admin/uploads/members/docs/*
 !admin/uploads/members/docs/.htaccess

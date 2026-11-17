@@ -76,10 +76,7 @@ try {
 
 foreach ($matches as &$match) {
     if (!empty($match['student_photo_path'])) {
-        $path = ltrim((string)$match['student_photo_path'], '/');
-        if (!preg_match('#^https?://#i', $path) && str_starts_with($path, 'uploads/')) {
-            $match['student_photo_path'] = '/admin/' . $path;
-        }
+        $match['student_photo_path'] = '/admin/photo_file.php?member_id=' . (int)$match['id'];
     }
 }
 unset($match);

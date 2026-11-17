@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../widgets/loading_skeleton.dart';
 import '../../utils/transitions.dart';
+import '../../utils/config.dart';
 import '../../services/api_service.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/local_db.dart';
@@ -56,6 +57,9 @@ class _MemberListScreenState extends State<MemberListScreen>
   Timer? _photoCounterTimer;
   PhotoOutboxCounters _photoCounters = PhotoOutboxCounters.zero;
   bool _photoServiceReady = false;
+
+  bool get _photoOnly => UserRoles.canManageMemberPhotos(_api.userRole);
+  bool get _canUploadPhotos => UserRoles.canUploadMemberPhotos(_api.userRole);
 
   void _refreshPhotoCounters() async {
     if (!_photoServiceReady) {
@@ -128,7 +132,11 @@ class _MemberListScreenState extends State<MemberListScreen>
         if (code == null) return QrFeedback.invalid();
         final db = LocalDb();
         var member = await db.findCachedMemberByCode(code);
-        int? id = member != null ? (member['id'] is int ? member['id'] as int : int.tryParse('${member['id']}')) : null;
+        int? id = member != null
+            ? (member['id'] is int
+                ? member['id'] as int
+                : int.tryParse('${member['id']}'))
+            : null;
         String name = member != null
             ? '${member['student_name'] ?? ''} ${member['father_name'] ?? ''}'
             : '';
@@ -141,7 +149,9 @@ class _MemberListScreenState extends State<MemberListScreen>
                 .toList();
             for (final m in items) {
               if ('${m['member_code'] ?? ''}' == code) {
-                id = m['id'] is int ? m['id'] as int : int.tryParse('${m['id']}');
+                id = m['id'] is int
+                    ? m['id'] as int
+                    : int.tryParse('${m['id']}');
                 name = '${m['student_name'] ?? ''} ${m['father_name'] ?? ''}';
                 break;
               }
@@ -182,8 +192,7 @@ class _MemberListScreenState extends State<MemberListScreen>
   /// Server matches the local predicate cannot see (full_name_am /
   /// phone search for PII roles) are appended after the local window.
   List<Map<String, dynamic>> _mergeLocalAndServer(
-      List<Map<String, dynamic>> local,
-      List<Map<String, dynamic>> server) {
+      List<Map<String, dynamic>> local, List<Map<String, dynamic>> server) {
     if (server.isEmpty) return local;
     final ids = local.map((m) => m['id']).toSet();
     return [...local, ...server.where((m) => !ids.contains(m['id']))];
@@ -345,7 +354,7 @@ class _MemberListScreenState extends State<MemberListScreen>
           _serverPage++;
           final pagination = res.data!['pagination'] as Map? ?? {};
           _totalPages = (pagination['pages'] as num?)?.toInt() ?? 1;
-        _serverTotal = (pagination['total'] as num?)?.toInt() ?? _serverTotal;
+          _serverTotal = (pagination['total'] as num?)?.toInt() ?? _serverTotal;
           final ids = _members.map((m) => m['id']).toSet();
           final added = items.where((m) => !ids.contains(m['id'])).toList();
           if (added.isNotEmpty && mounted) {
@@ -419,50 +428,49 @@ class _MemberListScreenState extends State<MemberListScreen>
         title: const Text('Members'),
         automaticallyImplyLeading: Navigator.canPop(context),
         actions: [
-          // Batch roster photo capture — walks the member list and
-          // prompts for each missing photo (P6).
-          IconButton(
-            tooltip: 'Batch photo capture',
-            icon: const Icon(Icons.photo_library_outlined, size: 22),
-            onPressed: () => Navigator.of(context).push(
-                SmoothPageRoute(page: const PhotoBatchCaptureScreen())),
-          ),
-          // Photo sync panel with unsynced-count badge.
-          Stack(
-            alignment: Alignment.center,
-            children: [
-              IconButton(
-                tooltip: 'Photo sync',
-                icon: const Icon(Icons.photo_camera_outlined, size: 22),
-                onPressed: () => Navigator.of(context).push(
-                    SmoothPageRoute(page: const PhotoSyncPanelScreen())),
-              ),
-              if (_photoCounters.unsynced > 0)
-                Positioned(
-                  right: 4,
-                  top: 4,
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF600000),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    constraints: const BoxConstraints(minWidth: 16),
-                    child: Text(
-                      _photoCounters.unsynced > 99
-                          ? '99+'
-                          : '${_photoCounters.unsynced}',
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 9,
-                          fontWeight: FontWeight.w700),
-                      textAlign: TextAlign.center,
+          if (_canUploadPhotos) ...[
+            IconButton(
+              tooltip: 'Batch photo capture',
+              icon: const Icon(Icons.photo_library_outlined, size: 22),
+              onPressed: () => Navigator.of(context)
+                  .push(SmoothPageRoute(page: const PhotoBatchCaptureScreen())),
+            ),
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                IconButton(
+                  tooltip: 'Photo sync',
+                  icon: const Icon(Icons.photo_camera_outlined, size: 22),
+                  onPressed: () => Navigator.of(context).push(
+                      SmoothPageRoute(page: const PhotoSyncPanelScreen())),
+                ),
+                if (_photoCounters.unsynced > 0)
+                  Positioned(
+                    right: 4,
+                    top: 4,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF600000),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      constraints: const BoxConstraints(minWidth: 16),
+                      child: Text(
+                        _photoCounters.unsynced > 99
+                            ? '99+'
+                            : '${_photoCounters.unsynced}',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700),
+                        textAlign: TextAlign.center,
+                      ),
                     ),
                   ),
-                ),
-            ],
-          ),
+              ],
+            ),
+          ],
           // Phase 9: scan a member-card QR to jump straight to the file.
           IconButton(
               tooltip: 'Scan member QR',
@@ -508,29 +516,29 @@ class _MemberListScreenState extends State<MemberListScreen>
                     : null,
                 contentPadding:
                     const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12)),
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               ),
               onSubmitted: (_) => _loadMembers(newQuery: true),
               textInputAction: TextInputAction.search,
             ),
           ),
 
-          // Filter chips
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  _filterChip('All', ''),
-                  _filterChip('Active', 'active'),
-                  _filterChip('Warning', 'warning'),
-                  _filterChip('Inactive', 'inactive'),
-                ],
+          if (!_photoOnly)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    _filterChip('All', ''),
+                    _filterChip('Active', 'active'),
+                    _filterChip('Warning', 'warning'),
+                    _filterChip('Inactive', 'inactive'),
+                  ],
+                ),
               ),
             ),
-          ),
 
           // List
           Expanded(
@@ -587,8 +595,7 @@ class _MemberListScreenState extends State<MemberListScreen>
                               child: CustomScrollView(
                                 controller: _scrollController,
                                 cacheExtent: kListCacheExtent,
-                                physics:
-                                    const AlwaysScrollableScrollPhysics(),
+                                physics: const AlwaysScrollableScrollPhysics(),
                                 slivers: [
                                   SliverPadding(
                                     padding: const EdgeInsets.symmetric(
@@ -597,8 +604,8 @@ class _MemberListScreenState extends State<MemberListScreen>
                                       itemExtent: kFastRowHeight,
                                       delegate: SliverChildBuilderDelegate(
                                         // Flat zebra row — no Card/shadow/ripple.
-                                        (context, index) => _memberCard(
-                                            _members[index], index),
+                                        (context, index) =>
+                                            _memberCard(_members[index], index),
                                         childCount: _members.length,
                                         addAutomaticKeepAlives: false,
                                       ),
@@ -634,8 +641,8 @@ class _MemberListScreenState extends State<MemberListScreen>
       padding: const EdgeInsets.only(right: 8),
       child: FilterChip(
         label: Text(label,
-            style: TextStyle(
-                fontSize: 12, color: selected ? Colors.white : null)),
+            style:
+                TextStyle(fontSize: 12, color: selected ? Colors.white : null)),
         selected: selected,
         onSelected: (_) {
           setState(() => _statusFilter = value);
@@ -645,8 +652,7 @@ class _MemberListScreenState extends State<MemberListScreen>
         checkmarkColor: Colors.white,
         side: BorderSide(
             color: selected ? AppTheme.primary : AppTheme.borderLight),
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     );
   }
@@ -668,8 +674,7 @@ class _MemberListScreenState extends State<MemberListScreen>
             ? AppTheme.warning
             : AppTheme.danger;
     final name = '${member['student_name'] ?? ''}';
-    final initial =
-        name.trim().isEmpty ? '?' : name.trim()[0].toUpperCase();
+    final initial = name.trim().isEmpty ? '?' : name.trim()[0].toUpperCase();
 
     return FastListRow(
       index: index,
@@ -709,11 +714,10 @@ class _MemberListScreenState extends State<MemberListScreen>
                     if (member['member_code'] != null) ...[
                       Text(member['member_code'],
                           style: TextStyle(
-                              fontSize: 11,
-                              color: AppTheme.textSecondary)),
+                              fontSize: 11, color: AppTheme.textSecondary)),
                       const SizedBox(width: 8),
                     ],
-                    if (member['gender'] != null)
+                    if (!_photoOnly && member['gender'] != null)
                       Icon(
                           member['gender'] == 'male'
                               ? Icons.male
@@ -721,12 +725,11 @@ class _MemberListScreenState extends State<MemberListScreen>
                           size: 14,
                           color: AppTheme.textSecondary),
                     const SizedBox(width: 4),
-                    if (member['current_section'] != null)
+                    if (!_photoOnly && member['current_section'] != null)
                       Flexible(
                         child: Text(member['current_section'],
                             style: TextStyle(
-                                fontSize: 11,
-                                color: AppTheme.textSecondary),
+                                fontSize: 11, color: AppTheme.textSecondary),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis),
                       ),
@@ -736,19 +739,19 @@ class _MemberListScreenState extends State<MemberListScreen>
             ),
           ),
           const SizedBox(width: 6),
-          Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
-              color: _chipBg[status] ?? const Color(0x26DC2626),
-              borderRadius: BorderRadius.circular(6),
+          if (!_photoOnly)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: _chipBg[status] ?? const Color(0x26DC2626),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(status,
+                  style: TextStyle(
+                      color: statusColor,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600)),
             ),
-            child: Text(status,
-                style: TextStyle(
-                    color: statusColor,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600)),
-          ),
           const SizedBox(width: 2),
           const Icon(Icons.chevron_right,
               size: 16, color: AppTheme.textSecondary),

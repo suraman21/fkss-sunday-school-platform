@@ -2,9 +2,9 @@
 /**
  * Validates and stores member photos/documents.
  *
- * Student photos retain their legacy web-path contract for the browser/mobile
- * clients. Guardian photos and identity/supporting documents are private and
- * are only resolved by the authenticated member_file.php controller.
+ * Member photos and supporting documents are stored outside the web root and
+ * resolved only by authenticated controllers. Legacy public photo paths remain
+ * readable during the migration period.
  */
 
 namespace App\Services;
@@ -24,7 +24,7 @@ final class MemberFileService
     ];
 
     private const FIELDS = [
-        'student_photo' => ['category' => 'photos', 'private' => false, 'pdf' => false],
+        'student_photo' => ['category' => 'photos', 'private' => true, 'pdf' => false],
         'guardian_photo' => ['category' => 'guardian_photos', 'private' => true, 'pdf' => false],
         'doc_school_records' => ['category' => 'docs', 'private' => true, 'pdf' => true],
         'doc_spiritual' => ['category' => 'docs', 'private' => true, 'pdf' => true],
@@ -138,10 +138,10 @@ final class MemberFileService
         return ['path' => 'uploads/members/' . $spec['category'] . '/' . $name, 'error' => null];
     }
 
-    /** Resolve only private URI paths or the two protected legacy directories. */
+    /** Resolve only private URI paths or protected legacy file directories. */
     public static function resolvePrivatePath(string $storedPath): ?string
     {
-        if (preg_match('#^private://members/(docs|guardian_photos)/([a-f0-9]{32}\.(?:jpg|png|gif|webp|bmp|pdf))$#D', $storedPath, $match)) {
+        if (preg_match('#^private://members/(photos|docs|guardian_photos)/([a-f0-9]{32}\.(?:jpg|png|gif|webp|bmp|pdf))$#D', $storedPath, $match)) {
             $candidate = self::privateRoot() . '/' . $match[1] . '/' . $match[2];
             return is_file($candidate) ? $candidate : null;
         }
@@ -164,6 +164,44 @@ final class MemberFileService
             return null;
         }
         return $real;
+    }
+
+    /** Resolve a current private photo or a legacy public photo path. */
+    public static function resolvePhotoPath(string $storedPath): ?string
+    {
+        $private = self::resolvePrivatePath($storedPath);
+        if ($private !== null) {
+            return $private;
+        }
+
+        $legacy = str_replace('\\', '/', trim($storedPath));
+        $legacy = ltrim($legacy, '/');
+        if (strpos($legacy, 'admin/') === 0) {
+            $legacy = substr($legacy, 6);
+        }
+        if (!preg_match('#^uploads/members/photos/([a-f0-9]{32}\.(?:jpg|png|gif|webp|bmp))$#D', $legacy, $match)) {
+            return null;
+        }
+        $root = realpath(self::publicRoot() . '/photos');
+        $real = realpath(self::publicRoot() . '/photos/' . $match[1]);
+        if ($root === false || $real === false
+            || strpos($real, $root . DIRECTORY_SEPARATOR) !== 0
+            || !is_file($real)) {
+            return null;
+        }
+        return $real;
+    }
+
+    public static function photoStorageDirectory(): ?string
+    {
+        $dir = self::privateRoot() . '/photos';
+        return self::ensureDirectory($dir, 0700) ? $dir : null;
+    }
+
+    public static function photoImportDirectory(): ?string
+    {
+        $dir = self::privateRoot() . '/photo_imports';
+        return self::ensureDirectory($dir, 0700) ? $dir : null;
     }
 
     public static function mimeForPath(string $path): ?string

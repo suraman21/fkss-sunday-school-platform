@@ -513,7 +513,7 @@ $currentStatus = (int) field_value('is_active', $editUser, $oldForm, 1);
                                 'school_admin'  => 'School Admin',
                                 'hr_dept'       => 'HR Department',
                                 'info_dept'     => 'Information Dept',
-                                'photo_importer' => 'Photo Importer (ZIP & review only)',
+                                'photo_dept'    => 'Photo Department (mobile, ZIP & review)',
                                 'edu_dept'      => 'Education Dept',
                                 'finance_dept'  => 'Finance Dept',
                                 'material_dept' => 'Material Dept',
@@ -523,6 +523,9 @@ $currentStatus = (int) field_value('is_active', $editUser, $oldForm, 1);
                                 'content_editor' => 'Content Editor (Website)',
                                 'accounts_office' => 'Accounts Office (ACM)',
                             ];
+                            if ($currentRole === 'photo_importer') {
+                                $roles['photo_importer'] = 'Photo Department (legacy account)';
+                            }
                             foreach ($roles as $value => $label) {
                                 $selected = $currentRole === $value ? 'selected' : '';
                                 echo "<option value=\"{$value}\" {$selected}>{$label}</option>";

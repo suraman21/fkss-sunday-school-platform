@@ -26,12 +26,12 @@
 -- already give us this exact file" quickly.
 -- ------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS photo_upload_receipts (
-  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  id                  INT(10) UNSIGNED NOT NULL AUTO_INCREMENT,
   client_op_id        VARCHAR(64) NULL,
-  import_item_id      INTEGER NULL,
-  member_id           INTEGER NOT NULL,
+  import_item_id      INT(10) UNSIGNED NULL,
+  member_id           INT(10) UNSIGNED NOT NULL,
   field               VARCHAR(32) NOT NULL DEFAULT 'student_photo',
-  operator_admin_id   INTEGER NOT NULL,
+  operator_admin_id   INT(10) UNSIGNED NOT NULL,
   device_id           VARCHAR(64) NULL,
   sha256              CHAR(64) NOT NULL,
   stored_path         VARCHAR(255) NOT NULL,
@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS photo_upload_receipts (
   taken_at            DATETIME NULL,
   created_at          DATETIME NOT NULL,
   UNIQUE KEY uq_photo_receipt_op (client_op_id),
+  PRIMARY KEY (id),
   KEY idx_photo_receipt_member (member_id, field, created_at),
   KEY idx_photo_receipt_sha (operator_admin_id, sha256),
   KEY idx_photo_receipt_import (import_item_id),
@@ -58,11 +59,11 @@ CREATE TABLE IF NOT EXISTS photo_upload_receipts (
 -- land with is_current=0, decision_pending=1 for admin review).
 -- ------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS member_photo_candidates (
-  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-  member_id           INTEGER NOT NULL,
+  id                  INT(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+  member_id           INT(10) UNSIGNED NOT NULL,
   field               VARCHAR(32) NOT NULL DEFAULT 'student_photo',
-  receipt_id          INTEGER NOT NULL,
-  operator_admin_id   INTEGER NOT NULL,
+  receipt_id          INT(10) UNSIGNED NOT NULL,
+  operator_admin_id   INT(10) UNSIGNED NOT NULL,
   device_id           VARCHAR(64) NULL,
   sha256              CHAR(64) NOT NULL,
   stored_path         VARCHAR(255) NOT NULL,
@@ -76,7 +77,8 @@ CREATE TABLE IF NOT EXISTS member_photo_candidates (
   archived            TINYINT(1) NOT NULL DEFAULT 0,
   created_at          DATETIME NOT NULL,
   decided_at          DATETIME NULL,
-  decided_by_admin_id INTEGER NULL,
+  decided_by_admin_id INT(10) UNSIGNED NULL,
+  PRIMARY KEY (id),
   KEY idx_photo_cand_member_current (member_id, field, is_current, archived),
   KEY idx_photo_cand_pending (decision_pending, field, created_at),
   UNIQUE KEY uq_photo_cand_receipt (receipt_id),
@@ -108,9 +110,9 @@ CREATE INDEX idx_photo_cand_current_lookup
 -- batches table to close out ZIP lineage on device feedback.
 -- ------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS photo_import_batches (
-  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  id                  INT(10) UNSIGNED NOT NULL AUTO_INCREMENT,
   batch_uuid          VARCHAR(64) NOT NULL,
-  operator_admin_id   INTEGER NOT NULL,
+  operator_admin_id   INT(10) UNSIGNED NOT NULL,
   device_id           VARCHAR(64) NULL,
   source              VARCHAR(16) NOT NULL DEFAULT 'zip',  -- 'zip' | 'web'
   manifest_sig_valid  TINYINT(1) NOT NULL DEFAULT 1,
@@ -122,23 +124,27 @@ CREATE TABLE IF NOT EXISTS photo_import_batches (
   created_at          DATETIME NOT NULL,
   committed_at        DATETIME NULL,
   UNIQUE KEY uq_photo_import_uuid (batch_uuid),
+  PRIMARY KEY (id),
   KEY idx_photo_import_operator (operator_admin_id, status, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS photo_import_items (
-  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-  batch_id            INTEGER NOT NULL,
+  id                  INT(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+  batch_id            INT(10) UNSIGNED NOT NULL,
   seq                 INTEGER NOT NULL,
-  member_id           INTEGER NULL,
+  member_id           INT(10) UNSIGNED NULL,
   field               VARCHAR(32) NOT NULL DEFAULT 'student_photo',
   sha256              CHAR(64) NOT NULL,
   decision            VARCHAR(24) NOT NULL DEFAULT 'pending',
-  resolved_member_id  INTEGER NULL,
-  receipt_id          INTEGER NULL,
+  resolved_member_id  INT(10) UNSIGNED NULL,
+  receipt_id          INT(10) UNSIGNED NULL,
   created_at          DATETIME NOT NULL,
+  PRIMARY KEY (id),
   KEY idx_photo_import_item_batch (batch_id, seq),
   CONSTRAINT fk_photo_import_item_batch
-    FOREIGN KEY (batch_id) REFERENCES photo_import_batches(id) ON DELETE CASCADE
+    FOREIGN KEY (batch_id) REFERENCES photo_import_batches(id) ON DELETE CASCADE,
+  CONSTRAINT fk_photo_import_item_receipt
+    FOREIGN KEY (receipt_id) REFERENCES photo_upload_receipts(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------------------

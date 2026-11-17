@@ -14,7 +14,7 @@ if (session_status() === PHP_SESSION_NONE) @session_start();
 // access_control.php auto-runs auth + role gating on include.
 $userName = $_SESSION['admin_full_name'] ?? $_SESSION['admin_username'] ?? 'Admin';
 $role = (string)($_SESSION['admin_role'] ?? '');
-$canDecide = in_array($role, ['super_admin', 'school_admin', 'info_dept', 'hr_dept', 'photo_importer'], true);
+$canDecide = in_array($role, ['super_admin', 'school_admin', 'info_dept', 'hr_dept', 'photo_dept', 'photo_importer'], true);
 if (!$canDecide) { http_response_code(403); exit('Access denied.'); }
 
 $schoolName = defined('SCHOOL_NAME_SHORT') ? SCHOOL_NAME_SHORT : 'FKSS';
@@ -131,6 +131,7 @@ body {
 </div>
 
 <script>
+const csrfToken = <?= json_encode(generateCsrfToken(), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
 async function load() {
   try {
     const r = await fetch('/admin/api_photo_candidates.php?action=list-pending', {credentials:'same-origin'});
@@ -155,11 +156,11 @@ function render(items) {
     return;
   }
   root.innerHTML = items.map(it => {
-    const newThumb = '<div class="thumb new"><img src="'+esc(it.path)+'?r='+it.id+'" alt="" onerror="this.style.display=\'none\';this.parentElement.innerHTML=\'<div class=ph>Unavailable</div>\'"></div>' +
+    const newThumb = '<div class="thumb new"><img src="'+esc(it.path)+'&r='+encodeURIComponent(it.id)+'" alt="" onerror="this.style.display=\'none\';this.parentElement.innerHTML=\'<div class=ph>Unavailable</div>\'"></div>' +
       '<div class="thumb-label">New candidate</div>' +
       '<div class="badge-new"><i class="fa-solid fa-user"></i> '+esc(it.operator_name)+' · '+humanBytes(it.byte_size)+'</div>';
     const curThumb = it.has_current
-      ? '<div class="thumb"><img src="'+esc(it.current_path)+'?r=c'+it.id+'" alt="" onerror="this.style.display=\'none\';this.parentElement.innerHTML=\'<div class=ph>None</div>\'"></div>' +
+      ? '<div class="thumb"><img src="'+esc(it.current_path)+'&r=c'+encodeURIComponent(it.id)+'" alt="" onerror="this.style.display=\'none\';this.parentElement.innerHTML=\'<div class=ph>None</div>\'"></div>' +
         '<div class="thumb-label">Current photo</div>' +
         '<div class="badge-cur">Existing</div>'
       : '<div class="thumb"><div class="ph"><i class="fa-solid fa-image" style="font-size:32px;opacity:.5"></i></div></div>' +
@@ -183,7 +184,7 @@ async function decide(id, decision, btn) {
     const r = await fetch('/admin/api_photo_candidates.php?action=decide',{
       method:'POST', credentials:'same-origin',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({candidate_id:id, decision:decision}),
+      body: JSON.stringify({candidate_id:id, decision:decision, csrf_token:csrfToken}),
     });
     const j = await r.json();
     if (j.status !== 'success') {
