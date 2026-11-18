@@ -36,6 +36,13 @@ final class MemberSearchService
     /** Engine recall cap per query (ranked IDs, filtered + paged after). */
     public const TOP_K = 500;
     public const BACKFILL_MAX = 500;
+    /**
+     * Directory cutover flag (P2a). True = api_list_members.php serves `q`
+     * searches from the ranked engine with automatic MySQL fallback.
+     * Instant rollback: set false (or delete the index file). Mutable so
+     * tests can prove both paths; production code never flips it at runtime.
+     */
+    public static bool $directoryCutover = true;
 
     /** @var bool|null */
     private static $available = null;
@@ -416,6 +423,140 @@ final class MemberSearchService
             return ['ids' => array_keys($ranked), 'stages' => $stages, 'engine' => 'tnt'];
         } catch (\Throwable $error) {
             error_log('MemberSearchService::searchRanked failed: ' . $error->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Stage-1 exact IDs from the DB: member code, then canonical normalized
+     * name (multi-word aware via the first/father pair hash). Empty when
+     * canonical keys are unavailable. Never throws.
+     *
+     * @return int[]
+     */
+    public static function exactIds(\PDO $pdo, string $q): array
+    {
+        $ids = [];
+        try {
+            $stmt = $pdo->prepare('SELECT id FROM members WHERE member_code = ? LIMIT 5');
+            $stmt->execute([$q]);
+            while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
+                $ids[] = (int)$row['id'];
+            }
+        } catch (\Throwable $ignored) {
+        }
+        try {
+            $split = AmharicIdentityNormalizer::splitFullName($q);
+            if ($split['pair_hash'] !== '') {
+                $stmt = $pdo->prepare('SELECT id FROM members WHERE name_pair_hash = ? LIMIT 20');
+                $stmt->execute([$split['pair_hash']]);
+            } else {
+                $single = $split['student'] !== '' ? $split['student'] : $split['full'];
+                if ($single === '') {
+                    return $ids;
+                }
+                $stmt = $pdo->prepare(
+                    'SELECT id FROM members WHERE student_name_norm = ? OR father_name_norm = ? LIMIT 20'
+                );
+                $stmt->execute([$single, $single]);
+            }
+            while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
+                $id = (int)$row['id'];
+                if (!in_array($id, $ids, true)) {
+                    $ids[] = $id;
+                }
+            }
+        } catch (\Throwable $ignored) {
+            // Canonical columns missing (pre-migration DB): skip the stage.
+        }
+        return $ids;
+    }
+
+    /**
+     * Engine path for directory-style endpoints (P2a cutover). Runs the
+     * cascade and returns a MemberDirectoryService::search()-shaped page,
+     * or null when the caller must run today's MySQL matching instead
+     * (flag off, engine unavailable, any error). Never throws.
+     *
+     * Rank order wins on this path: sort/cursor params are ignored (search
+     * means relevance); page/limit/include_total are honored exactly like
+     * the service (total/pages null when include_total=0). Recall is
+     * bounded by TOP_K: totals above that are reported as the fetched set.
+     *
+     * @param array<string,mixed> $params raw request params (q, page, limit, filters…)
+     * @return array{members:array,total:?int,page:int,limit:int,pages:?int,next_cursor:null,stages:array}|null
+     */
+    public static function rankedDirectoryPage(
+        \PDO $pdo,
+        MemberDirectoryService $service,
+        array $params,
+        string $role,
+        string $view,
+        string $q
+    ): ?array {
+        try {
+            if (!self::$directoryCutover) {
+                return null;
+            }
+            $ranked = self::searchRanked($q, self::TOP_K, self::exactIds($pdo, $q));
+            if ($ranked === null) {
+                return null;
+            }
+            $limit = max(1, min(MemberDirectoryService::MAX_PAGE_SIZE, (int)($params['limit'] ?? MemberDirectoryService::DEFAULT_PAGE_SIZE)));
+            $includeTotal = (string)($params['include_total'] ?? '1') !== '0';
+            // Engine served zero hits: honest empty page (never fall through
+            // to an unfiltered listing — an empty ID set must stay empty).
+            if ($ranked['ids'] === []) {
+                return [
+                    'members' => [], 'total' => $includeTotal ? 0 : null,
+                    'page' => 1, 'limit' => $limit,
+                    'pages' => $includeTotal ? 1 : null,
+                    'next_cursor' => null, 'stages' => $ranked['stages'],
+                ];
+            }
+            // Filtered fetch over ranked IDs, then restore rank order. `q`
+            // MUST be unset (MySQL matching would filter fuzzy matches out)
+            // and so must `cursor` (it belongs to id-ordered paging, which
+            // rank order replaces on this path). Fetched in MAX_PAGE_SIZE
+            // chunks: the service caps every fetch there, and one fetch
+            // would silently truncate recall past 200 rows.
+            $fetch = $params;
+            unset($fetch['q'], $fetch['cursor']);
+            $fetch['limit'] = self::TOP_K;
+            $fetch['page'] = 1;
+            $fetch['include_total'] = '0'; // total is computed below
+            $members = [];
+            foreach (array_chunk($ranked['ids'], MemberDirectoryService::MAX_PAGE_SIZE) as $chunk) {
+                $fetch['ids'] = $chunk;
+                $result = $service->search($fetch, $role, $view);
+                foreach ($result['members'] as $member) {
+                    $members[] = $member;
+                }
+            }
+            $rank = [];
+            foreach ($ranked['ids'] as $position => $id) {
+                $rank[(int)$id] = $position;
+            }
+            usort($members, static function (array $a, array $b) use ($rank): int {
+                return ($rank[(int)($a['id'] ?? 0)] ?? PHP_INT_MAX)
+                    <=> ($rank[(int)($b['id'] ?? 0)] ?? PHP_INT_MAX);
+            });
+            $total = count($members);
+            $pages = max(1, (int)ceil($total / $limit));
+            $page = min(max(1, (int)($params['page'] ?? 1)), $pages);
+            return [
+                'members' => array_slice($members, ($page - 1) * $limit, $limit),
+                'total' => $includeTotal ? $total : null,
+                'page' => $page, 'limit' => $limit,
+                'pages' => $includeTotal ? $pages : null,
+                'next_cursor' => null, 'stages' => $ranked['stages'],
+            ];
+        } catch (\InvalidArgumentException $denied) {
+            // Role/view rejected: silent null — the caller's MySQL fallthrough
+            // re-throws it as the usual 403, so nothing is logged as an error.
+            return null;
+        } catch (\Throwable $error) {
+            error_log('MemberSearchService::rankedDirectoryPage failed, falling back: ' . $error->getMessage());
             return null;
         }
     }

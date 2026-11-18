@@ -9,8 +9,10 @@ header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, private');
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/backend/services/MemberDirectoryService.php';
+require_once __DIR__ . '/backend/services/MemberSearchService.php';
 
 use App\Services\MemberDirectoryService;
+use App\Services\MemberSearchService;
 
 if (empty($_SESSION['admin_id'])) {
     http_response_code(401);
@@ -31,17 +33,42 @@ try {
     }
 
     $service = new MemberDirectoryService($pdo);
-    $result = $service->search(
-        $_GET,
-        (string)($_SESSION['admin_role'] ?? ''),
-        trim((string)($_GET['view'] ?? ''))
-    );
+    $role = (string)($_SESSION['admin_role'] ?? '');
+    $view = trim((string)($_GET['view'] ?? ''));
 
     $sections = ($_GET['include_options'] ?? '') === '1'
         ? $service->sections()
         : [];
+
+    // P2a directory cutover: `q` searches are served by the ranked engine
+    // when the flag is on and the engine can serve; a null falls through
+    // to today's MySQL matching below. No UI changes needed — same params,
+    // same shape, plus an honest `engine` field (tnt|mysql).
+    $engine = 'mysql';
+    $q = trim((string)($_GET['q'] ?? ''));
+    if ($q !== '' && MemberSearchService::$directoryCutover) {
+        $rankedPage = MemberSearchService::rankedDirectoryPage($pdo, $service, $_GET, $role, $view, $q);
+        if ($rankedPage !== null) {
+            $engine = 'tnt';
+            echo json_encode([
+                'status' => 'success',
+                'engine' => $engine,
+                'members' => $rankedPage['members'],
+                'options' => ['sections' => $sections],
+                'total' => $rankedPage['total'],
+                'page' => $rankedPage['page'],
+                'limit' => $rankedPage['limit'],
+                'pages' => $rankedPage['pages'],
+                'next_cursor' => $rankedPage['next_cursor'],
+            ], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+            exit;
+        }
+    }
+
+    $result = $service->search($_GET, $role, $view);
     echo json_encode([
         'status' => 'success',
+        'engine' => $engine,
         'members' => $result['members'],
         'options' => ['sections' => $sections],
         'total' => $result['total'],
