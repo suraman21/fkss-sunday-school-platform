@@ -161,7 +161,7 @@ if (!defined('ACCESS_CONTROL_LOADED')) {
             // ---- Member management (Information department) ----
             // finance_dept included: the finance dashboard fetches the student
             // roster to assign fees (frontend/js/finance.js → members.php).
-            'hr_register_member.php'  => ['super_admin', 'school_admin', 'hr_dept'],
+            'hr_register_member.php'  => ['super_admin', 'hr_dept'],
             'api_list_members.php'    => ['super_admin', 'school_admin', 'info_dept', 'hr_dept', 'edu_dept', 'finance_dept'],
             'members.php'             => ['super_admin', 'school_admin', 'info_dept', 'hr_dept', 'edu_dept', 'finance_dept'],
             'api_check_duplicate.php' => ['super_admin', 'school_admin', 'hr_dept'],
@@ -208,7 +208,7 @@ if (!defined('ACCESS_CONTROL_LOADED')) {
             'reports.php'     => ['super_admin', 'school_admin', 'info_dept', 'hr_dept'],
             'export_pdf.php'  => ['super_admin', 'school_admin', 'info_dept', 'hr_dept'],
             'api_export_members.php' => ['super_admin', 'school_admin', 'info_dept', 'hr_dept'],
-            'api_import_members.php' => ['super_admin', 'school_admin', 'hr_dept'],
+            'api_import_members.php' => ['super_admin', 'hr_dept'],
             'api_test_seed.php'      => ['super_admin'],
 
             // ---- CMS (public website content) ----

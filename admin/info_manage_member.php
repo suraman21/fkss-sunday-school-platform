@@ -111,6 +111,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Get form values
     $registration_type = field('registration_type', $cur['registration_type'] ?? 'waiting');
+    // PROMOTION CONSISTENCY (2026-11-18): tier and type can never split.
+    // Permanent members are never waiting type; temporary members are
+    // always waiting type (M8). Legacy permanent+waiting rows (pre-fix
+    // promotions, never backfilled by decision) are repaired by changing
+    // the type to Direct here. Skipped only if the tier column is absent.
+    if (array_key_exists('membership_tier', $cur)) {
+        $storedTier = (string)($cur['membership_tier'] ?? 'permanent');
+        if ($storedTier === 'permanent' && $registration_type === 'waiting') {
+            echo json_encode(['status' => 'error', 'message' => "Permanent members cannot have Registration Type 'Waiting'. Change it to Direct (or Transfer) and save again."]);
+            exit;
+        }
+        if ($storedTier === 'temporary' && $registration_type !== 'waiting') {
+            echo json_encode(['status' => 'error', 'message' => "Temporary members must have Registration Type 'Waiting'."]);
+            exit;
+        }
+    }
     $member_type       = field('member_type', $cur['member_type'] ?? 'regular');
     // Member status (members.status) is a manual HR / Information decision
     // (Attendance alerting requirements §4): only those roles may change it,

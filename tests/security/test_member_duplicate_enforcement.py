@@ -88,12 +88,14 @@ class MemberDuplicateEnforcementTests(unittest.TestCase):
         self.assertIn("registration_request_id", self.controller)
         self.assertIn("Idempotency-Replayed: true", self.controller)
         self.assertIn("registration_request_id", self.hr_ui)
-        self.assertIn("registration_request_id", self.school_ui)
+        # School-admin registration was removed entirely on 2026-11-18:
+        # the school dashboard carries no registration request path.
+        self.assertNotIn("registration_request_id", self.school_ui)
+        self.assertNotIn("/admin/js/request-id.js", self.school_ui)
+        self.assertNotIn("quickAddInFlight", self.school_ui)
         self.assertIn("/admin/js/request-id.js", self.hr_ui)
-        self.assertIn("/admin/js/request-id.js", self.school_ui)
         self.assertIn("crypto.randomUUID", self.request_ids)
         self.assertIn("crypto.getRandomValues", self.request_ids)
-        self.assertIn("quickAddInFlight", self.school_ui)
 
     def test_deployment_has_composite_candidate_index(self):
         self.assertIn("idx_members_duplicate_name", self.migration)

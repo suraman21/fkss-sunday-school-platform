@@ -60,7 +60,7 @@ class ImporterStaticContract(unittest.TestCase):
     def test_upload_hardening_kept(self):
         for token in ("is_uploaded_file(", "filesize(", "new ZipArchive()",
                       "$expandedBytes > 50 * 1024 * 1024", "$zip->numFiles > 5000",
-                      "validateCsrf", "'super_admin', 'school_admin', 'hr_dept'"):
+                      "validateCsrf", "'super_admin', 'hr_dept'"):
             self.assertIn(token, self.src)
 
     def test_single_transaction_and_dry_run(self):

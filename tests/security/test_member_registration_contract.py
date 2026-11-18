@@ -38,18 +38,37 @@ class MemberRegistrationContractTests(unittest.TestCase):
         )
         self.assertNotIn("Fatal error", completed.stdout + completed.stderr)
         result = json.loads(completed.stdout.strip().splitlines()[-1])
-        self.assertTrue(result["school_profile"])
+        self.assertTrue(result["school_rejected"])
         self.assertTrue(result["hr_upgrade"])
+        self.assertTrue(result["permanent_coerced"])
+        self.assertTrue(result["transfer_kept"])
+        self.assertTrue(result["temporary_waiting"])
         self.assertTrue(result["invalid_rejected"])
 
-    def test_school_quick_add_uses_explicit_supported_contract(self):
-        self.assertIn("registration_profile','quick_add", self.school)
-        self.assertIn("fetch('/admin/hr_register_member.php'", self.school)
-        self.assertIn("quickAddInFlight", self.school)
-        self.assertIn("s.textContent=String(msg||'')", self.school)
+    def test_school_admin_registration_is_removed_and_tier_type_cannot_split(self):
+        # School-admin registration was removed entirely on 2026-11-18:
+        # no UI entry, no request path, and the policy rejects the role.
+        self.assertNotIn("quickAddModal", self.school)
+        self.assertNotIn("quickAddMember", self.school)
+        self.assertNotIn("quickAddInFlight", self.school)
+        self.assertNotIn("registration_request_id", self.school)
+        self.assertNotIn("/admin/js/request-id.js", self.school)
+        self.assertNotIn("fetch('/admin/hr_register_member.php'", self.school)
         self.assertIn("$role === 'school_admin'", self.policy)
-        self.assertIn("'allow_uploads' => !$quickAdd", self.policy)
-        self.assertIn("'allow_upgrade' => !$quickAdd", self.policy)
+        self.assertIn("School administrators cannot register members.", self.policy)
+        self.assertIn("$quickAdd = false;", self.policy)
+        self.assertIn("s.textContent=String(msg||'')", self.school)
+        # Promotion consistency: permanent tier is never waiting type.
+        self.assertIn(
+            "$tierEarly === 'permanent' && $registrationType === 'waiting'",
+            self.policy,
+        )
+        self.assertIn(
+            "$data['registration_type'] = 'direct';", self.controller
+        )
+        self.assertIn(
+            "SELECT registration_type FROM members WHERE id = ?", self.controller
+        )
 
     def test_controller_validates_and_audits_inside_registration_transaction(self):
         self.assertIn("MemberRegistrationPolicy::prepare", self.controller)
@@ -89,7 +108,11 @@ class MemberRegistrationContractTests(unittest.TestCase):
     def test_route_authorizes_only_registration_owners(self):
         access = (ROOT / "admin/access_control.php").read_text()
         self.assertIn(
-            "'hr_register_member.php'  => ['super_admin', 'school_admin', 'hr_dept']",
+            "'hr_register_member.php'  => ['super_admin', 'hr_dept']",
+            access,
+        )
+        self.assertIn(
+            "'api_import_members.php' => ['super_admin', 'hr_dept'],",
             access,
         )
 

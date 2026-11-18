@@ -3,26 +3,24 @@ require $argv[1] . '/admin/backend/services/MemberRegistrationPolicy.php';
 
 use App\Services\MemberRegistrationPolicy;
 
-$school = MemberRegistrationPolicy::prepare([
-    'full_name_am' => 'Student Father',
-    'gender' => 'female',
-    'registration_type' => 'direct',
-    'member_type' => 'honorary',
-    'membership_tier' => 'temporary',
-    'status' => 'inactive',
-    'phone_number' => '+251 911 000 000',
-    'current_section' => 'Section A',
-    'upgrade_member_id' => '99',
-], 'school_admin');
-if (
-    !$school['quick_add']
-    || $school['allow_uploads']
-    || $school['allow_upgrade']
-    || $school['member_type'] !== 'regular'
-    || $school['membership_tier'] !== 'permanent'
-    || $school['status'] !== 'active'
-) {
-    throw new RuntimeException('School quick-add capabilities were not constrained.');
+// School-admin registration was removed entirely on 2026-11-18.
+$schoolRejected = false;
+try {
+    MemberRegistrationPolicy::prepare([
+        'full_name_am' => 'Student Father',
+        'gender' => 'female',
+        'registration_type' => 'direct',
+        'member_type' => 'regular',
+        'membership_tier' => 'permanent',
+        'status' => 'active',
+        'phone_number' => '+251 911 000 000',
+        'current_section' => 'Section A',
+    ], 'school_admin');
+} catch (InvalidArgumentException $error) {
+    $schoolRejected = true;
+}
+if (!$schoolRejected) {
+    throw new RuntimeException('School-admin registration was not rejected.');
 }
 
 $hr = MemberRegistrationPolicy::prepare([
@@ -36,22 +34,51 @@ $hr = MemberRegistrationPolicy::prepare([
 if ($hr['quick_add'] || !$hr['allow_uploads'] || !$hr['allow_upgrade']) {
     throw new RuntimeException('HR full-registration capabilities were lost.');
 }
+// M8: temporary tier is always waiting type, even when direct is posted.
+if ($hr['membership_tier'] !== 'temporary' || $hr['registration_type'] !== 'waiting') {
+    throw new RuntimeException('Temporary tier was not forced to waiting type.');
+}
+
+// PROMOTION CONSISTENCY (2026-11-18): permanent tier is never waiting
+// type — a permanent+waiting POST is coerced to direct.
+$coerced = MemberRegistrationPolicy::prepare([
+    'full_name_am' => 'Student Father Grandfather',
+    'gender' => 'male',
+    'registration_type' => 'waiting',
+    'membership_tier' => 'permanent',
+], 'hr_dept');
+if ($coerced['registration_type'] !== 'direct') {
+    throw new RuntimeException('Permanent+waiting was not coerced to direct.');
+}
+// Transfer background survives on the permanent tier.
+$transfer = MemberRegistrationPolicy::prepare([
+    'full_name_am' => 'Student Father Grandfather',
+    'gender' => 'male',
+    'registration_type' => 'transfer',
+    'membership_tier' => 'permanent',
+], 'hr_dept');
+if ($transfer['registration_type'] !== 'transfer') {
+    throw new RuntimeException('Permanent transfer background was not preserved.');
+}
 
 $rejected = false;
 try {
     MemberRegistrationPolicy::prepare([
         'full_name_am' => 'SingleName',
         'gender' => 'invalid',
-    ], 'school_admin');
+    ], 'hr_dept');
 } catch (InvalidArgumentException $error) {
     $rejected = true;
 }
 if (!$rejected) {
-    throw new RuntimeException('Malformed quick-add input was accepted.');
+    throw new RuntimeException('Malformed input was accepted.');
 }
 
 echo json_encode([
-    'school_profile' => $school['quick_add'],
+    'school_rejected' => $schoolRejected,
     'hr_upgrade' => $hr['allow_upgrade'],
+    'permanent_coerced' => $coerced['registration_type'] === 'direct',
+    'transfer_kept' => $transfer['registration_type'] === 'transfer',
+    'temporary_waiting' => $hr['registration_type'] === 'waiting',
     'invalid_rejected' => $rejected,
 ], JSON_THROW_ON_ERROR), PHP_EOL;

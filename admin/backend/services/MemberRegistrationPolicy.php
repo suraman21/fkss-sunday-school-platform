@@ -23,8 +23,14 @@ final class MemberRegistrationPolicy
      */
     public static function prepare(array $input, string $role): array
     {
-        // quick_add is a role capability, never triggered by a POST flag (security).
-        $quickAdd = $role === 'school_admin';
+        // School-admin registration (quick_add) was removed entirely on
+        // 2026-11-18: the school dashboard no longer registers members.
+        if ($role === 'school_admin') {
+            throw new InvalidArgumentException('School administrators cannot register members.');
+        }
+        // quick_add is now always false (capability removed); the contract
+        // keys stay so existing callers keep working unchanged.
+        $quickAdd = false;
         $fullName = self::text($input['full_name_am'] ?? '', 150, 'Full name');
         if ($fullName === '') {
             throw new InvalidArgumentException('Full name is required.');
@@ -56,6 +62,13 @@ final class MemberRegistrationPolicy
                 self::REGISTRATION_TYPES,
                 'registration type'
             );
+        // PROMOTION CONSISTENCY (2026-11-18, mirror of M8 above): a
+        // permanent tier is never waiting type. permanent+waiting can only
+        // arrive from a legacy row, the HR form's untouched default, or a
+        // crafted POST — coerce to direct. Transfer keeps its background.
+        if ($tierEarly === 'permanent' && $registrationType === 'waiting') {
+            $registrationType = 'direct';
+        }
         $phone = self::text($input['phone_number'] ?? '', 30, 'Phone number');
         if ($phone !== '' && !preg_match('/^[0-9+()\- .]+$/', $phone)) {
             throw new InvalidArgumentException('Phone number contains unsupported characters.');

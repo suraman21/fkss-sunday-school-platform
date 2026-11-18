@@ -152,8 +152,9 @@ if (function_exists('recordAttempt')) recordAttempt('hr_register');
 if (!isset($conn) || $conn->connect_error) {
     jsonExit(['status' => 'error', 'message' => 'Database connection error.'], 503);
 }
-// Role gating: registration/promotion is HR-only (plus super_admin/school_admin).
-$allowedRegRoles = ['super_admin', 'school_admin', 'hr_dept'];
+// Role gating: registration/promotion is HR-only (plus super_admin).
+// School-admin registration was removed entirely on 2026-11-18.
+$allowedRegRoles = ['super_admin', 'hr_dept'];
 if (!hasRole($allowedRegRoles)) {
     jsonExit(['status' => 'error', 'message' => 'You do not have permission to register members.'], 403);
 }
@@ -544,7 +545,32 @@ try {
         unset($data['registered_at']);
         unset($data['waiting_since']);
         unset($data['member_code']);
-        unset($data['registration_type']);
+        // PROMOTION CONSISTENCY (2026-11-18): a member promoted to
+        // permanent leaves the waiting pool everywhere — dashboards,
+        // lists, badges and reports all key off registration_type.
+        // Temporary is always waiting (M8), so read the STORED type
+        // (never the POST): stored waiting becomes direct; a stored
+        // transfer background is preserved; anything unexpected also
+        // becomes direct (a permanent tier is never waiting type).
+        // Non-promotion upgrades (tier stays temporary) also keep stored.
+        if (($data['membership_tier'] ?? '') === 'permanent') {
+            $storedType = null;
+            $typeStmt = $conn->prepare('SELECT registration_type FROM members WHERE id = ?');
+            if ($typeStmt) {
+                $typeStmt->bind_param('i', $upgrade_id);
+                $typeStmt->execute();
+                $typeRow = $typeStmt->get_result()->fetch_assoc();
+                $typeStmt->close();
+                if (is_array($typeRow)) $storedType = (string)($typeRow['registration_type'] ?? '');
+            }
+            if ($storedType === 'transfer') {
+                unset($data['registration_type']);
+            } else {
+                $data['registration_type'] = 'direct';
+            }
+        } else {
+            unset($data['registration_type']);
+        }
         // The registration default is only for new records. An upgrade
         // without an explicit manual selection must retain its stored type.
         if (!array_key_exists('member_type', $_POST)) {

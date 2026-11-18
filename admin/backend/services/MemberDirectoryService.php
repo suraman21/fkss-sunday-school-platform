@@ -253,9 +253,10 @@ final class MemberDirectoryService
         }
 
         if ($criteria['eligible_for_id_card']) {
-            // H4: promoted members keep registration_type='waiting' as their
-            // true background; tier=permanent is what makes them card-ready.
-            // Keep in sync with generate_id_card.php.
+            // H4 (updated 2026-11-18): promotions now flip waiting→direct,
+            // but legacy permanent+waiting rows were never backfilled by
+            // decision — the tier=permanent clause covers them. Keep in
+            // sync with generate_id_card.php.
             $where[] = "(`registration_type` IN ('direct', 'transfer') OR `member_type` = 'honorary' OR `membership_tier` = 'permanent')";
         }
 

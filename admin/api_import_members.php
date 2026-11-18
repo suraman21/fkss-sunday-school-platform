@@ -1,7 +1,7 @@
 <?php
 /**
  * Smart Member Import API (Excel .xlsx UPSERT) — v2 (2026-10-21)
- * - CSRF + role gated (super_admin / school_admin / hr_dept)
+ * - CSRF + role gated (super_admin / hr_dept; school_admin removed 2026-11-18)
  * - Human headers AND legacy snake_case headers
  * - dry_run=1 ("Check file") validates the whole file and writes nothing.
  * - All-or-nothing: every row is validated first; ANY error rejects the
@@ -47,7 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $role = $_SESSION['admin_role'] ?? '';
-if (empty($_SESSION['admin_id']) || !in_array($role, ['super_admin', 'school_admin', 'hr_dept'], true)) {
+if (empty($_SESSION['admin_id']) || !in_array($role, ['super_admin', 'hr_dept'], true)) {
     import_json(['success' => false, 'message' => 'Access denied.'], 403);
 }
 
@@ -537,6 +537,16 @@ try {
                 if (trim((string)($existing[$col] ?? '')) !== (string)$val) {
                     $changes[$col] = $val;
                 }
+            }
+            // PROMOTION CONSISTENCY (2026-11-18, mirror of the insert rule):
+            // an update can never leave tier and type split — permanent is
+            // never waiting type, temporary is always waiting type.
+            $resTier = (string)($changes['membership_tier'] ?? $existing['membership_tier'] ?? '');
+            $resType = (string)($changes['registration_type'] ?? $existing['registration_type'] ?? '');
+            if ($resTier === 'permanent' && $resType === 'waiting') {
+                $changes['registration_type'] = 'direct';
+            } elseif ($resTier === 'temporary' && $resType !== '' && $resType !== 'waiting') {
+                $changes['registration_type'] = 'waiting';
             }
             $plan[] = ['action' => 'update', 'row' => $excelRow, 'id' => (int)$existing['id'], 'data' => $changes, 'class' => $class];
             $summary[empty($changes) ? 'unchanged' : 'updated']++;
