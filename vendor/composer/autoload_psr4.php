@@ -7,7 +7,11 @@ $baseDir = dirname($vendorDir);
 
 return array(
     'ZipStream\\' => array($vendorDir . '/maennchen/zipstream-php/src'),
+    'TeamTNT\\TNTSearch\\' => array($vendorDir . '/teamtnt/tntsearch/src'),
+    'SSMS\\Acm\\' => array($baseDir . '/acm/src'),
     'Psr\\SimpleCache\\' => array($vendorDir . '/psr/simple-cache/src'),
+    'Psr\\Http\\Message\\' => array($vendorDir . '/psr/http-message/src'),
+    'Predis\\' => array($vendorDir . '/predis/predis/src'),
     'PhpOffice\\PhpSpreadsheet\\' => array($vendorDir . '/phpoffice/phpspreadsheet/src/PhpSpreadsheet'),
     'OpenSpout\\' => array($vendorDir . '/openspout/openspout/src'),
     'Matrix\\' => array($vendorDir . '/markbaker/matrix/classes/src'),

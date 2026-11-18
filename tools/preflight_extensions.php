@@ -54,6 +54,18 @@ foreach ($extensions as [$ext, $breaks]) {
     $check('ext-' . $ext, extension_loaded($ext), $breaks);
 }
 
+// Optional: reported, never release-blocking. The member search engine
+// (ADR-0022) degrades to plain MySQL when pdo_sqlite is unavailable.
+foreach (['pdo_sqlite'] as $ext) {
+    $ok = extension_loaded($ext);
+    printf(
+        "[%s] %-28s %s\n",
+        $ok ? 'OK  ' : 'WARN',
+        'ext-' . $ext . ' (optional)',
+        $ok ? '' : '<- member search falls back to plain MySQL (slower, no typo tolerance).'
+    );
+}
+
 echo "\n" . ($failures === 0
     ? "PASS: all " . (count($extensions) + 1) . " checks green.\n"
     : "FAIL: {$failures} check(s) missing — do not deploy until the host provides them.\n");

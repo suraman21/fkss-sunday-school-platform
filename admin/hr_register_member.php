@@ -23,6 +23,7 @@ require_once __DIR__ . '/backend/services/AmharicIdentityNormalizer.php';
 require_once __DIR__ . '/backend/services/MemberCanonicalIdentityService.php';
 require_once __DIR__ . '/backend/services/ApiIdempotencyService.php';
 require_once __DIR__ . '/backend/services/SecurityAuditService.php';
+require_once __DIR__ . '/backend/services/MemberSearchService.php';
 
 $_ethDateLoaded = false;
 if (file_exists(__DIR__ . '/backend/ethiopian_date.php')) {
@@ -780,6 +781,15 @@ try {
         } catch (Throwable $codeErr) {
             error_log('Promotion code issue error: ' . $codeErr->getMessage());
         }
+    }
+
+    // P0 search engine: write-through index AFTER Identity v2, so the row
+    // is indexed with its final member code. Never fatal to registration;
+    // the backfill endpoint catches up on any failure.
+    try {
+        \App\Services\MemberSearchService::indexMember($conn, (int)$newId);
+    } catch (\Throwable $searchError) {
+        error_log('Search write-through failed for member ' . $newId . ': ' . $searchError->getMessage());
     }
 
     // Optional class assignment — never fail the registration if this misses.

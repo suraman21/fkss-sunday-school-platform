@@ -48,6 +48,7 @@ Some folders are deliberately ignored by Git (`.gitignore`) but the code needs t
 | Folder | Needed by | What breaks without it |
 |---|---|---|
 | `admin/id_cards/assets/qr/` | ID-card generation and QR renewal (`admin/id_cards/generate_id_card.php`, `IdentityCodeService`) | ID-card generation answers "ID-card generation is temporarily unavailable" and the error log says "The deployment-managed ID-card QR directory is unavailable". This happened on production on 2026-10-23: the folder had never been created there, and it was created that day |
+| `admin/var/search/` | Member search engine index (`MemberSearchService`, [ADR-0022](adr/0022-member-search-tntsearch.md)) | The engine auto-creates this folder on first backfill, but the PHP user must be able to write `admin/var/`. The index file holds member-name PII: keep the shipped `.htaccess` deny (Apache) or the §2.4 mirror (nginx). Never copy an index between servers — rebuild it with the backfill endpoint instead. Without a readable index, search silently falls back to plain MySQL |
 
 The wider list of writable folders is in [`audits/DEPLOYMENT_RUNBOOK.md`](audits/DEPLOYMENT_RUNBOOK.md) ("Stage 3 — File permissions"). It has not been re-verified against production.
 
@@ -93,14 +94,15 @@ php tools/preflight_extensions.php
 
 - Run it **on the deploy target** (cPanel Terminal, a one-shot cron PHP-CLI run, or ssh) — the deploying laptop's PHP proves nothing about the server. The script is read-only: it loads nothing and connects nowhere.
 - Exit `0` = all checks green; exit `1` = a gap is listed with what breaks. A FAIL blocks the release until the host provides the extension (cPanel "PHP Selector" / EasyApache, or the VPS package).
-- The required set (PHP ≥ 8.4; `mysqli`, `pdo_mysql`, `mbstring`, `curl`, `gd`, `xml`, `xmlwriter`, `dom`, `zip`, `bcmath`) mirrors the README prerequisites; the script prints the per-extension breakage.
+- The required set (PHP ≥ 8.4; `mysqli`, `pdo_mysql`, `mbstring`, `curl`, `gd`, `xml`, `xmlwriter`, `dom`, `zip`, `bcmath`) mirrors the README prerequisites; the script prints the per-extension breakage. `pdo_sqlite` is reported as a non-blocking WARN: without it the member search engine is unavailable and search falls back to plain MySQL (slower, no typo tolerance) instead of failing.
 
 ### 2.4 Non-Apache servers: replicate the `.htaccess` protections (L2)
 
 The upload protections live in `admin/uploads/.htaccess` and are **Apache-only** — nginx and other servers ignore `.htaccess` entirely. Any non-Apache deployment MUST replicate at least the private-file denials, or member documents become public URLs:
 
 ```nginx
-# Mirror of admin/uploads/.htaccess — keep the two in sync.
+# Mirror of admin/uploads/.htaccess + admin/var/search/.htaccess — keep in sync.
+location ^~ /admin/var/search/                      { deny all; }
 location ^~ /admin/uploads/members/docs/            { deny all; }
 location ^~ /admin/uploads/members/guardian_photos/ { deny all; }
 location ^~ /admin/uploads/cache/                   { deny all; }

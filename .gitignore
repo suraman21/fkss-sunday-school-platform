@@ -69,6 +69,12 @@ uploads/mezmur_categories/*
 uploads/mezmur_zemarians/*
 !uploads/mezmur_zemarians/.htaccess
 
+# --- Search index files (P0 engine; regenerable + contain PII tokens) ---
+/admin/var/search/*.index
+/admin/var/search/*.index-wal
+/admin/var/search/*.index-shm
+/admin/var/search/*.index-journal
+
 # --- Composer deps (run composer install on deploy) ---
 /vendor/
 

@@ -38,6 +38,12 @@ DYNAMIC_ALLOWLIST = {
     "admin/backend/services/AppReleaseManager.php": 2,
     "admin/backend/services/FailureAlertService.php": 1,
     "admin/backend/services/GuardianMatchService.php": 1,
+    # 2026-11-18: MemberSearchService builds the composer-autoload path from
+    # dirname(__DIR__, 3) (repo-root anchored, same pattern as
+    # GuardianMatchService/ReportExportService), guarded by is_file(). No
+    # request input reaches the path; a folder move breaks loudly at the
+    # probe (engine unavailable → MySQL fallback), never silently.
+    "admin/backend/services/MemberSearchService.php": 1,
     "admin/backend/services/TestMemberSeed.php": 1,
     "admin/components/notification_center.php": 1,
     "admin/dashboard.php": 2,

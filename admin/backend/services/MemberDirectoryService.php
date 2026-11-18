@@ -221,6 +221,9 @@ final class MemberDirectoryService
                 'permanent_archive', 'failed_observation',
             ]),
             'membership_tier' => $enum($input['membership_tier'] ?? '', ['temporary', 'permanent']),
+            // P0 search engine: ranked ID set from the cascade (array only,
+            // bounded; strings are ignored so URLs cannot inject junk).
+            'ids' => self::intList($input['ids'] ?? []),
             'eligible_for_promotion' => (string)($input['eligible_for_promotion'] ?? '') === '1',
             'page' => max(1, (int)($input['page'] ?? 1)),
             'limit' => min(self::MAX_PAGE_SIZE, max(1, (int)($input['limit'] ?? self::DEFAULT_PAGE_SIZE))),
@@ -242,6 +245,14 @@ final class MemberDirectoryService
     {
         $where = [];
         $params = [];
+
+        if (($criteria['ids'] ?? []) !== []) {
+            $placeholders = implode(',', array_fill(0, count($criteria['ids']), '?'));
+            $where[] = '`id` IN (' . $placeholders . ')';
+            foreach ($criteria['ids'] as $id) {
+                $params[] = $id;
+            }
+        }
 
         if ($criteria['status'] !== '') {
             $where[] = '`status` = ?';
@@ -339,6 +350,25 @@ final class MemberDirectoryService
         }
 
         return [implode(' AND ', $where), $params];
+    }
+
+    /** @return int[] */
+    private static function intList($value): array
+    {
+        if (!is_array($value)) {
+            return [];
+        }
+        $ids = [];
+        foreach ($value as $raw) {
+            $id = filter_var($raw, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+            if ($id !== false && !in_array((int)$id, $ids, true)) {
+                $ids[] = (int)$id;
+            }
+            if (count($ids) >= 500) {
+                break;
+            }
+        }
+        return $ids;
     }
 
     private function count(string $whereSql, array $params): int

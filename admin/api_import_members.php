@@ -25,6 +25,7 @@ require_once __DIR__ . '/backend/services/ExcelColumnMap.php';
 require_once __DIR__ . '/backend/services/EnrollmentService.php';
 require_once __DIR__ . '/backend/services/MemberCategory.php';
 require_once __DIR__ . '/backend/services/MemberImportService.php';
+require_once __DIR__ . '/backend/services/MemberSearchService.php';
 require_once __DIR__ . '/backend/services/SecurityAuditService.php';
 require_once __DIR__ . '/backend/danger_confirm.php';
 
@@ -692,6 +693,7 @@ $stats = ['inserted' => 0, 'updated' => 0, 'unchanged' => 0, 'enrolled' => 0, 'e
 $currentRow = 0;
 try {
     $conn->begin_transaction();
+    $searchIndexIds = [];
     foreach ($plan as $item) {
         $currentRow = (int)$item['row'];
         $rowData = $item['data'];
@@ -758,6 +760,9 @@ try {
             }
             $stats[!empty($enr['skipped']) ? 'enroll_skipped' : 'enrolled']++;
         }
+        if ($memberId > 0 && ($item['action'] === 'insert' || !empty($item['data']))) {
+            $searchIndexIds[] = $memberId;
+        }
     }
     $currentRow = 0;
     if (!\App\Services\SecurityAuditService::record($conn, 'Members Imported', [
@@ -771,6 +776,19 @@ try {
         throw new RuntimeException('Import audit recording failed.');
     }
     $conn->commit();
+    // P0 search engine: write-through for imported members (never fatal;
+    // the backfill endpoint catches up on any failure).
+    try {
+        foreach (array_unique($searchIndexIds) as $searchMemberId) {
+            try {
+                \App\Services\MemberSearchService::indexMember($conn, (int)$searchMemberId);
+            } catch (\Throwable $one) {
+                error_log('Search write-through failed for imported member ' . $searchMemberId . ': ' . $one->getMessage());
+            }
+        }
+    } catch (\Throwable $searchError) {
+        error_log('Search write-through failed after import: ' . $searchError->getMessage());
+    }
 } catch (\Throwable $e) {
     try {
         $conn->rollback();

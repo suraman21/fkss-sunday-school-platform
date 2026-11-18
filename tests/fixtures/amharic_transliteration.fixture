@@ -1,0 +1,69 @@
+<?php
+// P0 search engine: pins the AmharicTransliterator v1 table + prototypical
+// names. Run: php tests/fixtures/amharic_transliteration.fixture /repo/root
+require $argv[1] . '/vendor/autoload.php';
+require $argv[1] . '/admin/backend/services/AmharicIdentityNormalizer.php';
+require $argv[1] . '/admin/backend/services/AmharicTransliterator.php';
+require $argv[1] . '/admin/backend/services/EthiopicSearchTokenizer.php';
+
+use App\Services\AmharicTransliterator as T;
+use App\Services\EthiopicSearchTokenizer as Tok;
+
+function check($label, $actual, $expected) {
+    if ($actual !== $expected) {
+        throw new RuntimeException(
+            $label . ': expected ' . var_export($expected, true)
+            . ', got ' . var_export($actual, true)
+        );
+    }
+}
+
+// Prototypical names: PRIMARY form (bare 6th orders).
+check('selam', T::transliterate('ሰላም'), 'selam');
+check('hakim', T::transliterate('ሐኪም'), 'hakim');
+check('abebe', T::transliterate('አበበ'), 'abebe');
+check('tadese', T::transliterate('ታደሰ'), 'tadese');
+check('tsyon', T::transliterate('ጽዮን'), 'tsyon');
+check('hayle', T::transliterate('ሀይሌ'), 'hayle');
+check('ewnet', T::transliterate('እውነት'), 'ewnet');
+check('br', T::transliterate('ብር'), 'br');
+check('grma', T::transliterate('ግርማ'), 'grma');
+check('habtamu', T::transliterate('ሀብታሙ'), 'habtamu');
+check('bekele-primary', T::transliterate('በቀለ'), 'beqele');
+check('meseret', T::transliterate('መሰረት'), 'meseret');
+check('dereje', T::transliterate('ደረጀ'), 'dereje');
+check('tsehay', T::transliterate('ፀሐይ'), 'tsehay');
+// SECONDARY form (vocalized 6ths + structural alternates).
+check('girma-variant', T::variants('ግርማ'), ['grma', 'girima']);
+check('biri-variant', T::variants('ብር'), ['br', 'biri']);
+check('bekele-variant', T::variants('በቀለ'), ['beqele', 'bekele']);
+check('tsion-variant', T::variants('ጽዮን'), ['tsyon', 'siioni']);
+check('haile-loose', T::loose(T::transliterate('ሀይሌ')), 'haile');
+check('selam-variant', T::variants('ሰላም'), ['selam', 'selami']);
+check('hakim-variant', T::variants('ሐኪም'), ['hakim', 'hakimi']);
+// Unfolded input folds first (ሐ/ኀ/ኸ→h, ሠ→s, ዐ/ኣ→a, ፀ→tse).
+check('fold-ha', T::transliterate('ኀረ'), 'hare');
+check('fold-se', T::transliterate('ሠላም'), 'selam');
+check('fold-a', T::transliterate('ዐለም'), 'alem');
+// Order-1 digraphs render with "e" (Shewa ሸዋ, Chekol…).
+check('she', T::transliterate('ሸ'), 'she');
+check('che', T::transliterate('ቸ'), 'che');
+check('nye', T::transliterate('ኘ'), 'nye');
+check('zhe', T::transliterate('ዠ'), 'zhe');
+// ወ-family pin: order 2 is ዉ (U+1291), order 6 is ው (U+1295);
+// folding surfaces both as bare "w" (እውነት→ewnet).
+check('w-family', T::transliterate('ወዉዊዋዌውዎ'), 'wewwiwawewwo');
+check('wu-fold', T::transliterate('ዉ'), 'w');
+check('w-bare', T::transliterate('ው'), 'w');
+// Passthrough: Latin, digits, spaces and unknown Fidel survive unchanged.
+check('latin-passthrough', T::transliterate('Abebe 123'), 'abebe 123');
+check('empty', T::transliterate(''), '');
+check('invalid', T::transliterate(null), '');
+// Tokenizer pipeline: fold + latin light norm + split (no transliteration).
+check('tok-fold', (new Tok())->tokenize('ሐኪም'), ['ሀኪም']);
+check('tok-latin', (new Tok())->tokenize('Tadesse አበበ'), ['tadese', 'አበበ']);
+check('tok-empty', (new Tok())->tokenize(''), []);
+check('tok-collapse', Tok::latinLightNorm('tadesse'), 'tadese');
+check('tok-quotes', Tok::latinLightNorm("tse'hay"), 'tsehay');
+
+echo json_encode(['transliteration_fixture' => 'ok'], JSON_THROW_ON_ERROR), PHP_EOL;

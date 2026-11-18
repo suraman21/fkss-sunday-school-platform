@@ -5,6 +5,7 @@ namespace App\Services;
 use DomainException;
 use RuntimeException;
 require_once __DIR__ . '/MemberImportService.php';
+require_once __DIR__ . '/MemberSearchService.php';
 
 final class TelegramMemberApprovalService
 {
@@ -51,7 +52,7 @@ final class TelegramMemberApprovalService
             if(!MemberCanonicalIdentityService::refresh($this->conn,$memberId)&&MemberCanonicalIdentityService::available($this->conn))throw new RuntimeException('Canonical identity refresh failed.');
             $revision=(int)$session['revision_number'];$q=$this->conn->prepare("INSERT INTO telegram_registration_reviews(session_id,session_revision,decision,reviewer_user_id,member_id,note) VALUES(?,?,'approved',?,?,?)");$q->bind_param('iiiis',$sessionId,$revision,$reviewerId,$memberId,$note);$q->execute();$q->close();
             $q=$this->conn->prepare("UPDATE telegram_registration_sessions SET status='approved',created_member_id=?,current_field_key=NULL,lock_version=lock_version+1 WHERE id=? AND created_member_id IS NULL");$q->bind_param('ii',$memberId,$sessionId);$q->execute();if($q->affected_rows!==1)throw new RuntimeException('Approval state conflict.');$q->close();$q=$this->conn->prepare("UPDATE telegram_registration_attachments SET status='attached',updated_at=NOW() WHERE session_id=? AND status='stored'");$q->bind_param('i',$sessionId);$q->execute();$q->close();
-            $this->conn->commit();MemberDuplicateService::releaseIdentityLock($this->conn,$lock);return ['member_id'=>$memberId,'already_approved'=>false,'profile'=>$profile];
+            $this->conn->commit();try{\App\Services\MemberSearchService::indexMember($this->conn,$memberId);}catch(\Throwable $searchError){error_log('Search write-through failed for member '.$memberId.': '.$searchError->getMessage());}MemberDuplicateService::releaseIdentityLock($this->conn,$lock);return ['member_id'=>$memberId,'already_approved'=>false,'profile'=>$profile];
         }catch(\Throwable $e){$this->conn->rollback();MemberDuplicateService::releaseIdentityLock($this->conn,$lock);throw $e;}
     }
 }

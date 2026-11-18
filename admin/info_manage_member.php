@@ -9,6 +9,7 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/backend/ethiopian_date.php';
 require_once __DIR__ . '/backend/services/MemberFileService.php';
 require_once __DIR__ . '/backend/services/MemberImportService.php';
+require_once __DIR__ . '/backend/services/MemberSearchService.php';
 
 // Helper functions
 if (!function_exists('sel')) {
@@ -366,6 +367,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (($posRes['status'] ?? '') !== 'success') {
                 error_log('Member edit position sync failed for #' . $id);
             }
+        }
+        // P0 search engine: write-through AFTER Identity v2, so the row is
+        // indexed with its final member code (never fatal to the edit).
+        try {
+            \App\Services\MemberSearchService::indexMember($conn, (int)$id);
+        } catch (\Throwable $searchError) {
+            error_log('Search write-through failed for member ' . $id . ': ' . $searchError->getMessage());
         }
         echo json_encode(['status' => 'success', 'message' => 'Member updated successfully']); 
     } else { 
