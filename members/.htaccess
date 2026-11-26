@@ -1,0 +1,17 @@
+# Members portal — public directory rules.
+#
+# This directory is served by the web, so it holds only what the browser
+# needs: one entry file per page, and assets/. Application code lives in
+# src/ and presentation in templates/, both of which the ROOT .htaccess
+# denies by path. They are denied there rather than here on purpose: a
+# per-directory rule in this file would not survive a future RewriteEngine
+# here, and the root block is the one place that is already tested.
+#
+# There is deliberately no RewriteEngine in this file. All routing for
+# /members/* lives in the root .htaccess.
+
+Options -Indexes -MultiViews
+
+# /members is this directory; answer it with the front controller even if the
+# hosting's default DirectoryIndex is something else.
+DirectoryIndex index.php

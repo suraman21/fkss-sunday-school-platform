@@ -1,0 +1,12 @@
+[
+    {
+        "lessonId": "L-001",
+        "title": "Sample Lesson",
+        "description": "Development placeholder. Replace with approved Sunday School material.",
+        "grade": "7ኛ",
+        "class": "መካከለኛ",
+        "subject": "Development",
+        "content": "",
+        "status": "development"
+    }
+]

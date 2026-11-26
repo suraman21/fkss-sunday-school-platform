@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="am">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>ፈለገ ቅዱሳን | Lesson</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="css/fk-theme.css">
+</head>
+<body>
+    <header id="fk-header"></header>
+    <main class="fk-page"><div id="lesson"><div class="fk-skel"></div></div></main>
+    <div id="live" class="fk-toast" role="status" aria-live="polite" hidden></div>
+    <script src="js/session.js"></script>
+    <script src="js/fk-ui.js"></script>
+    <script>
+
+FK.addStrings({
+ am: { "ls.back": "← ወደ ትምህርት ጉዞ", "ls.files": "ተጨማሪ ፋይሎች", "ls.open": "ክፈት", "ls.noText": "ለዚህ ትምህርት የጽሑፍ ይዘት ገና አልተጨመረም።",
+  "ls.confirm": "ይህን ትምህርት አጠናቅቄያለሁ", "ls.done": "ይህ ትምህርት ተጠናቋል።", "ls.great": "እንኳን ደስ አለዎት! ትምህርቱን አጠናቀዋል።", "ls.next": "ቀጣዩን ትምህርት ጀምር",
+  "ls.waiting": "ቀጣዩን ትምህርት መምህርዎ እስኪከፍት ይጠብቁ።", "ls.toPath": "ወደ ትምህርት ጉዞ", "ls.locked": "ይህ ትምህርት መምህርዎ እስኪከፍተው እየጠበቀ ነው።", "ls.notFound": "ትምህርቱ አልተገኘም።",
+  "ls.saving": "በማስቀመጥ ላይ…", "ls.unit": "ምዕራፍ {n}", "ls.unitQuiz": "የዚህን ምዕራፍ ሁሉንም ትምህርቶች አጠናቀዋል! አሁን የምዕራፉን ጥያቄ ይሞክሩ።", "ls.unitQuizBtn": "ጥያቄውን ጀምር" },
+ en: { "ls.back": "← Back to learning journey", "ls.files": "Extra files", "ls.open": "Open", "ls.noText": "No written content has been added for this lesson yet.",
+  "ls.confirm": "I have finished this lesson", "ls.done": "This lesson is completed.", "ls.great": "Well done! You completed the lesson.", "ls.next": "Start the next lesson",
+  "ls.waiting": "Wait for your teacher to open the next lesson.", "ls.toPath": "Back to learning journey", "ls.locked": "This lesson is waiting for your teacher to unlock it.", "ls.notFound": "Lesson not found.",
+  "ls.saving": "Saving…", "ls.unit": "Unit {n}", "ls.unitQuiz": "You finished every lesson in this unit! Now take the unit quiz.", "ls.unitQuizBtn": "Start the quiz" }
+});
+var host = document.getElementById("lesson");
+var lessonId = parseInt(new URLSearchParams(location.search).get("id") || "0", 10);
+function back() { return FK.el("a", { class: "fk-btn ghost", href: "lessons.html", text: FK.t("ls.back") }); }
+
+async function afterInfo(currentId) {
+  var p = await FK.api("/api/learning/path"); if (!p.ok) { return { next: null, quiz: null }; }
+  var flat = [], unit = null;
+  p.data.subjects.forEach(function (s) { s.units.forEach(function (u) { u.lessons.forEach(function (l) { flat.push(l); if (l.lesson_id === currentId) { unit = { u: u, s: s }; } }); }); });
+  var idx = flat.findIndex(function (l) { return l.lesson_id === currentId; }), next = null;
+  for (var i = idx + 1; i < flat.length; i++) { if (flat[i].state === "available") { next = flat[i]; break; } }
+  var quiz = null;
+  if (unit && unit.u.quiz.required && unit.u.quiz.available && !unit.u.quiz.passed) { quiz = "quiz-me.html?subject=" + unit.s.subject_id + "&unit=" + unit.u.chapter_id; }
+  return { next: next, quiz: quiz };
+}
+function nextStep(info) {
+  var box = FK.el("div", { style: "margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;justify-content:center;align-items:center" });
+  if (info.quiz) { box.appendChild(FK.el("p", { class: "fk-note", style: "width:100%", text: FK.t("ls.unitQuiz") })); box.appendChild(FK.el("a", { class: "fk-btn gold", href: info.quiz, text: FK.t("ls.unitQuizBtn") })); }
+  box.appendChild(info.next ? FK.el("a", { class: "fk-btn gold", href: "lesson.html?id=" + info.next.lesson_id, text: FK.t("ls.next") }) : FK.el("p", { class: "fk-note", text: FK.t("ls.waiting") }));
+  box.appendChild(FK.el("a", { class: "fk-btn ghost", href: "lessons.html", text: FK.t("ls.toPath") }));
+  return box;
+}
+
+async function load() {
+  var me = await FK.me(); if (!me) { return; }
+  if (!lessonId) { FK.message(host, FK.t("ls.notFound"), "error"); host.appendChild(back()); return; }
+  var r = await FK.api("/api/learning/lessons/" + lessonId);
+  host.textContent = "";
+  if (r.status === 403 && r.data.code === "LESSON_LOCKED") { host.appendChild(FK.el("section", { class: "fk-card", style: "text-align:center" }, [FK.el("div", { class: "fk-node locked", style: "margin:0 auto 12px" }, [FK.svg("lock")]), FK.el("p", { class: "fk-note", text: FK.t("ls.locked") }), back()])); return; }
+  if (r.status === 404) { FK.message(host, FK.t("ls.notFound"), "error"); host.appendChild(back()); return; }
+  if (!r.ok) { FK.message(host, r.data.message || FK.t("common.error"), "error", load); return; }
+
+  var l = r.data.lesson;
+  document.title = l.title + " | ፈለገ ቅዱሳን";
+  host.appendChild(FK.el("div", { class: "fk-card fk-pagehead" }, [
+    FK.el("p", { class: "fk-crumbs", text: l.subject.name + " › " + FK.t("ls.unit", { n: l.unit.number }) + " · " + l.unit.title }),
+    FK.el("h1", { class: "fk-title", text: l.lesson_number + " " + l.title })
+  ]));
+  var reader = FK.el("article", { class: "fk-reader" });
+  if (l.description && l.description.trim()) { FK.renderRichText(l.description, reader); } else { reader.appendChild(FK.el("p", { class: "fk-task-meta", text: FK.t("ls.noText") })); }
+  host.appendChild(reader);
+
+  if (l.materials.length) {
+    var box = FK.el("section", { class: "fk-card", style: "margin-top:16px" }, [FK.el("h2", { text: FK.t("ls.files") })]);
+    var ul = FK.el("ul", { class: "fk-list" });
+    l.materials.forEach(function (m) { ul.appendChild(FK.el("li", {}, [FK.el("span", { text: m.file_name }), FK.el("a", { class: "fk-btn ghost", href: "/api/learning/materials/" + m.id + "/download", target: "_blank", rel: "noopener", text: FK.t("ls.open") })])); });
+    box.appendChild(ul); host.appendChild(box);
+  }
+
+  var act = FK.el("section", { class: "fk-card", style: "margin-top:16px" });
+  var msg = FK.el("p", { class: "fk-inline-msg", role: "alert" });
+  if (l.state === "completed") {
+    act.appendChild(FK.el("p", { class: "fk-ok", text: FK.t("ls.done") })); act.appendChild(nextStep(await afterInfo(lessonId)));
+  } else {
+    var btn = FK.el("button", { type: "button", class: "fk-btn", text: FK.t("ls.confirm") });
+    btn.addEventListener("click", async function () {
+      btn.disabled = true; btn.textContent = FK.t("ls.saving"); msg.textContent = "";
+      var c = await FK.api("/api/learning/lessons/" + lessonId + "/complete", { method: "POST", body: {} });
+      if (!c.ok) { msg.textContent = c.data.message || FK.t("common.error"); msg.className = "fk-inline-msg error"; btn.textContent = FK.t("ls.confirm"); btn.disabled = false; return; }
+      act.textContent = ""; act.appendChild(FK.el("div", { class: "fk-celebrate" }, [FK.svg("star"), FK.el("h2", { text: FK.t("ls.great") }), nextStep(await afterInfo(lessonId))]));
+    });
+    act.appendChild(btn); act.appendChild(msg);
+  }
+  host.appendChild(act); host.appendChild(FK.el("div", { style: "margin-top:16px" }, [back()]));
+}
+load();
+
+    </script>
+</body>
+</html>

@@ -1,0 +1,194 @@
+<?php
+/**
+ * Members portal behaviour fixture — run by tests/security/test_members_portal.py.
+ *
+ * The Python test pins the shape (route table, allow-list, no request-selected
+ * template). This fixture pins what the code DOES, which shape assertions
+ * cannot see:
+ *
+ *   - the role gate fails closed for every awkward session (anonymous, empty
+ *     role, invented role, staff role)
+ *   - a page file renders for the role it serves, refuses a staff role, and
+ *     sends an anonymous visitor to sign-in
+ *   - the output is escaped
+ *   - /members and /members/home draw the same page
+ *   - an unknown slug becomes a 404 page, not a stack trace
+ *
+ * Run: php tests/fixtures/members_portal.fixture <repo-root>
+ * Prints one JSON line: {"status":"PASS","checks":N} or {"status":"FAIL",...}
+ *
+ * No database, no HTTP server, no session file: every session is constructed
+ * by hand, which is what makes this runnable in CI with no fixtures around it.
+ */
+
+require $argv[1] . '/members/src/Support/bootstrap.php';
+
+use MembersPortal\Auth\RoleGate;
+use MembersPortal\Auth\Session;
+use MembersPortal\Http\Router;
+use MembersPortal\Support\Bootstrap;
+use MembersPortal\Support\HttpException;
+
+$checks = 0;
+$failures = [];
+
+function ok($condition, string $what): void
+{
+    global $checks, $failures;
+    $checks++;
+    if ($condition !== true) {
+        $failures[] = $what;
+    }
+}
+
+function same($expected, $actual, string $what): void
+{
+    ok($expected === $actual, $what . ': expected ' . var_export($expected, true)
+        . ', got ' . var_export($actual, true));
+}
+
+/** @return int|null status the gate answered with, or null if it allowed */
+function gateStatus(string $slug, array $session): ?int
+{
+    try {
+        RoleGate::assertAllowed(Router::route($slug), $session);
+        return null;
+    } catch (HttpException $error) {
+        return $error->status();
+    }
+}
+
+/**
+ * Render a page through the real pipeline for a given session, and return the
+ * HTML.
+ *
+ * The session is passed in rather than written to $_SESSION on purpose: a
+ * session store is not available in every environment this fixture runs in
+ * (CI's CLI has none), and "a teacher opens a member page" has to be
+ * reproducible wherever it runs. The pipeline exercised here is the same one
+ * Bootstrap::create() uses — only the snapshot's source differs.
+ */
+function render(string $slug, array $session): string
+{
+    $level = ob_get_level();
+    ob_start();
+    try {
+        \MembersPortal\Support\Bootstrap::withSession($session)->run($slug);
+    } catch (\Throwable $error) {
+        while (ob_get_level() > $level) {
+            ob_end_clean();
+        }
+        return 'THREW: ' . $error::class . ': ' . $error->getMessage();
+    }
+    return (string)ob_get_clean();
+}
+
+try {
+    $portal = $argv[1] . '/members';
+
+    // ---- the route table -------------------------------------------------
+    same('', Router::route('')->slug(), 'root slug');
+    same('/login', Router::route('/login')->slug(), 'login slug');
+    same(false, Router::route('/login')->requiresSession(), 'login is public');
+    same(true, Router::route('')->requiresSession(), 'home needs a session');
+    same(true, Router::route('/home')->requiresSession(), 'home alias needs a session');
+    same(404, gateStatus('/nope', []), 'unknown slug is refused before the gate runs');
+
+    // ---- sessions --------------------------------------------------------
+    $anon = Session::fromArray([]);
+    same(false, $anon['logged_in'], 'empty session is not logged in');
+    same('', $anon['role'], 'empty session has no role');
+    same(0, $anon['id'], 'empty session has no id');
+    same(false, Session::fromArray(['logged_in' => '1'])['logged_in'],
+        'the string "1" is not a login');
+    same(false, Session::fromArray(['logged_in' => 1])['logged_in'],
+        'the integer 1 is not a login either');
+
+    $member = Session::fromArray(['logged_in' => true, 'id' => 7, 'username' => 'abebe',
+        'role' => 'member', 'full_name' => 'Abebe Bikila']);
+    $parent = Session::fromArray(['logged_in' => true, 'id' => 9, 'role' => 'parent']);
+    $teacher = Session::fromArray(['logged_in' => true, 'id' => 3, 'role' => 'teacher']);
+    $noRole = Session::fromArray(['logged_in' => true, 'id' => 4]);
+    $invented = Session::fromArray(['logged_in' => true, 'id' => 5, 'role' => 'member_admin']);
+
+    // ---- the gate: allow-list, fails closed -----------------------------
+    same(401, gateStatus('', $anon), 'anonymous on home');
+    same(null, gateStatus('', $member), 'member on home');
+    same(null, gateStatus('', $parent), 'parent on home');
+    same(null, gateStatus('/login', $member), 'member on sign-in');
+    same(403, gateStatus('', $teacher), 'teacher on home');
+    same(403, gateStatus('', $noRole), 'signed in with no role');
+    same(403, gateStatus('', $invented), 'invented role');
+    same(null, gateStatus('/login', $anon), 'anonymous on sign-in');
+
+    // A staff role is refused with a message that tells them where to go;
+    // every other refused role gets the neutral message.
+    try {
+        RoleGate::assertAllowed(Router::route(''), $teacher);
+        ok(false, 'teacher should have been refused');
+    } catch (HttpException $error) {
+        ok(str_contains($error->getMessage(), 'staff console'), 'teacher is pointed at the staff console');
+    }
+    try {
+        RoleGate::assertAllowed(Router::route(''), $noRole);
+        ok(false, 'a session with no role should have been refused');
+    } catch (HttpException $error) {
+        ok(!str_contains($error->getMessage(), 'staff console'), 'a broken session is not called staff');
+    }
+
+    // ---- rendering -------------------------------------------------------
+    $memberSession = ['logged_in' => true, 'id' => 7, 'username' => 'abebe',
+        'role' => 'member', 'full_name' => 'Abebe Bikila'];
+
+    $home = render('', $memberSession);
+    ok(str_contains($home, 'Abebe Bikila'), 'home shows the member name');
+    ok(str_contains($home, '<!DOCTYPE html>'), 'home is a whole document');
+    ok(!str_contains($home, '<?php'), 'home leaks no PHP source');
+
+    $escaped = render('', ['logged_in' => true, 'role' => 'member', 'username' => 'x',
+        'full_name' => '<script>alert(1)</script>']);
+    ok(!str_contains($escaped, '<script>alert(1)</script>'), 'the name is escaped');
+    ok(str_contains($escaped, '&lt;script&gt;'), 'the name is escaped as HTML entities');
+
+    $anonPage = render('', []);
+    ok(str_contains($anonPage, 'Sign in'), 'an anonymous visitor gets the sign-in page');
+    ok(!str_contains($anonPage, 'Welcome'), 'an anonymous visitor never sees the home page');
+
+    $staffPage = render('', ['logged_in' => true, 'role' => 'teacher']);
+    ok(str_contains($staffPage, 'staff console'), 'a staff role is told about the staff console');
+    ok(!str_contains($staffPage, 'Welcome'), 'a staff role never sees the home page');
+
+    $signIn = render('/login', []);
+    ok(str_contains($signIn, 'action="/members/login"'), 'the sign-in form posts to /members/login');
+    ok(substr_count($signIn, ' disabled') >= 3, 'the sign-in form is inert (fields and button disabled)');
+    ok(!str_contains($signIn, 'name="csrf_token"'), 'no CSRF token is implied while no form can post');
+
+    // /members and /members/home are the same page.
+    same(render('', $memberSession), render('/home', $memberSession),
+        '/members and /members/home draw the same page');
+
+    // Every entry file names its own slug, so the URL cannot pick the page.
+    foreach (['index.php' => "run('')", 'home.php' => "run('/home')", 'login.php' => "run('/login')"] as $file => $call) {
+        $source = (string)file_get_contents($portal . '/' . $file);
+        ok(str_contains($source, $call), $file . ' runs ' . $call);
+    }
+
+    // ---- failures become pages ------------------------------------------
+    ob_start();
+    Bootstrap::create()->run('/no-such-page');
+    $errorPage = (string)ob_get_clean();
+    ok(str_contains($errorPage, '404'), 'an unknown slug renders the 404 page');
+    ok(!str_contains($errorPage, 'RuntimeException') && !str_contains($errorPage, '#0 '),
+        'no stack trace reaches the browser');
+} catch (\Throwable $error) {
+    echo json_encode(['status' => 'FAIL', 'checks' => $checks,
+        'error' => $error::class . ': ' . $error->getMessage()]) . PHP_EOL;
+    exit(1);
+}
+
+if ($failures !== []) {
+    echo json_encode(['status' => 'FAIL', 'checks' => $checks, 'failures' => $failures]) . PHP_EOL;
+    exit(1);
+}
+
+echo json_encode(['status' => 'PASS', 'checks' => $checks]) . PHP_EOL;

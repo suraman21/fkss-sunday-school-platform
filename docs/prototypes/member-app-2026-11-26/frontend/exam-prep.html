@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="am">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>ፈለገ ቅዱሳን | Exam Prep</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="css/fk-theme.css">
+</head>
+<body>
+    <header id="fk-header"></header>
+    <main class="fk-page">
+        <div class="fk-card fk-pagehead"><h1 class="fk-title" data-i18n="ex.title"></h1><p class="fk-sub" data-i18n="ex.sub"></p></div>
+        <div id="ex"><div class="fk-skel"></div></div>
+    </main>
+    <div id="live" class="fk-toast" role="status" aria-live="polite" hidden></div>
+    <script src="js/session.js"></script>
+    <script src="js/fk-ui.js"></script>
+    <script>
+
+FK.addStrings({
+ am: { "ex.title": "የፈተና ዝግጅት", "ex.sub": "ከተለያዩ ዓመታት የተዘጋጁ ፈተናዎችን እና ጥያቄዎችን ይለማመዱ።",
+  "ex.plan": "ለቀጣይ ፈተና ይዘጋጁ", "ex.planText": "የፈተና ቀን፣ የሚያጠኑት ትምህርት እና በቀን የሚያገኙትን ጊዜ በማስገባት የጥናት መርሐ ግብር የሚሠራበት ክፍል። ይህ ክፍል ገና አልተዘጋጀም።",
+  "ex.roadmap": "የብሔራዊ ፈተና ጉዞ", "ex.roadmapText": "ለ8ኛ፣ 10ኛ እና 12ኛ ክፍል የሚሆን። ይፋዊው የፈተና ዝርዝር ርዕሶች ሲገኙ ይዘጋጃል። ያለ ይፋዊ ዝርዝር ምንም አናፈጥርም።",
+  "ex.papers": "ያለፉ ፈተናዎች", "ex.papersNone": "ያለፉ ፈተናዎች ሲሰበሰቡ እዚህ በዓመት ተከፍለው ይታያሉ።", "ex.openPaper": "ክፈት",
+  "ex.practice": "ልምምድ", "ex.practiceText": "በQuiz Me ጥያቄዎችን በመረጡት ትምህርት፣ ምዕራፍ ወይም ሙሉ ትምህርት ይለማመዱ።", "ex.start": "Quiz Me ክፈት",
+  "ex.weak": "መከለስ የሚያስፈልጋቸው ትምህርቶች", "ex.weakRule": "ቢያንስ 3 ጥያቄዎች ከተመለሱና ግማሹ ወይም ከዚያ በላይ ከተሳሳተ ብቻ እዚህ ይታያል።",
+  "ex.noWeak": "አሁን መከለስ የሚያስፈልገው ትምህርት የለም።", "ex.wrongOf": "{b} ከ {a} ስህተት", "ex.open": "ትምህርቱን ክፈት", "ex.history": "ያለፉ ሙከራዎች", "ex.noHistory": "እስካሁን የጨረሱት ጥያቄ የለም።",
+  "ex.review": "ገምግም", "ex.hide": "ደብቅ", "ex.scope_whole_book": "ሙሉ ትምህርት", "ex.scope_unit": "ምዕራፍ", "ex.scope_lesson": "አንድ ትምህርት",
+  "ex.yourAnswer": "የእርስዎ መልስ", "ex.noAnswer": "አልተመለሰም", "ex.explanation": "ማብራሪያ", "q.passed": "አልፈዋል", "q.failed": "አላለፉም", "ex.score": "ውጤት", "ex.soon": "ገና ያልተዘጋጀ" },
+ en: { "ex.title": "Exam Prep", "ex.sub": "Practise with questions and exams from different years.",
+  "ex.plan": "Prepare for an upcoming test", "ex.planText": "A place to enter your test date, subjects and daily study time and get a study schedule. This part has not been built yet.",
+  "ex.roadmap": "National Exam Roadmap", "ex.roadmapText": "For Grades 8, 10 and 12. It will be prepared once the official list of exam topics is available. We do not invent one.",
+  "ex.papers": "Past papers", "ex.papersNone": "Past papers will appear here, grouped by year, once they have been collected.", "ex.openPaper": "Open",
+  "ex.practice": "Practice", "ex.practiceText": "Use Quiz Me to practise questions from a lesson, a unit or the whole subject.", "ex.start": "Open Quiz Me",
+  "ex.weak": "Lessons to revise", "ex.weakRule": "A lesson appears here only after you answered at least 3 of its questions and got half or more wrong.",
+  "ex.noWeak": "Nothing needs revision right now.", "ex.wrongOf": "{b} of {a} wrong", "ex.open": "Open lesson", "ex.history": "Past attempts", "ex.noHistory": "You have not finished a quiz yet.",
+  "ex.review": "Review", "ex.hide": "Hide", "ex.scope_whole_book": "Whole subject", "ex.scope_unit": "Unit", "ex.scope_lesson": "One lesson",
+  "ex.yourAnswer": "Your answer", "ex.noAnswer": "Not answered", "ex.explanation": "Explanation", "q.passed": "Passed", "q.failed": "Not passed", "ex.score": "Score", "ex.soon": "Not available yet" }
+});
+var host = document.getElementById("ex");
+
+function review(attemptId, holder, button) {
+  if (holder.firstChild) { holder.textContent = ""; button.textContent = FK.t("ex.review"); return; }
+  button.disabled = true;
+  FK.api("/api/progress/attempts/" + attemptId).then(function (r) {
+    button.disabled = false;
+    if (!r.ok) { holder.appendChild(FK.el("p", { class: "fk-inline-msg error", text: r.data.message || FK.t("common.error") })); return; }
+    r.data.questions.forEach(function (q, i) {
+      var block = FK.el("div", { class: "fk-review-q" }, [FK.el("h4", { text: (i + 1) + ". " + q.text })]);
+      q.options.forEach(function (o) {
+        var cls = "fk-opt" + (o.is_correct ? " right" : (o.id === q.selected_option_id ? " wrong" : ""));
+        block.appendChild(FK.el("div", { class: cls }, [FK.el("b", { text: o.label }), FK.el("span", { text: o.text + (o.id === q.selected_option_id ? " ← " + FK.t("ex.yourAnswer") : "") })]));
+      });
+      if (!q.answered) { block.appendChild(FK.el("p", { class: "fk-task-meta", text: FK.t("ex.noAnswer") })); }
+      if (q.explanation && q.explanation.trim()) { block.appendChild(FK.el("div", { class: "fk-expl" }, [FK.el("strong", { text: FK.t("ex.explanation") + ": " }), q.explanation])); }
+      holder.appendChild(block);
+    });
+    button.textContent = FK.t("ex.hide");
+  });
+}
+function title(text) { return FK.el("h2", { class: "fk-section-title fk-onbg", text: text }); }
+
+async function load() {
+  var me = await FK.me(); if (!me) { return; }
+  var res = await Promise.all([FK.api("/api/progress"), FK.api("/api/progress/weak-topics"), FK.api("/api/past-papers")]);
+  var prog = res[0], weak = res[1], papers = res[2];
+  host.textContent = "";
+
+  host.appendChild(FK.el("section", { class: "fk-card" }, [FK.el("h2", { text: FK.t("ex.practice") }), FK.el("p", { text: FK.t("ex.practiceText") }), FK.el("a", { class: "fk-btn gold", href: "quiz-me.html", text: FK.t("ex.start") })]));
+
+  host.appendChild(title(FK.t("ex.papers")));
+  var pc = FK.el("section", { class: "fk-card" });
+  if (!papers.ok || !papers.data.papers.length) { pc.appendChild(FK.el("p", { text: papers.ok ? FK.t("ex.papersNone") : FK.t("common.error") })); }
+  else {
+    var byYear = {}; papers.data.papers.forEach(function (p) { (byYear[p.exam_year] = byYear[p.exam_year] || []).push(p); });
+    Object.keys(byYear).sort().reverse().forEach(function (y, i) {
+      var d = FK.el("details", { class: "fk-year" }, [FK.el("summary", { text: y })]);
+      if (i === 0) { d.setAttribute("open", ""); }
+      var ul = FK.el("ul", { class: "fk-list" });
+      byYear[y].forEach(function (p) { ul.appendChild(FK.el("li", {}, [FK.el("span", { text: p.subject + " — " + p.title }), FK.el("a", { class: "fk-btn ghost", href: "/api/past-papers/" + p.id + "/file", target: "_blank", rel: "noopener", text: FK.t("ex.openPaper") })])); });
+      d.appendChild(ul); pc.appendChild(d);
+    });
+  }
+  host.appendChild(pc);
+
+  host.appendChild(title(FK.t("ex.weak")));
+  var wc = FK.el("section", { class: "fk-card" });
+  if (!weak.ok) { FK.message(wc, FK.t("common.error"), "error", load); }
+  else if (!weak.data.topics.length) { wc.appendChild(FK.el("p", { text: FK.t("ex.noWeak") })); }
+  else { weak.data.topics.forEach(function (t) { wc.appendChild(FK.el("div", { class: "fk-attempt" }, [FK.el("div", {}, [FK.el("strong", { text: t.lesson_number + ". " + t.title }), FK.el("div", { class: "fk-task-meta", text: FK.t("ex.wrongOf", { a: t.answered, b: t.wrong }) })]), t.open ? FK.el("a", { class: "fk-btn ghost", href: "lesson.html?id=" + t.lesson_id, text: FK.t("ex.open") }) : null])); }); }
+  wc.appendChild(FK.el("p", { class: "fk-task-meta", style: "margin-top:10px", text: FK.t("ex.weakRule") }));
+  host.appendChild(wc);
+
+  host.appendChild(title(FK.t("ex.history")));
+  var hc = FK.el("section", { class: "fk-card" });
+  if (!prog.ok) { FK.message(hc, FK.t("common.error"), "error", load); }
+  else if (!prog.data.quizzes.recent.length) { hc.appendChild(FK.el("p", { text: FK.t("ex.noHistory") })); }
+  else {
+    prog.data.quizzes.recent.forEach(function (a) {
+      var holder = FK.el("div"), btn = FK.el("button", { type: "button", class: "fk-btn ghost", text: FK.t("ex.review") });
+      btn.addEventListener("click", function () { review(a.id, holder, btn); });
+      var passed = parseInt(a.passed, 10) === 1;
+      hc.appendChild(FK.el("div", {}, [FK.el("div", { class: "fk-attempt" }, [
+        FK.el("div", {}, [FK.el("strong", { text: FK.t("ex.scope_" + a.scope) + " · " + FK.t("ex.score") + ": " + (a.score === null ? "—" : Math.round(parseFloat(a.score)) + "%") }), FK.el("div", { class: "fk-task-meta", text: FK.date(a.completed_at) })]),
+        FK.el("span", { class: "fk-pill " + (passed ? "pass" : "fail"), text: passed ? FK.t("q.passed") : FK.t("q.failed") }), btn]), holder]));
+    });
+  }
+  host.appendChild(hc);
+
+  host.appendChild(title(FK.t("ex.soon")));
+  var grid = FK.el("div", { class: "fk-grid two" }, [
+    FK.el("section", { class: "fk-card" }, [FK.el("h3", { text: FK.t("ex.plan") }), FK.el("p", { class: "fk-task-meta", text: FK.t("ex.planText") })])
+  ]);
+  if (["8", "10", "12"].indexOf(String(me.grade).replace(/\D/g, "")) !== -1) {
+    grid.appendChild(FK.el("section", { class: "fk-card" }, [FK.el("h3", { text: FK.t("ex.roadmap") }), FK.el("p", { class: "fk-task-meta", text: FK.t("ex.roadmapText") })]));
+  }
+  host.appendChild(grid);
+}
+load();
+
+    </script>
+</body>
+</html>

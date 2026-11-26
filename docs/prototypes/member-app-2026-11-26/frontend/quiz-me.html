@@ -1,0 +1,2153 @@
+
+<!DOCTYPE html>
+<html lang="am">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Quiz Me - ፈለገ ቅዱሳን</title>
+
+    <link rel="stylesheet" href="style.css">
+
+    <style>
+        /* Quiz-only improvements: keep the old layout, just make controls clearer. */
+        .quiz-mode-options {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            margin-top: 4px;
+        }
+
+        .quiz-mode-option {
+            position: relative;
+        }
+
+        .quiz-mode-option input {
+            position: absolute;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .quiz-mode-option label {
+            margin: 0;
+            display: block;
+            padding: 13px 14px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background: #fff;
+            cursor: pointer;
+            font-weight: 600;
+            text-align: center;
+            transition: 0.2s ease;
+        }
+
+        .quiz-mode-option label:hover {
+            background: #f7f7f7;
+        }
+
+        .quiz-mode-option input:checked + label {
+            background: #eeeeee;
+            border-color: #555;
+        }
+
+        .quiz-field-note {
+            margin: 6px 0 0;
+            color: #777;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .quiz-feedback {
+            display: none;
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 9px;
+            border: 1px solid #ddd;
+            background: #fafafa;
+        }
+
+        .quiz-feedback.show {
+            display: block;
+        }
+
+        .quiz-feedback.correct {
+            border-color: #bbb;
+            background: #f7f7f7;
+        }
+
+        .quiz-feedback.incorrect {
+            border-color: #ccc;
+            background: #f3f3f3;
+        }
+
+        .quiz-feedback strong {
+            display: block;
+            margin-bottom: 7px;
+        }
+
+        .quiz-feedback p {
+            margin: 6px 0;
+            line-height: 1.6;
+        }
+
+        .quiz-live-message {
+            display: none;
+            margin-top: 15px;
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background: #fafafa;
+            color: #555;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .quiz-live-message.show {
+            display: block;
+        }
+
+        .quiz-loading {
+            color: #777;
+        }
+
+        @media (max-width: 600px) {
+            .quiz-mode-options {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+    <link rel="stylesheet" href="css/fk-theme.css">
+</head>
+
+
+<body>
+
+
+    <!-- =========================================
+         GLOBAL HEADER
+         ========================================= -->
+
+    <header class="dashboard-header">
+
+
+        <!-- Top-right controls -->
+        <div class="header-actions">
+
+
+            <!-- Language -->
+            <div class="language-selector">
+
+                <button
+                    class="language-button"
+                    type="button"
+                    title="ቋንቋ ይምረጡ"
+                >
+                    🌐 አማርኛ ▾
+                </button>
+
+
+                <div class="language-menu">
+
+                    <button type="button">
+                        አማርኛ
+                    </button>
+
+                    <button type="button">
+                        English
+                    </button>
+
+                </div>
+
+            </div>
+
+
+            <!-- Notifications -->
+            <div class="notification-container">
+
+                <button
+                    class="icon-button"
+                    type="button"
+                    title="ማስታወቂያዎች"
+                >
+                    🔔
+
+                    <span class="notification-badge">
+                        3
+                    </span>
+
+                </button>
+
+
+                <div class="notification-menu">
+
+                    <div class="notification-menu-header">
+                        <strong>
+                            ማስታወቂያዎች
+                        </strong>
+                    </div>
+
+
+                    <div class="notification-item">
+
+                        <strong>
+                            📅 የእሁድ ፕሮግራም
+                        </strong>
+
+                        <p>
+                            በዚህ እሁድ ልዩ የፕሮግራም
+                            መርሐ ግብር ይኖራል።
+                        </p>
+
+                    </div>
+
+
+                    <div class="notification-item">
+
+                        <strong>
+                            📝 አዲስ ተግባር
+                        </strong>
+
+                        <p>
+                            አዲስ ተግባር በመምህርዎ
+                            ተሰጥቷል።
+                        </p>
+
+                    </div>
+
+
+                    <div class="notification-item">
+
+                        <strong>
+                            📢 አስፈላጊ ማስታወቂያ
+                        </strong>
+
+                        <p>
+                            ከአስተዳደሩ አዲስ መረጃ
+                            ተለቋል።
+                        </p>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <!-- Profile -->
+            <div class="profile-container">
+
+                <button
+                    class="profile-avatar"
+                    type="button"
+                    title="የግል መረጃ"
+                >
+                    M
+                </button>
+
+
+                <div class="profile-menu">
+
+
+                    <div class="profile-header">
+
+                        <div class="profile-large-avatar">
+                            M
+                        </div>
+
+                        <strong>
+                            ማርያም ዳዊት
+                        </strong>
+
+                        <span>
+                            FK-10245
+                        </span>
+
+                    </div>
+
+
+                    <div class="profile-info">
+
+                        <p>
+                            <strong>
+                                የትምህርት ደረጃ፦
+                            </strong>
+                            7ኛ
+                        </p>
+
+                        <p>
+                            <strong>
+                                ክፍል፦
+                            </strong>
+                            መካከለኛ
+                        </p>
+
+                    </div>
+
+
+                    <div class="profile-attendance">
+
+                        <h3>
+                            📅 አቴንዳንስ
+                        </h3>
+
+
+                        <div class="attendance-box">
+
+                            <div class="attendance-row">
+                                <span>ተገኝቷል</span>
+                                <strong>—</strong>
+                            </div>
+
+                            <div class="attendance-row">
+                                <span>አልተገኘም</span>
+                                <strong>—</strong>
+                            </div>
+
+                            <div class="attendance-row">
+                                <span>የፍቃድ ጥያቄ</span>
+                                <strong>—</strong>
+                            </div>
+
+                            <div class="attendance-row">
+                                <span>ዘግይቷል</span>
+                                <strong>—</strong>
+                            </div>
+
+                        </div>
+
+
+                        <p class="attendance-note">
+                            የአቴንዳንስ መረጃ ከHR
+                            ሲጠናቀቅ እዚህ ይታያል።
+                        </p>
+
+
+                        <button
+                            type="button"
+                            class="permission-button"
+                            id="permission-button"
+                        >
+                            📨 ፍቃድ ይጠይቁ
+                        </button>
+
+                    </div>
+
+
+                    <div class="profile-menu-actions">
+
+                        <button type="button">
+                            ⚙️ ቅንብሮች
+                        </button>
+
+                        <button type="button">
+                            🚪 ውጣ
+                        </button>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <!-- Platform name -->
+        <div class="logo">
+            ፈለገ ቅዱሳን
+        </div>
+
+
+        <!-- Navigation -->
+        <nav>
+
+            <a href="student-dashboard.html">
+                🏠 መነሻ
+            </a>
+
+            <a href="lessons.html">
+                📚 ትምህርቶቼ
+            </a>
+
+            <a href="tasks.html">
+                📝 ተግባራት
+            </a>
+
+            <a href="quiz-me.html">
+                🧠 Quiz Me
+            </a>
+
+            <a href="#">
+                🎯 የፈተና ዝግጅት
+            </a>
+
+            <a href="#">
+                📈 እድገቴ
+            </a>
+
+        </nav>
+
+    </header>
+
+
+    <!-- =========================================
+         QUIZ ME PAGE
+         ========================================= -->
+
+    <main class="quiz-page">
+
+
+        <!-- Intro -->
+        <section class="quiz-intro">
+
+            <h1>
+                🧠 Quiz Me
+            </h1>
+
+            <p>
+                በተማርከው ትምህርት ላይ ራስህን ፈትን።
+            </p>
+
+        </section>
+
+
+        <!-- =====================================
+             AI SUGGESTION
+             ===================================== -->
+
+        <section class="ai-quiz-suggestion">
+
+            <div class="suggestion-icon">
+                ✨
+            </div>
+
+            <div class="suggestion-content">
+
+                <h2>
+                    የAI ምክር
+                </h2>
+
+                <p>
+                    በቀደሙት የQuiz Me ውጤቶች ላይ
+                    በመመስረት ይህን ርዕስ
+                    እንደገና እንዲለማመዱ እንመክራለን።
+                </p>
+
+                <strong>
+                    ምሳሌ ርዕስ — ክፍል 1
+                </strong>
+
+            </div>
+
+            <button
+                type="button"
+                id="use-ai-suggestion"
+            >
+                ይህን ርዕስ ይለማመዱ
+            </button>
+
+        </section>
+
+
+        <!-- =====================================
+             QUIZ SETUP
+             ===================================== -->
+
+        <section class="quiz-setup">
+
+            <h2>
+                የራስዎን ልምምድ ይፍጠሩ
+            </h2>
+
+
+            <!-- Subject -->
+
+            <label for="quiz-subject">
+                ትምህርት
+            </label>
+
+            <select id="quiz-subject" disabled>
+
+                <option value="">
+                    ትምህርት በመጫን ላይ...
+                </option>
+
+            </select>
+
+            <p class="quiz-field-note">
+                ከክፍልዎ ጋር የሚዛመዱ ትምህርቶች ብቻ ይታያሉ።
+            </p>
+
+
+            <!-- Quiz scope -->
+
+            <label for="quiz-scope">
+                የጥያቄ ወሰን
+            </label>
+
+            <select id="quiz-scope">
+                <option value="whole_book">
+                    ሙሉ ትምህርት
+                </option>
+                <option value="unit">
+                    የተወሰነ ዩኒት
+                </option>
+                <option value="lesson">
+                    የተወሰነ ትምህርት / ርዕስ
+                </option>
+            </select>
+
+            <p class="quiz-field-note" id="quiz-scope-note">
+                ጥያቄዎቹ ከመላው የተመረጠው ትምህርት ውስጥ በዘፈቀደ ይመረጣሉ።
+            </p>
+
+
+            <!-- Unit -->
+
+            <label for="quiz-unit">
+                ዩኒት
+            </label>
+
+            <select id="quiz-unit" disabled>
+
+                <option value="">
+                    መጀመሪያ ትምህርት ይምረጡ
+                </option>
+
+            </select>
+
+
+            <!-- Lesson -->
+
+            <label for="quiz-lesson">
+                ትምህርት / ርዕስ
+            </label>
+
+            <select id="quiz-lesson" disabled>
+
+                <option value="">
+                    መጀመሪያ ዩኒት ይምረጡ
+                </option>
+
+            </select>
+
+            <p class="quiz-field-note">
+                ለዩኒት ልምምድ ትምህርት መምረጥ አማራጭ ነው።
+            </p>
+
+
+            <!-- Number -->
+
+            <label for="question-number">
+                የጥያቄዎች ብዛት
+            </label>
+
+            <input
+                type="number"
+                id="question-number"
+                min="1"
+                max="100"
+                value="10"
+                placeholder="ለምሳሌ 10"
+            >
+
+
+            <!-- Mode -->
+
+            <label>
+                የመልስ ሁኔታ
+            </label>
+
+            <div class="quiz-mode-options">
+
+                <div class="quiz-mode-option">
+                    <input
+                        type="radio"
+                        name="quiz-mode"
+                        id="quiz-mode-immediate"
+                        value="immediate"
+                        checked
+                    >
+                    <label for="quiz-mode-immediate">
+                        ፈጣን ማብራሪያ
+                    </label>
+                </div>
+
+                <div class="quiz-mode-option">
+                    <input
+                        type="radio"
+                        name="quiz-mode"
+                        id="quiz-mode-review"
+                        value="final_review"
+                    >
+                    <label for="quiz-mode-review">
+                        መጨረሻ ግምገማ
+                    </label>
+                </div>
+
+            </div>
+
+            <p class="quiz-field-note" id="quiz-mode-note">
+                እያንዳንዱን መልስ ከሰጡ በኋላ ትክክለኛውን መልስና ማብራሪያ ያያሉ።
+            </p>
+
+
+            <div
+                class="quiz-live-message"
+                id="quiz-live-message"
+            ></div>
+
+
+            <button
+                type="button"
+                class="start-quiz-button"
+                id="start-quiz-button"
+                disabled
+            >
+                Quiz ጀምር
+            </button>
+
+        </section>
+
+
+        <!-- =====================================
+             QUIZ AREA
+             ===================================== -->
+
+        <section
+            class="quiz-area"
+            id="quiz-area"
+        >
+
+            <div class="quiz-progress">
+
+                ጥያቄ
+
+                <span id="current-question">
+                    1
+                </span>
+
+                /
+
+                <span id="total-questions">
+                    5
+                </span>
+
+            </div>
+
+
+            <h2 id="question-text">
+                ጥያቄው እዚህ ይታያል።
+            </h2>
+
+
+            <div
+                class="answer-options"
+                id="answer-options"
+            >
+            </div>
+
+
+            <div
+                class="quiz-feedback"
+                id="quiz-feedback"
+            >
+                <strong id="quiz-feedback-title"></strong>
+                <p id="quiz-feedback-answer"></p>
+                <p id="quiz-feedback-explanation"></p>
+            </div>
+
+
+            <button
+                type="button"
+                class="next-question-button"
+                id="next-question-button"
+                disabled
+            >
+                ቀጣይ
+            </button>
+
+        </section>
+
+
+        <!-- =====================================
+             RESULTS
+             ===================================== -->
+
+        <section
+            class="quiz-results"
+            id="quiz-results"
+        >
+
+            <h2>
+                🎉 Quiz Complete
+            </h2>
+
+
+            <div class="quiz-score">
+
+                <strong id="score">
+                    0 / 5
+                </strong>
+
+                <span id="score-percent">
+                    0%
+                </span>
+
+            </div>
+
+
+            <!-- Correct -->
+            <div class="results-section">
+
+                <h3>
+                    ✅ ትክክለኛ መልሶች
+                </h3>
+
+                <div id="correct-results">
+                </div>
+
+            </div>
+
+
+            <!-- Incorrect -->
+            <div class="results-section">
+
+                <h3>
+                    ❌ የተሳሳቱ መልሶች
+                </h3>
+
+                <div id="incorrect-results">
+                </div>
+
+            </div>
+
+
+            <!-- Recommendation -->
+            <div class="results-recommendation">
+
+                <h3>
+                    📚 የሚመከር ጥናት
+                </h3>
+
+                <p id="study-recommendation">
+                </p>
+
+            </div>
+
+
+            <button
+                type="button"
+                class="retry-quiz-button"
+                id="retry-quiz-button"
+            >
+                እንደገና ሞክር
+            </button>
+
+        </section>
+
+    </main>
+
+
+    <!-- =========================================
+         PERMISSION REQUEST MODAL
+         ========================================= -->
+
+    <div
+        class="permission-modal"
+        id="permission-modal"
+    >
+
+        <div class="permission-modal-content">
+
+            <div class="permission-modal-header">
+
+                <h2>
+                    📨 ፍቃድ ይጠይቁ
+                </h2>
+
+                <button
+                    type="button"
+                    class="close-permission"
+                    id="close-permission"
+                >
+                    ×
+                </button>
+
+            </div>
+
+
+            <form id="permission-form">
+
+                <label for="permission-type">
+                    የጥያቄ ዓይነት
+                </label>
+
+                <select
+                    id="permission-type"
+                    required
+                >
+
+                    <option value="">
+                        ይምረጡ
+                    </option>
+
+                    <option value="late">
+                        እዘገያለሁ
+                    </option>
+
+                    <option value="absent">
+                        አልገኝም
+                    </option>
+
+                    <option value="early">
+                        ቀድሜ እሄዳለሁ
+                    </option>
+
+                </select>
+
+
+                <label for="permission-date">
+                    ቀን
+                </label>
+
+                <input
+                    type="date"
+                    id="permission-date"
+                    required
+                >
+
+
+                <label for="permission-reason">
+                    ምክንያት
+                </label>
+
+                <textarea
+                    id="permission-reason"
+                    rows="4"
+                    placeholder="ምክንያቱን ያስገቡ"
+                    required
+                ></textarea>
+
+
+                <button
+                    type="submit"
+                    class="permission-submit"
+                >
+                    ጥያቄውን ላክ
+                </button>
+
+            </form>
+
+        </div>
+
+    </div>
+
+
+    <!-- =========================================
+         FLOATING AI ASSISTANT
+         ========================================= -->
+
+    <button
+        class="ai-assistant"
+        type="button"
+        title="ጠይቀኝ"
+    >
+        🕊️
+    </button>
+
+
+    <!-- =========================================
+         JAVASCRIPT
+         ========================================= -->
+
+    <script src="js/session.js"></script>
+    <script src="js/fk-ui.js"></script>
+    <script>
+
+
+        /* =========================
+           GLOBAL ELEMENTS
+           ========================= */
+
+        const languageButton =
+            document.querySelector(".language-button");
+
+        const languageMenu =
+            document.querySelector(".language-menu");
+
+        const notificationButton =
+            document.querySelector(
+                ".notification-container .icon-button"
+            );
+
+        const notificationMenu =
+            document.querySelector(".notification-menu");
+
+        const profileButton =
+            document.querySelector(".profile-avatar");
+
+        const profileMenu =
+            document.querySelector(".profile-menu");
+
+        const permissionButton =
+            document.querySelector("#permission-button");
+
+        const permissionModal =
+            document.querySelector("#permission-modal");
+
+        const closePermission =
+            document.querySelector("#close-permission");
+
+        const permissionForm =
+            document.querySelector("#permission-form");
+
+        const aiButton =
+            document.querySelector(".ai-assistant");
+
+
+        /* =========================
+           QUIZ ELEMENTS
+           ========================= */
+
+        const quizSetup =
+            document.querySelector(".quiz-setup");
+
+        const quizArea =
+            document.querySelector("#quiz-area");
+
+        const quizResults =
+            document.querySelector("#quiz-results");
+
+        const subjectSelect =
+            document.querySelector("#quiz-subject");
+
+        const unitSelect =
+            document.querySelector("#quiz-unit");
+
+        const lessonSelect =
+            document.querySelector("#quiz-lesson");
+
+        const questionNumber =
+            document.querySelector("#question-number");
+
+        const startQuizButton =
+            document.querySelector("#start-quiz-button");
+
+        const aiSuggestionButton =
+            document.querySelector("#use-ai-suggestion");
+
+        const currentQuestionElement =
+            document.querySelector("#current-question");
+
+        const totalQuestionsElement =
+            document.querySelector("#total-questions");
+
+        const questionText =
+            document.querySelector("#question-text");
+
+        const answerOptions =
+            document.querySelector("#answer-options");
+
+        const nextQuestionButton =
+            document.querySelector("#next-question-button");
+
+        const retryQuizButton =
+            document.querySelector("#retry-quiz-button");
+
+        const scoreElement =
+            document.querySelector("#score");
+
+        const scorePercentElement =
+            document.querySelector("#score-percent");
+
+        const correctResults =
+            document.querySelector("#correct-results");
+
+        const incorrectResults =
+            document.querySelector("#incorrect-results");
+
+        const studyRecommendation =
+            document.querySelector("#study-recommendation");
+
+
+        /* =========================
+           GLOBAL MENU FUNCTIONS
+           ========================= */
+
+        languageButton.addEventListener(
+            "click",
+            function (event) {
+
+                event.stopPropagation();
+
+                languageMenu.classList.toggle("show");
+
+                notificationMenu.classList.remove("show");
+
+                profileMenu.classList.remove("show");
+
+            }
+        );
+
+
+        notificationButton.addEventListener(
+            "click",
+            function (event) {
+
+                event.stopPropagation();
+
+                notificationMenu.classList.toggle("show");
+
+                languageMenu.classList.remove("show");
+
+                profileMenu.classList.remove("show");
+
+            }
+        );
+
+
+        profileButton.addEventListener(
+            "click",
+            function (event) {
+
+                event.stopPropagation();
+
+                profileMenu.classList.toggle("show");
+
+                languageMenu.classList.remove("show");
+
+                notificationMenu.classList.remove("show");
+
+            }
+        );
+
+
+        /* =========================
+           PERMISSION
+           ========================= */
+
+        permissionButton.addEventListener(
+            "click",
+            function (event) {
+
+                event.stopPropagation();
+
+                profileMenu.classList.remove("show");
+
+                permissionModal.classList.add("show");
+
+            }
+        );
+
+
+        closePermission.addEventListener(
+            "click",
+            function () {
+
+                permissionModal.classList.remove("show");
+
+            }
+        );
+
+
+        permissionModal.addEventListener(
+            "click",
+            function (event) {
+
+                if (event.target === permissionModal) {
+
+                    permissionModal.classList.remove("show");
+
+                }
+
+            }
+        );
+
+
+        permissionForm.addEventListener(
+            "submit",
+            function (event) {
+
+                event.preventDefault();
+
+                alert(
+                    "የፍቃድ ጥያቄዎ ተልኳል።"
+                );
+
+                permissionModal.classList.remove("show");
+
+                permissionForm.reset();
+
+            }
+        );
+
+
+        /* =========================
+           AI ASSISTANT
+           ========================= */
+
+        aiButton.addEventListener(
+            "click",
+            function () {
+
+                alert(
+                    "የAI የመማሪያ እገዛ እዚህ ይከፈታል።"
+                );
+
+            }
+        );
+
+
+        /* =========================
+           CLOSE GLOBAL MENUS
+           ========================= */
+
+        document.addEventListener(
+            "click",
+            function () {
+
+                languageMenu.classList.remove("show");
+
+                notificationMenu.classList.remove("show");
+
+                profileMenu.classList.remove("show");
+
+            }
+        );
+
+
+        languageMenu.addEventListener(
+            "click",
+            function (event) {
+
+                event.stopPropagation();
+
+            }
+        );
+
+
+        notificationMenu.addEventListener(
+            "click",
+            function (event) {
+
+                event.stopPropagation();
+
+            }
+        );
+
+
+        profileMenu.addEventListener(
+            "click",
+            function (event) {
+
+                event.stopPropagation();
+
+            }
+        );
+
+
+        /* =========================
+           CONNECTED QUIZ DATA
+           ========================= */
+
+        const quizStudentId =
+            sessionStorage.getItem("student_id") ||
+            sessionStorage.getItem("studentId") ||
+            "FK-1001";
+
+        let quizOptionsData = null;
+        let subjects = [];
+        let selectedQuestionCount = 10;
+        let currentQuestionIndex = 0;
+        let selectedAnswer = null;
+        let quizQuestions = [];
+        let currentAttemptId = null;
+        let quizMode = "immediate";
+        let answerSaved = false;
+        let userAnswers = [];
+
+        const scopeSelect =
+            document.querySelector("#quiz-scope");
+
+        const scopeNote =
+            document.querySelector("#quiz-scope-note");
+
+        const modeInputs =
+            document.querySelectorAll('input[name="quiz-mode"]');
+
+        const modeNote =
+            document.querySelector("#quiz-mode-note");
+
+        const feedbackBox =
+            document.querySelector("#quiz-feedback");
+
+        const feedbackTitle =
+            document.querySelector("#quiz-feedback-title");
+
+        const feedbackAnswer =
+            document.querySelector("#quiz-feedback-answer");
+
+        const feedbackExplanation =
+            document.querySelector("#quiz-feedback-explanation");
+
+        const liveMessage =
+            document.querySelector("#quiz-live-message");
+
+
+        function showLiveMessage(message) {
+
+            liveMessage.textContent = message;
+            liveMessage.classList.add("show");
+
+        }
+
+
+        function hideLiveMessage() {
+
+            liveMessage.textContent = "";
+            liveMessage.classList.remove("show");
+
+        }
+
+
+        function getSelectedMode() {
+
+            const selected =
+                document.querySelector('input[name="quiz-mode"]:checked');
+
+            return selected ? selected.value : "immediate";
+
+        }
+
+
+        function getSelectedSubject() {
+
+            return subjects.find(function (subject) {
+
+                return String(subject.id) === String(subjectSelect.value);
+
+            }) || null;
+
+        }
+
+
+        function getSelectedUnit() {
+
+            const subject = getSelectedSubject();
+
+            if (!subject) {
+                return null;
+            }
+
+            return (subject.units || []).find(function (unit) {
+
+                return String(unit.id) === String(unitSelect.value);
+
+            }) || null;
+
+        }
+
+
+        function updateLessons() {
+
+            lessonSelect.innerHTML =
+                '<option value="">ትምህርት / ርዕስ ይምረጡ</option>';
+
+            const unit = getSelectedUnit();
+
+            if (!unit) {
+
+                lessonSelect.disabled = true;
+                return;
+
+            }
+
+            (unit.lessons || []).forEach(function (lesson) {
+
+                const option =
+                    document.createElement("option");
+
+                option.value = lesson.id;
+                option.textContent =
+                    lesson.lesson_number + " — " + lesson.title;
+
+                lessonSelect.appendChild(option);
+
+            });
+
+            lessonSelect.disabled = false;
+
+        }
+
+
+        function updateUnits() {
+
+            unitSelect.innerHTML =
+                '<option value="">ዩኒት ይምረጡ</option>';
+
+            lessonSelect.innerHTML =
+                '<option value="">መጀመሪያ ዩኒት ይምረጡ</option>';
+
+            lessonSelect.disabled = true;
+
+            const subject = getSelectedSubject();
+
+            if (!subject) {
+
+                unitSelect.disabled = true;
+                return;
+
+            }
+
+            (subject.units || []).forEach(function (unit) {
+
+                const option =
+                    document.createElement("option");
+
+                option.value = unit.id;
+                option.textContent =
+                    "ዩኒት " + unit.chapter_number + " — " + unit.title;
+
+                unitSelect.appendChild(option);
+
+            });
+
+            unitSelect.disabled = false;
+
+        }
+
+
+        function updateScopeFields() {
+
+            const scope = scopeSelect.value;
+
+            if (scope === "whole_book") {
+
+                unitSelect.value = "";
+                lessonSelect.value = "";
+                unitSelect.disabled = true;
+                lessonSelect.disabled = true;
+
+                scopeNote.textContent =
+                    "ጥያቄዎቹ ከመላው የተመረጠው ትምህርት ውስጥ በዘፈቀደ ይመረጣሉ።";
+
+                return;
+
+            }
+
+            unitSelect.disabled = false;
+
+            if (scope === "unit") {
+
+                lessonSelect.disabled = unitSelect.value === "";
+
+                scopeNote.textContent =
+                    "ከአንድ ዩኒት ውስጥ የተመረጡ ጥያቄዎች። ትምህርት መምረጥ አማራጭ ነው።";
+
+                return;
+
+            }
+
+            if (scope === "lesson") {
+
+                lessonSelect.disabled = unitSelect.value === "";
+
+                scopeNote.textContent =
+                    "በአንድ የተወሰነ ትምህርት / ርዕስ ላይ ብቻ ልምምድ ያድርጉ።";
+
+            }
+
+        }
+
+
+        function updateModeNote() {
+
+            quizMode = getSelectedMode();
+
+            if (quizMode === "immediate") {
+
+                modeNote.textContent =
+                    "እያንዳንዱን መልስ ከሰጡ በኋላ ትክክለኛውን መልስና ማብራሪያ ያያሉ።";
+
+            } else {
+
+                modeNote.textContent =
+                    "መልሶቹ እስኪጨርሱ ድረስ አይገለጹም። በመጨረሻ ውጤትና ማብራሪያ ያያሉ።";
+
+            }
+
+        }
+
+
+        async function loadQuizOptions() {
+
+            subjectSelect.disabled = true;
+            startQuizButton.disabled = true;
+            subjectSelect.innerHTML =
+                '<option value="">ትምህርቶችን በመጫን ላይ...</option>';
+
+            try {
+
+                const response = await fetch(
+                    "/api/quiz/options/" + encodeURIComponent(quizStudentId),
+                    {
+                        method: "GET",
+                        headers: {
+                            "Accept": "application/json"
+                        }
+                    }
+                );
+
+                const data = await response.json();
+
+                if (!response.ok || !data.success) {
+                    throw new Error(
+                        data.message || "Quiz options could not be loaded."
+                    );
+                }
+
+                quizOptionsData = data;
+                subjects = Array.isArray(data.subjects)
+                    ? data.subjects
+                    : (data.subject ? [data.subject] : []);
+
+                subjectSelect.innerHTML =
+                    '<option value="">ትምህርት ይምረጡ</option>';
+
+                subjects.forEach(function (subject) {
+
+                    const option =
+                        document.createElement("option");
+
+                    option.value = subject.id;
+                    option.textContent = subject.name;
+
+                    subjectSelect.appendChild(option);
+
+                });
+
+                subjectSelect.disabled = false;
+
+                if (subjects.length === 1) {
+                    subjectSelect.value = subjects[0].id;
+                    updateUnits();
+                    updateScopeFields();
+                }
+
+                startQuizButton.disabled = subjects.length === 0;
+
+                if (subjects.length === 0) {
+                    showLiveMessage(
+                        "ለክፍልዎ የተዘጋጀ ትምህርት አልተገኘም።"
+                    );
+                } else {
+                    hideLiveMessage();
+                }
+
+            } catch (error) {
+
+                subjectSelect.innerHTML =
+                    '<option value="">መጫን አልተቻለም</option>';
+
+                showLiveMessage(
+                    error.message ||
+                    "የQuiz መረጃን መጫን አልተቻለም።"
+                );
+
+            }
+
+        }
+
+
+        subjectSelect.addEventListener(
+            "change",
+            function () {
+
+                updateUnits();
+                updateScopeFields();
+                hideLiveMessage();
+
+            }
+        );
+
+
+        unitSelect.addEventListener(
+            "change",
+            function () {
+
+                updateLessons();
+
+                if (scopeSelect.value === "whole_book") {
+                    unitSelect.value = "";
+                    lessonSelect.value = "";
+                    lessonSelect.disabled = true;
+                }
+
+                updateScopeFields();
+
+            }
+        );
+
+
+        lessonSelect.addEventListener(
+            "change",
+            function () {
+                hideLiveMessage();
+            }
+        );
+
+
+        scopeSelect.addEventListener(
+            "change",
+            function () {
+                updateScopeFields();
+                hideLiveMessage();
+            }
+        );
+
+
+        modeInputs.forEach(function (input) {
+
+            input.addEventListener(
+                "change",
+                function () {
+                    updateModeNote();
+                }
+            );
+
+        });
+
+
+        /* =========================
+           AI SUGGESTION
+           ========================= */
+
+        aiSuggestionButton.addEventListener(
+            "click",
+            function () {
+
+                const currentSubject =
+                    subjects[0] || null;
+
+                if (!currentSubject) {
+                    showLiveMessage(
+                        "የAI ምክር ለመጠቀም የQuiz መረጃ መጫን አለበት።"
+                    );
+                    return;
+                }
+
+                subjectSelect.value = currentSubject.id;
+                updateUnits();
+
+                if ((currentSubject.units || []).length > 0) {
+                    scopeSelect.value = "unit";
+                    unitSelect.value = currentSubject.units[0].id;
+                    updateLessons();
+                }
+
+                updateScopeFields();
+                questionNumber.value = 10;
+                quizSetup.scrollIntoView({ behavior: "smooth" });
+
+            }
+        );
+
+
+        /* =========================
+           START QUIZ
+           ========================= */
+
+        startQuizButton.addEventListener(
+            "click",
+            async function () {
+
+                hideLiveMessage();
+
+                const subject = getSelectedSubject();
+
+                if (!subject) {
+                    showLiveMessage("እባክዎ ትምህርት ይምረጡ።");
+                    return;
+                }
+
+                const scope = scopeSelect.value;
+                const unit = getSelectedUnit();
+                const lessonId = lessonSelect.value;
+                const requestedNumber = Number(questionNumber.value);
+
+                if (!Number.isInteger(requestedNumber) || requestedNumber < 1) {
+                    showLiveMessage(
+                        "እባክዎ የጥያቄዎችን ብዛት በትክክል ያስገቡ።"
+                    );
+                    return;
+                }
+
+                if (scope === "unit" && !unit) {
+                    showLiveMessage("እባክዎ ዩኒት ይምረጡ።");
+                    return;
+                }
+
+                if (scope === "lesson") {
+
+                    if (!unit) {
+                        showLiveMessage("እባክዎ ዩኒት ይምረጡ።");
+                        return;
+                    }
+
+                    if (!lessonId) {
+                        showLiveMessage("እባክዎ ትምህርት / ርዕስ ይምረጡ።");
+                        return;
+                    }
+
+                }
+
+                selectedQuestionCount = requestedNumber;
+                quizMode = getSelectedMode();
+
+                startQuizButton.disabled = true;
+                startQuizButton.textContent = "በመጀመር ላይ...";
+
+                try {
+
+                    const response = await fetch(
+                        "/api/quiz/start",
+                        {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json",
+                                "Accept": "application/json"
+                            },
+                            body: JSON.stringify({
+                                student_id: quizStudentId,
+                                subject_id: Number(subject.id),
+                                scope: scope,
+                                unit_id: scope === "unit" || scope === "lesson"
+                                    ? Number(unit.id)
+                                    : null,
+                                lesson_id: scope === "lesson"
+                                    ? Number(lessonId)
+                                    : null,
+                                mode: quizMode,
+                                question_count: selectedQuestionCount,
+                                language: "am"
+                            })
+                        }
+                    );
+
+                    const data = await response.json();
+
+                    if (!response.ok || !data.success) {
+                        throw new Error(
+                            data.message || "Quiz could not be started."
+                        );
+                    }
+
+                    currentAttemptId = data.attempt.id;
+                    quizQuestions = data.questions || [];
+                    selectedQuestionCount = quizQuestions.length;
+                    currentQuestionIndex = 0;
+                    selectedAnswer = null;
+                    answerSaved = false;
+                    userAnswers = [];
+
+                    if (selectedQuestionCount === 0) {
+                        throw new Error("ይህ ምርጫ የተዘጋጀ ጥያቄ የለውም።");
+                    }
+
+                    totalQuestionsElement.textContent =
+                        selectedQuestionCount;
+
+                    quizSetup.style.display = "none";
+                    document.querySelector(".ai-quiz-suggestion").style.display = "none";
+                    quizResults.style.display = "none";
+                    quizArea.style.display = "block";
+
+                    showQuestion();
+                    quizArea.scrollIntoView({ behavior: "smooth" });
+
+                } catch (error) {
+
+                    showLiveMessage(
+                        error.message || "Quiz መጀመር አልተቻለም።"
+                    );
+
+                } finally {
+
+                    startQuizButton.disabled = false;
+                    startQuizButton.textContent = "Quiz ጀምር";
+
+                }
+
+            }
+        );
+
+
+        /* =========================
+           SHOW QUESTION
+           ========================= */
+
+        function showQuestion() {
+
+            const question =
+                quizQuestions[currentQuestionIndex];
+
+            if (!question) {
+                return;
+            }
+
+            currentQuestionElement.textContent =
+                currentQuestionIndex + 1;
+
+            questionText.textContent =
+                question.question_text;
+
+            answerOptions.innerHTML = "";
+
+            feedbackBox.classList.remove("show", "correct", "incorrect");
+            feedbackTitle.textContent = "";
+            feedbackAnswer.textContent = "";
+            feedbackExplanation.textContent = "";
+
+            nextQuestionButton.disabled = true;
+            nextQuestionButton.textContent = "መልስ ያስገቡ";
+
+            selectedAnswer = null;
+            answerSaved = false;
+
+            (question.options || []).forEach(function (option) {
+
+                const button =
+                    document.createElement("button");
+
+                button.type = "button";
+                const letter = document.createElement("span");
+                letter.className = "fk-opt-letter";
+                letter.textContent = option.option_label;
+                const label = document.createElement("span");
+                label.className = "fk-opt-text";
+                label.textContent = option.option_text;
+                button.appendChild(letter);
+                button.appendChild(label);
+
+                button.dataset.optionId = option.option_id;
+
+                button.addEventListener(
+                    "click",
+                    function () {
+
+                        if (answerSaved) {
+                            return;
+                        }
+
+                        selectAnswer(
+                            Number(option.option_id),
+                            button
+                        );
+
+                    }
+                );
+
+                answerOptions.appendChild(button);
+
+            });
+
+        }
+
+
+        /* =========================
+           SELECT ANSWER
+           ========================= */
+
+        function selectAnswer(optionId, button) {
+
+            selectedAnswer = optionId;
+
+            const buttons =
+                answerOptions.querySelectorAll("button");
+
+            buttons.forEach(function (item) {
+                item.classList.remove("selected");
+            });
+
+            button.classList.add("selected");
+            nextQuestionButton.disabled = false;
+            nextQuestionButton.textContent =
+                quizMode === "immediate"
+                    ? "መልሱን ያረጋግጡ"
+                    : "ቀጣይ";
+
+        }
+
+
+        function lockAnswerButtons() {
+
+            answerOptions
+                .querySelectorAll("button")
+                .forEach(function (button) {
+                    button.disabled = true;
+                });
+
+        }
+
+
+        /* =========================
+           SAVE CURRENT ANSWER
+           ========================= */
+
+        async function saveCurrentAnswer() {
+
+            const question = quizQuestions[currentQuestionIndex];
+
+            if (!question || selectedAnswer === null) {
+                return null;
+            }
+
+            const response = await fetch(
+                "/api/quiz/answer",
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Accept": "application/json"
+                    },
+                    body: JSON.stringify({
+                        student_id: quizStudentId,
+                        attempt_id: Number(currentAttemptId),
+                        question_id: Number(question.question_id),
+                        selected_option_id: Number(selectedAnswer)
+                    })
+                }
+            );
+
+            const data = await response.json();
+
+            if (!response.ok || !data.success) {
+                throw new Error(
+                    data.message || "Answer could not be saved."
+                );
+            }
+
+            return data;
+
+        }
+
+
+        function findSelectedOptionText(question, optionId) {
+
+            const option =
+                (question.options || []).find(function (item) {
+                    return Number(item.option_id) === Number(optionId);
+                });
+
+            return option ? option.option_text : "";
+
+        }
+
+
+        /* =========================
+           IMMEDIATE FEEDBACK
+           ========================= */
+
+        function showImmediateFeedback(data) {
+
+            feedbackBox.classList.remove("correct", "incorrect");
+            feedbackBox.classList.add("show");
+
+            if (data.isCorrect) {
+                feedbackBox.classList.add("correct");
+                feedbackTitle.textContent = "✅ ትክክል ነው!";
+            } else {
+                feedbackBox.classList.add("incorrect");
+                feedbackTitle.textContent = "❌ ትክክል አይደለም።";
+            }
+
+            feedbackAnswer.textContent =
+                "ትክክለኛ መልስ፦ " +
+                data.correctOption.text;
+
+            feedbackExplanation.textContent =
+                "ማብራሪያ፦ " +
+                (data.explanation || "ማብራሪያ አልተጨመረም።");
+
+        }
+
+
+        /* =========================
+           NEXT QUESTION
+           ========================= */
+
+        nextQuestionButton.addEventListener(
+            "click",
+            async function () {
+
+                if (selectedAnswer === null) {
+                    return;
+                }
+
+                if (answerSaved) {
+
+                    currentQuestionIndex++;
+
+                    if (currentQuestionIndex < selectedQuestionCount) {
+                        showQuestion();
+                    } else {
+                        await completeQuiz();
+                    }
+
+                    return;
+                }
+
+                nextQuestionButton.disabled = true;
+                nextQuestionButton.textContent = "በመቀመጥ ላይ...";
+
+                try {
+
+                    const question = quizQuestions[currentQuestionIndex];
+                    const answerData = await saveCurrentAnswer();
+
+                    userAnswers[currentQuestionIndex] = {
+                        selectedOptionId: selectedAnswer,
+                        isCorrect: !!answerData.isCorrect
+                    };
+
+                    answerSaved = true;
+                    lockAnswerButtons();
+
+                    if (quizMode === "immediate") {
+
+                        showImmediateFeedback(answerData);
+
+                        nextQuestionButton.textContent =
+                            currentQuestionIndex === selectedQuestionCount - 1
+                                ? "Quiz ጨርስ"
+                                : "ቀጣይ";
+
+                        nextQuestionButton.disabled = false;
+
+                    } else {
+
+                        currentQuestionIndex++;
+
+                        if (currentQuestionIndex < selectedQuestionCount) {
+                            showQuestion();
+                        } else {
+                            await completeQuiz();
+                        }
+
+                    }
+
+                } catch (error) {
+
+                    nextQuestionButton.disabled = false;
+                    nextQuestionButton.textContent = "እንደገና ይሞክሩ";
+
+                    showLiveMessage(
+                        error.message || "መልሱን ማስቀመጥ አልተቻለም።"
+                    );
+
+                }
+
+            }
+        );
+
+
+        /* =========================
+           COMPLETE QUIZ
+           ========================= */
+
+        async function completeQuiz() {
+
+            try {
+
+                const response = await fetch(
+                    "/api/quiz/complete",
+                    {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "Accept": "application/json"
+                        },
+                        body: JSON.stringify({
+                            student_id: quizStudentId,
+                            attempt_id: Number(currentAttemptId)
+                        })
+                    }
+                );
+
+                const data = await response.json();
+
+                if (!response.ok || !data.success) {
+                    throw new Error(
+                        data.message || "Quiz could not be completed."
+                    );
+                }
+
+                showResults(data);
+
+            } catch (error) {
+
+                showLiveMessage(
+                    error.message || "Quiz ማጠናቀቅ አልተቻለም።"
+                );
+
+                quizResults.style.display = "none";
+                quizArea.style.display = "block";
+
+            }
+
+        }
+
+
+        /* =========================
+           SHOW RESULTS
+           ========================= */
+
+        function showResults(data) {
+
+            quizArea.style.display = "none";
+            quizResults.style.display = "block";
+
+            correctResults.innerHTML = "";
+            incorrectResults.innerHTML = "";
+
+            const summary = data.summary || {};
+            const results = data.results || [];
+
+            const totalScoreQuestions =
+                (summary.correct || 0) +
+                (summary.incorrect || 0);
+
+            scoreElement.textContent =
+                (summary.correct || 0) +
+                " / " +
+                totalScoreQuestions;
+
+            scorePercentElement.textContent =
+                Math.round(Number(summary.percentage || 0)) + "%";
+
+            results.forEach(function (result, index) {
+
+                const item =
+                    document.createElement("div");
+
+                item.className = "result-item";
+
+                const questionNumberText =
+                    result.question_order || index + 1;
+
+                if (result.is_correct) {
+
+                    item.innerHTML =
+                        "<strong>ጥያቄ " +
+                        questionNumberText +
+                        "</strong>" +
+                        "<p>✅ ትክክለኛ መልስ፦ " +
+                        (result.correct_option_text || "") +
+                        "</p>" +
+                        "<p>ማብራሪያ፦ " +
+                        (result.explanation || "ማብራሪያ አልተጨመረም።") +
+                        "</p>";
+
+                    correctResults.appendChild(item);
+
+                } else {
+
+                    item.innerHTML =
+                        "<strong>ጥያቄ " +
+                        questionNumberText +
+                        "</strong>" +
+                        "<p>የመረጡት፦ " +
+                        (result.selected_option_text || "—") +
+                        "</p>" +
+                        "<p>✅ ትክክለኛ መልስ፦ " +
+                        (result.correct_option_text || "") +
+                        "</p>" +
+                        "<p>ማብራሪያ፦ " +
+                        (result.explanation || "ማብራሪያ አልተጨመረም።") +
+                        "</p>";
+
+                    incorrectResults.appendChild(item);
+
+                }
+
+            });
+
+            const recommendation =
+                data.personalization &&
+                data.personalization.recommendation
+                    ? data.personalization.recommendation
+                    : "የተሳሳቱባቸውን ጥያቄዎች እንደገና ይከልሱ።";
+
+            studyRecommendation.textContent = recommendation;
+
+            quizResults.scrollIntoView({
+                behavior: "smooth"
+            });
+
+        }
+
+
+        /* =========================
+           RETRY
+           ========================= */
+
+        retryQuizButton.addEventListener(
+            "click",
+            function () {
+
+                quizResults.style.display = "none";
+                document.querySelector(".ai-quiz-suggestion").style.display = "flex";
+                quizSetup.style.display = "block";
+                answerOptions.innerHTML = "";
+                currentQuestionIndex = 0;
+                userAnswers = [];
+                quizQuestions = [];
+                currentAttemptId = null;
+                selectedAnswer = null;
+                answerSaved = false;
+                hideLiveMessage();
+                updateModeNote();
+                updateScopeFields();
+
+                window.scrollTo({
+                    top: 0,
+                    behavior: "smooth"
+                });
+
+            }
+        );
+
+
+        /* =========================
+           INITIALIZE
+           ========================= */
+
+        updateModeNote();
+        updateScopeFields();
+        loadQuizOptions();
+
+    </script>
+
+    <script>
+    // Opened from the learning path: ?subject=ID&unit=ID  -> preselect that unit once the options have loaded.
+    (function () {
+        var q = new URLSearchParams(location.search), unit = q.get("unit"), subject = q.get("subject");
+        if (!unit) { return; }
+        var tries = 0, timer = setInterval(function () {
+            var s = document.getElementById("quiz-subject");
+            var u = document.getElementById("quiz-unit");
+            var sc = document.getElementById("quiz-scope");
+            if (++tries > 40) { clearInterval(timer); return; }
+            if (!s || !u || !sc || u.options.length < 2 && !u.value) { if (s && sc && s.options.length > 1 && subject) { s.value = subject; s.dispatchEvent(new Event("change")); } return; }
+            if (subject && s.value !== subject) { s.value = subject; s.dispatchEvent(new Event("change")); return; }
+            sc.value = "unit"; sc.dispatchEvent(new Event("change"));
+            u.value = unit; u.dispatchEvent(new Event("change"));
+            if (u.value === unit) { clearInterval(timer); }
+        }, 250);
+    })();
+    </script>
+</body>
+
+</html>

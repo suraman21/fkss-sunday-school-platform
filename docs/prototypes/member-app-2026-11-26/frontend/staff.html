@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Staff | ፈለገ ቅዱሳን</title>
+    <link rel="stylesheet" href="css/fk-theme.css">
+    <style>
+        * { box-sizing: border-box; }
+        body { margin:0; padding: max(16px, env(safe-area-inset-top)) 16px 40px; color:var(--ink);
+               font-family: "Noto Sans Ethiopic", "Nyala", system-ui, sans-serif;
+               background: linear-gradient(160deg, var(--ivory), var(--gold-light)); min-height:100vh; }
+        main { max-width: 900px; margin: 0 auto; }
+        h1 { color:var(--wine); margin: 8px 0 16px; }
+        h2 { color:var(--wine); font-size:1.15rem; margin:0 0 10px; }
+        .card { background:#fffdf5; border:2px solid var(--gold); border-radius:16px; padding:18px; margin-bottom:16px; }
+        label { display:block; margin:10px 0 4px; font-weight:600; }
+        input { width:100%; max-width:360px; padding:10px; font-size:1rem; border:1.5px solid #cdb26a; border-radius:10px; }
+        .row { display:flex; flex-wrap:wrap; gap:10px; align-items:end; }
+        .row > div { flex: 1 1 140px; }
+        button { padding:10px 16px; font-size:1rem; font-weight:700; border:0; border-radius:10px; cursor:pointer; color:#fff; background:var(--wine); }
+        button.secondary { background:#fff; color:var(--wine); border:1.5px solid var(--wine); }
+        button:disabled { opacity:.6; cursor:wait; }
+        input:focus-visible, button:focus-visible { outline:3px solid var(--gold); outline-offset:2px; }
+        .msg { margin-top:10px; font-weight:600; min-height:1.3em; }
+        .msg.error { color:#a11; } .msg.ok { color:var(--ok); }
+        .lesson { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:8px;
+                  padding:10px 0; border-bottom:1px solid #eadcb0; }
+        .lesson .t { flex: 1 1 220px; overflow-wrap:anywhere; }
+        .badge { font-size:.8rem; padding:2px 8px; border-radius:999px; border:1px solid var(--gold); margin-left:6px; }
+        .unit { margin:16px 0 4px; font-weight:700; color:var(--wine); }
+        .hidden { display:none; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>ፈለገ ቅዱሳን &middot; Staff</h1>
+
+    <section class="card" id="login-card">
+        <h2>Staff sign in</h2>
+        <form id="login-form">
+            <label for="staff-id">Staff ID</label>
+            <input id="staff-id" autocomplete="username" required>
+            <label for="staff-pw">Password</label>
+            <input id="staff-pw" type="password" autocomplete="current-password" required>
+            <p><button type="submit">Sign in</button></p>
+            <div class="msg" id="login-msg" role="alert"></div>
+        </form>
+    </section>
+
+    <div id="panel" class="hidden">
+        <section class="card">
+            <div class="row">
+                <div><strong id="who"></strong></div>
+                <div style="flex:0 0 auto"><button class="secondary" id="logout">Sign out</button></div>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>Lessons: lock / unlock</h2>
+            <p>Students only see lesson content after you unlock it. Leave <em>Class</em> empty to unlock for the whole grade.</p>
+            <div class="row">
+                <div><label for="grade">Grade</label><input id="grade" placeholder="e.g. 10" maxlength="20"></div>
+                <div><label for="class">Class (optional)</label><input id="class" maxlength="50"></div>
+                <div style="flex:0 0 auto"><button id="load">Load lessons</button></div>
+            </div>
+            <div class="msg" id="lessons-msg" role="alert"></div>
+            <div id="lessons"></div>
+        </section>
+
+        <section class="card hidden" id="admin-card">
+            <h2>Admin: add a student</h2>
+            <form id="add-form">
+                <div class="row">
+                    <div><label for="a-id">Student ID</label><input id="a-id" required></div>
+                    <div><label for="a-name">Full name</label><input id="a-name" required></div>
+                    <div><label for="a-grade">Grade</label><input id="a-grade" required></div>
+                    <div><label for="a-class">Class</label><input id="a-class"></div>
+                </div>
+                <label for="a-pw">Temporary password (the student must replace it at first login)</label>
+                <input id="a-pw" type="password" autocomplete="new-password" minlength="8" required>
+                <p><button type="submit">Create student</button></p>
+                <div class="msg" id="add-msg" role="alert"></div>
+            </form>
+            <hr>
+            <h2>Admin: reset a student's password</h2>
+            <form id="reset-form">
+                <div class="row">
+                    <div><label for="r-id">Student ID</label><input id="r-id" required></div>
+                    <div><label for="r-pw">New temporary password</label><input id="r-pw" type="password" autocomplete="new-password" minlength="8" required></div>
+                </div>
+                <p><button type="submit">Reset password</button></p>
+                <div class="msg" id="reset-msg" role="alert"></div>
+            </form>
+        </section>
+    </div>
+</main>
+
+<script src="js/session.js"></script>
+<script>
+    window.FK_NO_AUTO_REDIRECT = true;
+
+    function $(id) { return document.getElementById(id); }
+    function say(id, text, kind) { var e = $(id); e.textContent = text; e.className = "msg " + (kind || ""); }
+    async function api(path, method, body) {
+        var response = await fetch(path, {
+            method: method,
+            headers: { "Content-Type": "application/json" },
+            body: body ? JSON.stringify(body) : undefined
+        });
+        var data = await response.json().catch(function () { return {}; });
+        return { ok: response.ok && data.success !== false, status: response.status, data: data };
+    }
+
+    var me = null;
+
+    function showPanel() {
+        $("login-card").classList.add("hidden");
+        $("panel").classList.remove("hidden");
+        $("who").textContent = me.name + " (" + me.role + ")";
+        if (me.role === "admin") { $("admin-card").classList.remove("hidden"); }
+    }
+
+    async function init() {
+        var r = await api("/api/auth/me", "GET");
+        if (r.ok && (r.data.user.role === "teacher" || r.data.user.role === "admin")) {
+            me = r.data.user; showPanel();
+        }
+    }
+
+    $("login-form").addEventListener("submit", async function (e) {
+        e.preventDefault();
+        var r = await api("/api/auth/staff-login", "POST", { staff_id: $("staff-id").value.trim(), password: $("staff-pw").value });
+        if (!r.ok) { say("login-msg", r.data.message || "Sign in failed.", "error"); return; }
+        $("staff-pw").value = "";
+        await init();
+    });
+
+    $("logout").addEventListener("click", async function () {
+        await api("/api/auth/logout", "POST");
+        window.location.reload();
+    });
+
+    async function loadLessons() {
+        var grade = $("grade").value.trim(), cls = $("class").value.trim();
+        if (!grade) { say("lessons-msg", "Enter a grade.", "error"); return; }
+        say("lessons-msg", "Loading…", "");
+        var r = await api("/api/staff/lessons?grade=" + encodeURIComponent(grade) + "&class=" + encodeURIComponent(cls), "GET");
+        if (!r.ok) { say("lessons-msg", r.data.message || "Could not load lessons.", "error"); $("lessons").textContent = ""; return; }
+        say("lessons-msg", r.data.lessons.length ? "" : "No lessons found for this grade.", "");
+
+        var box = $("lessons"); box.textContent = "";
+        var lastChapter = null;
+        r.data.lessons.forEach(function (l) {
+            if (l.chapter_id !== lastChapter) {
+                lastChapter = l.chapter_id;
+                var h = document.createElement("div"); h.className = "unit";
+                h.textContent = l.subject_name + " — " + l.chapter_number + ". " + l.chapter_title;
+                box.appendChild(h);
+            }
+            var unlocked = cls ? l.unlocked_for_class : l.unlocked_for_grade;
+            var row = document.createElement("div"); row.className = "lesson";
+            var t = document.createElement("div"); t.className = "t";
+            t.textContent = l.lesson_number + ". " + l.lesson_title;
+            var badge = document.createElement("span"); badge.className = "badge";
+            badge.textContent = l.status !== "published" ? "draft" : (unlocked ? "unlocked" : "locked");
+            t.appendChild(badge);
+            if (cls && l.unlocked_for_grade) {
+                var b2 = document.createElement("span"); b2.className = "badge"; b2.textContent = "also unlocked for whole grade"; t.appendChild(b2);
+            }
+            var btn = document.createElement("button");
+            btn.textContent = unlocked ? "Lock" : "Unlock";
+            if (!unlocked) { btn.className = ""; } else { btn.className = "secondary"; }
+            btn.disabled = l.status !== "published" && !unlocked;
+            btn.addEventListener("click", async function () {
+                btn.disabled = true;
+                var res = await api("/api/staff/lessons/" + l.lesson_id + "/" + (unlocked ? "lock" : "unlock"), "POST", { grade: grade, "class": cls });
+                if (!res.ok) { say("lessons-msg", res.data.message || "Could not update.", "error"); btn.disabled = false; return; }
+                await loadLessons();
+            });
+            row.appendChild(t); row.appendChild(btn); box.appendChild(row);
+        });
+    }
+    $("load").addEventListener("click", loadLessons);
+
+    $("add-form").addEventListener("submit", async function (e) {
+        e.preventDefault();
+        var r = await api("/api/admin/students", "POST", {
+            student_id: $("a-id").value.trim(), name: $("a-name").value.trim(), grade: $("a-grade").value.trim(),
+            "class": $("a-class").value.trim(), temporary_password: $("a-pw").value
+        });
+        say("add-msg", r.data.message || (r.ok ? "Created." : "Failed."), r.ok ? "ok" : "error");
+        if (r.ok) { $("add-form").reset(); }
+    });
+
+    $("reset-form").addEventListener("submit", async function (e) {
+        e.preventDefault();
+        var r = await api("/api/admin/students/" + encodeURIComponent($("r-id").value.trim()) + "/reset-password", "POST", { temporary_password: $("r-pw").value });
+        say("reset-msg", r.data.message || (r.ok ? "Done." : "Failed."), r.ok ? "ok" : "error");
+        if (r.ok) { $("reset-form").reset(); }
+    });
+
+    init();
+</script>
+</body>
+</html>

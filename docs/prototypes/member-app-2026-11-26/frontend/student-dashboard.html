@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="am">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>ፈለገ ቅዱሳን | Home</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="css/fk-theme.css">
+</head>
+<body>
+    <header id="fk-header"></header>
+    <main class="dashboard">
+
+        <section class="welcome-section">
+
+            <h1>
+                እንኳን ደህና መጣህ!
+            </h1>
+
+            <p>
+                ወደ ፈለገ ቅዱሳን የመማሪያ መድረክ
+                እንኳን በደህና መጡ።
+            </p>
+
+        </section>
+
+
+        <!-- Daily Bible Verse -->
+        <section class="daily-verse">
+<p>📖 የዕለቱ የመጽሐፍ ቅዱስ ጥቅስ</p>
+<p id="verse-text"></p>
+<small id="verse-ref"></small>
+</section>
+
+
+        <!-- Dashboard cards -->
+        <section class="dashboard-cards">
+
+            <div class="dashboard-card">
+
+                <h3>
+                    📚 ትምህርቶቼ
+                </h3>
+
+                <p>
+                    የተመደቡልዎትን ትምህርቶች
+                    ይመልከቱ።
+                </p>
+
+                <button type="button" onclick="window.location.href='lessons.html'">
+                    ትምህርቶችን ይመልከቱ
+                </button>
+
+            </div>
+
+
+            <div class="dashboard-card">
+
+                <h3>
+                    📝 ተግባራት
+                </h3>
+
+                <p>
+                    የተሰጡዎትን ተግባራት እና
+                    የማጠናቀቂያ ቀናት ይመልከቱ።
+                </p>
+
+                <button
+                    type="button"
+                    onclick="window.location.href='tasks.html'"
+                 onclick="window.location.href='tasks.html'">
+                    ተግባራትን ይመልከቱ
+                </button>
+
+            </div>
+
+
+            <div class="dashboard-card">
+
+                <h3>
+                    🧠 Quiz Me
+                </h3>
+
+                <p>
+                    በመረጡት ትምህርት ላይ
+                    የልምምድ ጥያቄዎችን ያግኙ።
+                </p>
+
+                <button
+                    type="button"
+                    onclick="window.location.href='quiz-me.html'"
+                 onclick="window.location.href='quiz-me.html'">
+                    Quiz Me
+                </button>
+
+            </div>
+
+
+            <div class="dashboard-card">
+
+                <h3>
+                    🎯 የፈተና ዝግጅት
+                </h3>
+
+                <p>
+                    ከተለያዩ ዓመታት የተዘጋጁ
+                    ትምህርቶችን እና ጥያቄዎችን
+                    ይለማመዱ።
+                </p>
+
+                <button type="button" onclick="window.location.href='exam-prep.html'">
+                    ዝግጅቱን ይጀምሩ
+                </button>
+
+            </div>
+
+
+            <div class="dashboard-card">
+
+                <h3>
+                    📈 እድገቴ
+                </h3>
+
+                <p>
+                    የትምህርትዎን እድገት እና
+                    የQuiz Me ውጤቶችን ይመልከቱ።
+                </p>
+
+                <button type="button" onclick="window.location.href='progress.html'">
+                    እድገቴን ይመልከቱ
+                </button>
+
+            </div>
+
+        </section>
+
+    </main>
+    <div id="live" class="fk-toast" role="status" aria-live="polite" hidden></div>
+    <script src="js/session.js"></script>
+    <script src="js/fk-ui.js"></script>
+    <script>
+
+FK.addStrings({
+ am: { "home.verseNone": "የዕለቱ ጥቅስ በቅርቡ ይጨመራል።" },
+ en: { "home.verseNone": "Today's verse will be added soon." }
+});
+(async function () {
+  var me = await FK.me(); if (!me) { return; }
+  var t = document.getElementById("verse-text"), r = document.getElementById("verse-ref");
+  var v = await FK.api("/api/verse/today");
+  if (v.ok && v.data.verse) { t.textContent = "“" + v.data.verse.text_am + "”"; r.textContent = v.data.verse.reference; r.title = v.data.verse.source || ""; }
+  else { t.textContent = FK.t("home.verseNone"); r.textContent = ""; }
+})();
+
+    </script>
+</body>
+</html>

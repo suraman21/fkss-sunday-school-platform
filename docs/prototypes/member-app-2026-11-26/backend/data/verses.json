@@ -1,0 +1,40 @@
+{
+ "_readme": "Verse of the day. One verse per calendar day (Africa/Addis_Ababa), chosen by the date so every student sees the same verse. These Amharic verses are the ones QUOTED IN THE GRADE 10 TEXTBOOK, so they come from approved material, but a teacher must verify the wording and references against the Ethiopian Bible. To add more: append {reference, text_am, source}. Nothing is invented: only entries with text_am are shown.",
+ "verses": [
+  {
+   "reference": "ኤፌ ፬፥፭",
+   "text_am": "አንድ ጌታ አንድ ሃይማኖት አንዲት ጥምቀት",
+   "source": "10ኛ ክፍል ትምህርተ ሃይማኖት textbook (quoted there) — teacher to verify against the Ethiopian Bible"
+  },
+  {
+   "reference": "ዮሐ ፩፥፲፰",
+   "text_am": "በአባቱ ዕቅፍ ያለ አንድ ልጁ እርሱ ገለጠልን እንጂ፤ እግዚአብሔርንስ ከቶ ያየው የለም።",
+   "source": "10ኛ ክፍል ትምህርተ ሃይማኖት textbook (quoted there) — teacher to verify against the Ethiopian Bible"
+  },
+  {
+   "reference": "ዘፍ ፩፥፩",
+   "text_am": "በመጀመሪያ እግዚአብሔር ሰማይና ምድርን ፈጠረ",
+   "source": "10ኛ ክፍል ትምህርተ ሃይማኖት textbook (quoted there) — teacher to verify against the Ethiopian Bible"
+  },
+  {
+   "reference": "፪ተሰ ፫፥፲",
+   "text_am": "ሊሠራ የማይወድ አይብላ",
+   "source": "10ኛ ክፍል ትምህርተ ሃይማኖት textbook (quoted there) — teacher to verify against the Ethiopian Bible"
+  },
+  {
+   "reference": "፩ቆሮ ፲፥፴፩",
+   "text_am": "ማናቸውንም ነገር ብታደረጉ ለእግዚአብሔር ክብር አድርጉት",
+   "source": "10ኛ ክፍል ትምህርተ ሃይማኖት textbook (quoted there) — teacher to verify against the Ethiopian Bible"
+  },
+  {
+   "reference": "ቆላ ፬፥፭",
+   "text_am": "ዘመኑን እየዋጃችሁ፤ በውጭ ባሉት ዘንድ በጥበብ ተመላለሱ።",
+   "source": "10ኛ ክፍል ትምህርተ ሃይማኖት textbook (quoted there) — teacher to verify against the Ethiopian Bible"
+  },
+  {
+   "reference": "ማቴ ፲፮፥፲፮",
+   "text_am": "አንተ የሕያው እግዚአብሔር ልጅ ክርስቶስ ነህ",
+   "source": "10ኛ ክፍል ትምህርተ ሃይማኖት textbook (quoted there) — teacher to verify against the Ethiopian Bible"
+  }
+ ]
+}

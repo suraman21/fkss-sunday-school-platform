@@ -59,6 +59,7 @@ The web server's document root is the repository root (production: `public_html`
 | `api/v1/` | REST API used by the mobile app (`routes/`, `core/`) |
 | `backend/` | Compatibility shims that delegate to `admin/` (`api/`, `auth/`, `core/`, `id_cards/`, `users/`), plus `api/init.php` (dashboard bootstrap) |
 | `frontend/` | Newer router-style pages (`pages/`, `layouts/`, `js/`): dashboard, Mezmur, finance, education assignments and teachers |
+| `members/` | Members and parents portal (in progress): one entry file per clean `/members/*` URL, application code in `src/`, templates in `templates/` (both denied by the root `.htaccess`), styles in `assets/`. See [members/README.md](members/README.md) |
 | `app/` | Legacy installable web app (PWA) |
 | `monitor/` | Error and uptime monitor |
 | `themes/` | Shared design system and per-school themes (`fkss/`, `wbss/`) |

@@ -48,6 +48,12 @@ final class BrowserPageRoutes
         '/frontend/pages/mezmur' => '/frontend/pages/mezmur_dept.php',
         '/frontend/pages/teachers' => '/frontend/pages/edu_teachers.php',
         '/frontend/pages/assignments' => '/frontend/pages/edu_assignments.php',
+        // Members/parents portal. /members itself is the members/ directory,
+        // so the web server answers it with its DirectoryIndex; only the pages
+        // below it need a registry entry. Clean URL and handler share a parent
+        // directory, as every entry in this table must.
+        '/members/home' => '/members/home.php',
+        '/members/login' => '/members/login.php',
     ];
 
     public static function pages(): array { return self::PAGES; }

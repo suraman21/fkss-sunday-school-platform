@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="am">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ፈለገ ቅዱሳን</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="css/fk-theme.css">
+</head>
+
+<body class="welcome-page">
+
+    <header class="simple-header">
+
+        <div class="language-selector">
+
+            <button class="language-button">
+                🌐 አማርኛ ▾
+            </button>
+
+            <div class="language-menu">
+                <button>አማርኛ</button>
+                <button>English</button>
+            </div>
+
+        </div>
+
+    </header>
+
+
+    <main class="welcome-main">
+
+        <h1>ፈለገ ቅዱሳን</h1>
+
+        <p>
+            ወደ ፈለገ ቅዱሳን የመማሪያ መድረክ እንኳን በደህና መጡ።
+        </p>
+
+        <a href="login.html" class="login-button">
+            መግቢያ
+        </a>
+
+    </main>
+<script src="js/fk-ui.js"></script>
+<script>
+
+    const languageButton =
+        document.querySelector(".language-button");
+
+    const languageMenu =
+        document.querySelector(".language-menu");
+
+
+    languageButton.addEventListener("click", function (event) {
+
+        event.stopPropagation();
+
+        languageMenu.classList.toggle("show");
+
+    });
+
+
+    document.addEventListener("click", function () {
+
+        languageMenu.classList.remove("show");
+
+    });
+
+</script>
+</body>
+
+</html>

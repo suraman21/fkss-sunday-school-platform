@@ -46,6 +46,10 @@ Options -Indexes -MultiViews
     # test suites, operator scripts, CLI tools, vendored libraries, CI config and the
     # Flutter source tree. Serving them discloses internals (schema, audit evidence).
     RewriteRule ^(sql|docs|tests|scripts|tools|vendor|Mobile|\.github)(/|$) - [F,L]
+    # The members portal keeps its code and templates inside a directory
+    # the web serves. Deny those two subfolders; the entry files in
+    # members/ itself stay reachable.
+    RewriteRule ^members/(src|templates)(/|$) - [F,L]
     RewriteRule (^|/)(database_schema\.sql|README\.md|ENTERPRISE_SECURITY_AUDIT_REPORT\.md|env\.example\.php|\.editorconfig|\.gitignore)$ - [F,L]
     RewriteRule \.(sql|md|sh|py|lock|ya?ml|dist)$ - [F,L]
 
@@ -54,11 +58,11 @@ Options -Indexes -MultiViews
     # their original handlers. Child admin rules repeat this capability flag.
     RewriteRule ^ - [E=FKSS_BROWSER_ROUTES:1]
     # Retain the mount prefix when Apache Alias rewrites SCRIPT_NAME.
-    RewriteCond %{REQUEST_URI} ^((?:/[A-Za-z0-9_-]+)*)/(?:verify-member|(?:frontend/pages|monitor)/[a-z][a-z0-9-]*)$
+    RewriteCond %{REQUEST_URI} ^((?:/[A-Za-z0-9_-]+)*)/(?:verify-member|(?:frontend/pages|monitor)/[a-z][a-z0-9-]*|members(?:/[a-z][a-z0-9-]*)?)$
     RewriteRule ^ - [E=FKSS_BROWSER_PREFIX:%1]
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d
-    RewriteRule ^(?:verify-member|(?:frontend/pages|monitor)/[a-z][a-z0-9-]*)$ browser_page.php [END]
+    RewriteRule ^(?:verify-member|(?:frontend/pages|monitor)/[a-z][a-z0-9-]*|members(?:/[a-z][a-z0-9-]*)?)$ browser_page.php [END]
 </IfModule>
 
 # php -- BEGIN cPanel-generated handler, do not edit

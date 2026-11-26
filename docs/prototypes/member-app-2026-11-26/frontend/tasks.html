@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="am">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>ፈለገ ቅዱሳን | Tasks</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="css/fk-theme.css">
+</head>
+<body>
+    <header id="fk-header"></header>
+    <main class="fk-page">
+        <div class="fk-card fk-pagehead"><h1 class="fk-title" data-i18n="tk.title"></h1><p class="fk-sub" data-i18n="tk.sub"></p></div>
+        <div id="tk"><div class="fk-skel"></div></div>
+    </main>
+    <div id="live" class="fk-toast" role="status" aria-live="polite" hidden></div>
+    <script src="js/session.js"></script>
+    <script src="js/fk-ui.js"></script>
+    <script>
+
+FK.addStrings({
+ am: { "tk.title": "ተግባራት", "tk.sub": "የተሰጡዎትን ተግባራት እና የማጠናቀቂያ ቀናት ይመልከቱ።", "tk.none": "ለክፍልዎ እስካሁን የተሰጠ ተግባር የለም።", "tk.due": "የመጨረሻ ቀን", "tk.noDue": "የመጨረሻ ቀን አልተወሰነም",
+  "tk.files": "ተያያዥ ፋይሎች", "tk.open": "ክፈት", "tk.overdue": "ጊዜው አልፏል", "tk.soon": "ቀኑ ተቃርቧል", "tk.upcoming": "ገና ጊዜ አለ" },
+ en: { "tk.title": "Tasks", "tk.sub": "See the tasks you were given and their due dates.", "tk.none": "No tasks have been given to your grade yet.", "tk.due": "Due", "tk.noDue": "No due date",
+  "tk.files": "Attached files", "tk.open": "Open", "tk.overdue": "Overdue", "tk.soon": "Due soon", "tk.upcoming": "Upcoming" }
+});
+var host = document.getElementById("tk");
+function fileUrl(p) { p = String(p || "").replace(/\\/g, "/").replace(/^\/+/, ""); return "/" + (p.indexOf("uploads/") === 0 ? p : "uploads/" + p); }
+function dueLabel(d) {
+  if (!d) { return null; }
+  var days = Math.ceil((new Date(d + "T23:59:59") - new Date()) / 86400000);
+  return days < 0 ? ["fail", FK.t("tk.overdue")] : (days <= 3 ? ["wait", FK.t("tk.soon")] : ["pass", FK.t("tk.upcoming")]);
+}
+async function load() {
+  var me = await FK.me(); if (!me) { return; }
+  var r = await FK.api("/api/tasks/" + encodeURIComponent(me.id));
+  host.textContent = "";
+  if (!r.ok) { FK.message(host, r.data.message || FK.t("common.error"), "error", load); return; }
+  if (!r.data.tasks.length) { host.appendChild(FK.el("div", { class: "fk-card" }, [FK.el("p", { text: FK.t("tk.none") })])); return; }
+  var grid = FK.el("div", { class: "fk-grid two" });
+  r.data.tasks.forEach(function (t) {
+    var lab = dueLabel(t.due_date);
+    var card = FK.el("article", { class: "fk-card" }, [FK.el("div", { class: "fk-attempt" }, [FK.el("h2", { style: "margin:0", text: t.title }), lab ? FK.el("span", { class: "fk-pill " + lab[0], text: lab[1] }) : null])]);
+    var meta = []; if (t.subject_name) { meta.push(t.subject_name); }
+    meta.push(t.due_date ? FK.t("tk.due") + ": " + FK.date(t.due_date) : FK.t("tk.noDue"));
+    card.appendChild(FK.el("p", { class: "fk-task-meta", text: meta.join(" · ") }));
+    if (t.description) { card.appendChild(FK.el("p", { text: t.description, style: "white-space:pre-wrap" })); }
+    if (t.attachments && t.attachments.length) {
+      card.appendChild(FK.el("strong", { text: FK.t("tk.files") }));
+      var ul = FK.el("ul", { class: "fk-list", style: "margin-top:8px" });
+      t.attachments.forEach(function (a) { ul.appendChild(FK.el("li", {}, [FK.el("span", { text: a.file_name }), FK.el("a", { class: "fk-btn ghost", href: fileUrl(a.file_path), target: "_blank", rel: "noopener", text: FK.t("tk.open") })])); });
+      card.appendChild(ul);
+    }
+    grid.appendChild(card);
+  });
+  host.appendChild(grid);
+}
+load();
+
+    </script>
+</body>
+</html>
