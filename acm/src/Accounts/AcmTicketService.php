@@ -73,6 +73,41 @@ class AcmTicketService
         }
         $memberId = $this->toNullInt($data['member_id'] ?? $person['member_id']);
         $guardianId = $this->toNullInt($data['guardian_id'] ?? $person['guardian_id']);
+
+        // Link integrity: a ticket may restate the person's link or fill in
+        // one the person lacks, but it must never CONTRADICT it.
+        //
+        // Why this matters: acm_persons.guardian_id is the ONLY column the
+        // parent authorization resolver reads (apiParentGuardianId() in
+        // api/v1/core/acl.php). Provisioning never copies the ticket's
+        // guardian_id anywhere — AccountProvisioner::provision() reads
+        // users.member_id from the ticket but takes the authorization link
+        // from acm_persons. So a ticket naming guardian B for a person bound
+        // to guardian A records a mismatch that nothing repairs and nothing
+        // reports: the ticket, the evidence packet and the console review
+        // screen all display guardian B, while the account will only ever be
+        // able to see guardian A's children.
+        //
+        // AcmPersonService::update() deliberately cannot change member_id or
+        // guardian_id, so the person's link is immutable after creation —
+        // which makes this the single point where the two can diverge.
+        $personMember = $this->toNullInt($person['member_id'] ?? null);
+        if ($memberId !== null && $personMember !== null && $memberId !== $personMember) {
+            throw new InvalidArgumentException(
+                'This person is linked to member #' . $personMember
+                . ' but the ticket names member #' . $memberId
+                . '. Correct the person record instead of the ticket.'
+            );
+        }
+        $personGuardian = $this->toNullInt($person['guardian_id'] ?? null);
+        if ($guardianId !== null && $personGuardian !== null && $guardianId !== $personGuardian) {
+            throw new InvalidArgumentException(
+                'This person is linked to guardian #' . $personGuardian
+                . ' but the ticket names guardian #' . $guardianId
+                . '. Correct the person record instead of the ticket.'
+            );
+        }
+
         if ($accountType === 'member' && $memberId === null) {
             throw new InvalidArgumentException('A member account needs a linked member record.');
         }

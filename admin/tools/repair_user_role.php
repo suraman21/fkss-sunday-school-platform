@@ -18,7 +18,8 @@
  *       --role=finance_dept --apply                            # execute
  *
  * Safety: CLI-only (HTTP 404 on the web), dry run by default, prepared
- * statements, canonical role whitelist identical to user-save.php.
+ * statements, canonical role whitelist DERIVED from user-save.php at run
+ * time (it used to be a hand-copy that drifted from 16 roles to 10).
  */
 
 if (PHP_SAPI !== 'cli') {
@@ -28,19 +29,43 @@ if (PHP_SAPI !== 'cli') {
 
 require_once __DIR__ . '/../../config.php';
 
-// Canonical catalogue — keep in sync with admin/backend/user-save.php.
-$CANONICAL_ROLES = [
-    'super_admin',
-    'school_admin',
-    'info_dept',
-    'hr_dept',
-    'edu_dept',
-    'finance_dept',
-    'material_dept',
-    'mezmur_dept',
-    'teacher',
-    'attendance_taker',
-];
+// Canonical staff catalogue — DERIVED, not copied.
+//
+// This used to be a hand-maintained copy of $validRoles in
+// admin/backend/user-save.php and it silently drifted: by 2026-11-26 it
+// listed 10 roles against user-save.php's 16, so this tool refused to
+// repair an account stored as accounts_office, content_editor,
+// photo_importer, photo_dept, mezmur_attendance_taker or
+// hr_attendance_taker — reporting "Invalid role" for six role types that
+// the admin UI can create. The docblock above claimed the two lists were
+// identical.
+//
+// Reading the source list removes the copy, so the two cannot diverge
+// again. member and parent are absent BY DESIGN: they are provisioned
+// only by approved ACM activation tickets and must never be assigned by
+// this tool (apiRolesStaff() in api/v1/core/acl.php documents the same
+// rule).
+$CANONICAL_ROLES = (function () {
+    $src = @file_get_contents(__DIR__ . '/../backend/user-save.php');
+    if ($src === false) {
+        fwrite(STDERR, "FATAL: cannot read admin/backend/user-save.php to derive the role catalogue.\n");
+        exit(1);
+    }
+    if (!preg_match('/\$validRoles\s*=\s*\[(.*?)\n\];/s', $src, $m)) {
+        fwrite(STDERR, "FATAL: \$validRoles not found in admin/backend/user-save.php.\n");
+        exit(1);
+    }
+    // Strip comments so a role named only inside prose is not picked up.
+    $body = preg_replace('#/\*.*?\*/#s', '', $m[1]);
+    $body = preg_replace('#(?m)^\s*//.*$#', '', $body);
+    preg_match_all("/'([a-z_]+)'/", $body, $hits);
+    $roles = array_values(array_unique($hits[1]));
+    if ($roles === []) {
+        fwrite(STDERR, "FATAL: could not parse any roles out of \$validRoles.\n");
+        exit(1);
+    }
+    return $roles;
+})();
 
 $args = array_slice($argv, 1);
 $apply = in_array('--apply', $args, true);

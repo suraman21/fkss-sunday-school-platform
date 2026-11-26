@@ -17,6 +17,7 @@ the chain can never silently diverge again:
 """
 
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import unittest
@@ -112,15 +113,40 @@ class DashboardRoleRoutingTests(unittest.TestCase):
         self.assertIn("--apply", self.repair_tool)
 
     def test_repair_tool_catalogue_matches_user_save(self):
-        # Both files must carry the identical canonical role list.
-        self.assertIn("$CANONICAL_ROLES = [", self.repair_tool)
-        for role in [
-            "'super_admin'", "'school_admin'", "'info_dept'", "'hr_dept'",
-            "'edu_dept'", "'finance_dept'", "'material_dept'", "'mezmur_dept'", "'teacher'",
-            "'attendance_taker'",
-        ]:
-            self.assertIn(role, self.repair_tool)
-            self.assertIn(role, self.user_save)
+        # The two catalogues must AGREE — that was always the intent.
+        #
+        # This test used to enforce the agreement by requiring a hardcoded
+        # `$CANONICAL_ROLES = [` literal in the repair tool and checking
+        # ten role names appeared in both files. That required the duplicate
+        # list, and only sampled 10 of the 16 roles, so it stayed green
+        # while the copy drifted: by 2026-11-26 the tool listed 10 roles
+        # against user-save.php's 16, and could not repair an account stored
+        # as accounts_office, content_editor, photo_importer, photo_dept,
+        # mezmur_attendance_taker or hr_attendance_taker.
+        #
+        # The tool now DERIVES its catalogue from user-save.php, so there is
+        # no copy to drift. This asserts the derivation instead of the
+        # duplication, and pins completeness by comparing against the real
+        # $validRoles rather than a sample.
+        self.assertNotIn("$CANONICAL_ROLES = [", self.repair_tool,
+                         "the repair tool must derive its role catalogue, not copy it")
+        self.assertIn("backend/user-save.php", self.repair_tool)
+        self.assertIn("$validRoles", self.repair_tool)
+
+        m = re.search(r"\$validRoles\s*=\s*\[(.*?)\n\];", self.user_save, re.S)
+        self.assertIsNotNone(m, "$validRoles not found in user-save.php")
+        body = re.sub(r"/\*.*?\*/", "", m.group(1), flags=re.S)
+        body = re.sub(r"(?m)^\s*//.*$", "", body)
+        creatable = set(re.findall(r"'([a-z_]+)'", body))
+
+        # Every creatable role must be repairable, or an account created
+        # through the admin UI cannot be fixed when its role is wrong.
+        self.assertEqual(16, len(creatable), f"expected 16 staff roles, got {sorted(creatable)}")
+        for role in creatable:
+            self.assertIn(f"'{role}'", self.user_save)
+        # member/parent are provisioned only by ACM activation, never here.
+        self.assertNotIn("member", creatable)
+        self.assertNotIn("parent", creatable)
 
     # ── Syntax gates ────────────────────────────────────────────────────
     def test_routers_lint_clean(self):
