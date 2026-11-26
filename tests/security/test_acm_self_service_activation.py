@@ -349,6 +349,53 @@ class DeviceRecovery(unittest.TestCase):
         # The old wording claimed the screen issues the code itself.
         self.assertNotIn("This issues an", page)
 
+
+class PublicRequestHardening(unittest.TestCase):
+    """§6 R10 and §9: the one unauthenticated route must be bounded."""
+
+    ACM_ROUTE = ROOT / "api" / "v1" / "routes" / "acm.php"
+
+    def _request_block(self) -> str:
+        """The public handler only.
+
+        It is dispatched on $acmPath, not $acmAction -- the other ACM arms
+        are $acmAction. Slicing on the wrong variable silently matches the
+        docblock and asserts nothing about the handler.
+        """
+        source = read(self.ACM_ROUTE)
+        start = source.index("if ($acmPath === 'activate/request'")
+        nxt = source.find("if ($acmAction === 'activate/verify'", start)
+        return source[start:nxt if nxt != -1 else len(source)]
+
+    def test_request_route_applies_rate_limits(self):
+        self.assertIn("apiEnforceRateLimits(", self._request_block())
+
+    def test_request_route_has_three_independent_buckets(self):
+        """Per IP, per code, and a global ceiling.
+
+        Any one alone lets something through: IP-only misses a distributed
+        probe, code-only misses a spray across many codes, and neither
+        bounds total load.
+        """
+        block = self._request_block()
+        for action in ("acm_request_ip", "acm_request_code", "acm_request_global"):
+            self.assertIn("'" + action + "'", block)
+
+    def test_member_code_is_hashed_before_reaching_the_limiter(self):
+        """Raw member codes must not be stored in the limiter table."""
+        block = self._request_block()
+        self.assertIn("hash(", block.lower())
+        self.assertNotIn("'subject' => $memberCode", block)
+
+    def test_response_does_not_leak_existence(self):
+        """Success and duplicate collapse to the same 202 + body."""
+        block = self._request_block()
+        for leak in ("404", "409"):
+            self.assertNotIn(leak, block, leak)
+        # 422 for a malformed body is permitted: it is a client bug, not a
+        # probe, and it is returned before any lookup happens.
+        self.assertIn("202", block)
+
 class PhpSyntax(unittest.TestCase):
     """No PHP binary here; assert the files at least declare strict types
     and contain no obvious unclosed construct."""
