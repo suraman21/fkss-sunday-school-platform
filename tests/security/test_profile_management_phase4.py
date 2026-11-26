@@ -136,7 +136,7 @@ def test_username_email_and_password_policies_match_backend_boundaries():
     assert "maxlength=\"100\"" in page
     assert "identityDraftChanged()" in js
     assert "current_password" in js
-    assert "characters < 12" in js
+    assert "characters < 6" in js
     assert "bytes > 72" in js
     assert "COMMON_PASSWORDS" in js
     assert "TextEncoder" in js

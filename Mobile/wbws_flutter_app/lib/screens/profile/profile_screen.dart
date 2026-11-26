@@ -172,7 +172,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                   autofillHints: const [AutofillHints.newPassword],
                   decoration: InputDecoration(
                     labelText: 'New password',
-                    helperText: '12+ characters, at most 72 UTF-8 bytes',
+                    helperText: '6+ characters, at most 72 UTF-8 bytes',
                     errorText: newError,
                     prefixIcon: const Icon(Icons.lock_rounded, size: 18),
                     suffixIcon: IconButton(
@@ -247,14 +247,14 @@ class _ProfileScreenState extends State<ProfileScreen>
                               });
                               return;
                             }
-                            if (newPwd.runes.length < 12 ||
+                            if (newPwd.runes.length < 6 ||
                                 utf8.encode(newPwd).length > 72 ||
                                 newPwd == currentPassword) {
                               setSheetState(() {
                                 currentError = null;
                                 newError = newPwd == currentPassword
                                     ? 'New password must differ from the current password.'
-                                    : 'Use at least 12 characters and at most 72 UTF-8 bytes.';
+                                    : 'Use at least 6 characters and at most 72 UTF-8 bytes.';
                                 confirmationError = null;
                                 error = null;
                               });

@@ -1281,7 +1281,7 @@ renderProfileTabSection('sec-profile', 'sec');
 <div><label class="lbl">Full Name *</label><input id="teacherFullName" class="inp" required></div>
 <div><label class="lbl">Username *</label><input id="teacherUsername" class="inp" required></div>
 <div><label class="lbl">Email</label><input id="teacherEmail" type="email" class="inp"></div>
-<div><label class="lbl" id="teacherPasswordLabel">Password *</label><input id="teacherPassword" type="password" class="inp" minlength="12" maxlength="72" autocomplete="new-password">
+<div><label class="lbl" id="teacherPasswordLabel">Password *</label><input id="teacherPassword" type="password" class="inp" minlength="6" maxlength="72" autocomplete="new-password">
 <div id="teacherPasswordHint" style="font-size:.65rem;color:#94a3b8;margin-top:.25rem">They will sign in with this password.</div></div>
 </div>
 <div style="margin-top:1.15rem;padding-top:1rem;border-top:1px solid #f1f5f9">
@@ -1972,7 +1972,7 @@ function resetTeacherForm(){
 }
 function setPasswordMode(isCreate){
     document.getElementById('teacherPasswordLabel').textContent=isCreate?'Password *':'Password';
-    document.getElementById('teacherPasswordHint').textContent=isCreate?'Use at least 12 characters.':'Leave blank to keep the current password; new passwords need at least 12 characters.';
+    document.getElementById('teacherPasswordHint').textContent=isCreate?'Use at least 6 characters.':'Leave blank to keep the current password; new passwords need at least 6 characters.';
     document.getElementById('teacherPassword').required=!!isCreate;
 }
 function pickTeacherMember(id,name,code){
@@ -2051,8 +2051,8 @@ async function saveTeacher(){
     const pw=document.getElementById('teacherPassword').value;
     if(!name){setFormAlert('teacherFormAlert','Please enter the teacher full name.','err');markField('teacherFullName',true);document.getElementById('teacherFullName').focus();return;}
     if(!user){setFormAlert('teacherFormAlert','Please choose a username for login.','err');markField('teacherUsername',true);document.getElementById('teacherUsername').focus();return;}
-    if(!currentTeacherId&&pw.length<12){setFormAlert('teacherFormAlert','Set a password of at least 12 characters so they can log in.','err');markField('teacherPassword',true);document.getElementById('teacherPassword').focus();return;}
-    if(currentTeacherId&&pw&&pw.length<12){setFormAlert('teacherFormAlert','New password must be at least 12 characters, or leave it blank to keep the current one.','err');markField('teacherPassword',true);document.getElementById('teacherPassword').focus();return;}
+    if(!currentTeacherId&&pw.length<6){setFormAlert('teacherFormAlert','Set a password of at least 6 characters so they can log in.','err');markField('teacherPassword',true);document.getElementById('teacherPassword').focus();return;}
+    if(currentTeacherId&&pw&&pw.length<6){setFormAlert('teacherFormAlert','New password must be at least 6 characters, or leave it blank to keep the current one.','err');markField('teacherPassword',true);document.getElementById('teacherPassword').focus();return;}
     if(email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){setFormAlert('teacherFormAlert','That email does not look right.','err');markField('teacherEmail',true);document.getElementById('teacherEmail').focus();return;}
     const incomplete=asgRows.some(r=>(r.class_id&&!r.subject_id)||(!r.class_id&&r.subject_id));
     if(incomplete){setFormAlert('teacherFormAlert','Each teaching row needs both a class and a subject. Finish the row or remove it.','err');return;}

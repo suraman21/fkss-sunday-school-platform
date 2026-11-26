@@ -48,6 +48,9 @@ if (!defined('SSMS_ACM_AUTOLOAD')) {
     require_once __DIR__ . '/src/Identity/AcmPersonService.php';
     // S3 activation ceremony.
     require_once __DIR__ . '/src/Activation/CodeAlphabet.php';
+    // S12: six-digit activation codes. The pair above still governs
+    // device_add and reset.
+    require_once __DIR__ . '/src/Activation/Otp.php';
     require_once __DIR__ . '/src/Activation/ActivationException.php';
     require_once __DIR__ . '/src/Activation/IdempotencyStore.php';
     require_once __DIR__ . '/src/Accounts/AccountProvisioner.php';
@@ -62,4 +65,11 @@ if (!defined('SSMS_ACM_AUTOLOAD')) {
     require_once __DIR__ . '/src/Office/AcmOfficeService.php';
     // S10 staff enrollment request queue.
     require_once __DIR__ . '/src/Enrollment/StaffEnrollmentRequestService.php';
+    // S11 self-service activation requests. Order matters: the
+    // request service has no dependencies beyond PDO; the decision
+    // service names AcmTicketService and AcmPersonService, which are
+    // already loaded above; the directory is standalone.
+    require_once __DIR__ . '/src/Requests/AuthenticatorDirectory.php';
+    require_once __DIR__ . '/src/Requests/AcmActivationRequestService.php';
+    require_once __DIR__ . '/src/Requests/AcmRequestDecisionService.php';
 }

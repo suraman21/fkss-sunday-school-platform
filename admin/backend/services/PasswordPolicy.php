@@ -8,17 +8,45 @@ namespace App\Services;
 
 final class PasswordPolicy
 {
-    public const MIN_CHARACTERS = 12;
+    /**
+     * Minimum length, in characters.
+     *
+     * THIS WAS 12, AND THE REASON IT WAS 12 IS NOW HANDLED ELSEWHERE.
+     * 12 was chosen because login was throttled per IP only: an attacker
+     * with a pool of addresses got unlimited guesses against any single
+     * account, so length was the only thing standing between a weak
+     * password and an offline-speed online attack. Raising length was
+     * compensating for a missing control.
+     *
+     * That control now exists: `LoginThrottle` counts failures per
+     * ACCOUNT (not per IP) and locks the account for a growing window
+     * after `LoginThrottle::ACCOUNT_LIMIT` misses. With guessing bounded
+     * per account, 6 is defensible — it is the same floor NIST
+     * SP 800-63B-4 sets for out-of-band secrets, and what the school asked
+     * for (ASVS 5.0 V6.5.1 also puts the floor at 20 bits, which six
+     * digits clears).
+     *
+     * Do NOT lower this without LoginThrottle being wired into every
+     * password-checking endpoint. The policy cannot enforce that itself;
+     * tests/security/test_login_throttle.py pins the wiring.
+     */
+    public const MIN_CHARACTERS = 6;
+
     // PHP's current PASSWORD_DEFAULT is bcrypt, which only processes 72 bytes.
     public const MAX_BYTES = 72;
 
+    // The old floor's exact strings are gone: at 6 characters a list of
+    // 12-character passwords no longer describes what users actually pick.
+    // These are the ones a 6-character minimum makes reachable, plus the
+    // obvious school-context guesses.
     private const COMMON_PASSWORDS = [
-        '123456789012',
-        'adminadmin12',
-        'changeme1234',
-        'letmeinletmein',
-        'password1234',
-        'qwertyuiop12',
+        '123456', '1234567', '12345678', '123456789', '1234567890',
+        '111111', '000000', '121212', '123123', '654321', '666666',
+        'password', 'passwd', 'qwerty', 'qwertyui', 'abc123', 'abcd1234',
+        'admin', 'admin123', 'letmein', 'welcome', 'iloveyou', 'monkey',
+        'dragon', 'sunshine', 'princess', 'football', 'baseball',
+        'changeme', 'secret', 'student', 'school', 'ssms', 'member',
+        'fkss', 'fkss123', 'ethiopia', 'addis', 'addisababa',
     ];
 
     /** @return string[] */

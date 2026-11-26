@@ -271,9 +271,24 @@ acm_chrome_open('queue', (string)($ticket['ticket_no'] ?? 'Ticket'), 'Activation
     <?php $lastCode = is_array($codeInfo['last'] ?? null) ? $codeInfo['last'] : null; ?>
     <?php if ($liveCode !== null): ?>
     <dl class="acm-kv">
-        <dt>Selector</dt><dd><?= e((string)($liveCode['selector'] ?? '')) ?> · <?= e((string)($liveCode['prefix'] ?? '')) ?> · <?= e((string)($liveCode['purpose'] ?? '')) ?></dd>
+        <?php $isOtpCode = (string)($liveCode['purpose'] ?? '') === 'activation'; ?>
+        <dt><?= $isOtpCode ? 'Code' : 'Selector' ?></dt>
+        <dd>
+            <?php if ($isOtpCode): ?>
+                6-digit one-time code · activation
+            <?php else: ?>
+                <?= e((string)($liveCode['selector'] ?? '')) ?> · <?= e((string)($liveCode['prefix'] ?? '')) ?> · <?= e((string)($liveCode['purpose'] ?? '')) ?>
+            <?php endif; ?>
+        </dd>
         <dt>Expires</dt><dd><?= e((string)($liveCode['expires_at'] ?? '')) ?><?= empty($liveCode['live']) ? ' · EXPIRED — reissue to resume' : '' ?></dd>
-        <dt>Attempts left</dt><dd><?= max(0, (int)($liveCode['max_attempts'] ?? 0) - (int)($liveCode['attempts'] ?? 0)) ?> of <?= (int)($liveCode['max_attempts'] ?? 0) ?></dd>
+        <dt>Attempts left</dt>
+        <dd>
+            <?= max(0, (int)($liveCode['max_attempts'] ?? 0) - (int)($liveCode['attempts'] ?? 0)) ?>
+            of <?= (int)($liveCode['max_attempts'] ?? 0) ?>
+            <?php if (!empty($isOtpCode)): ?>
+                <span style="font-size:.75rem;color:var(--dim)">(per ticket, across all issued codes)</span>
+            <?php endif; ?>
+        </dd>
     </dl>
     <?php elseif ($lastCode !== null): ?>
     <dl class="acm-kv">
@@ -394,9 +409,23 @@ acm_chrome_open('queue', (string)($ticket['ticket_no'] ?? 'Ticket'), 'Activation
                 var box = document.getElementById('acmCodeOnce');
                 var code = (d.code && d.code.display) ? d.code.display : '';
                 box.style.display = 'block';
-                box.textContent = 'ONE-TIME CODE: ' + code
-                    + ' (expires ' + ((d.code && d.code.expires_at) ? d.code.expires_at : '?')
-                    + '). Read it to the user in person — reloading this page masks it forever.';
+                var ticketNo = (d.ticket && d.ticket.ticket_no) ? d.ticket.ticket_no : '';
+                if (d.code && d.code.kind === 'otp') {
+                    // An activation code is now a six-digit OTP and the
+                    // member must ALSO give the reference of their own
+                    // request: verification is scoped to one ticket, which
+                    // is what keeps 10^6 values safe to guess against.
+                    box.textContent = 'ACTIVATION CODE: ' + code
+                        + '  (expires ' + ((d.code.expires_at) ? d.code.expires_at : '?') + ')\n'
+                        + 'Give the member BOTH: this code and their request reference. '
+                        + 'The code is checked only against their request, and works once. '
+                        + 'Reloading this page masks it forever.';
+                    box.style.whiteSpace = 'pre-line';
+                } else {
+                    box.textContent = 'ONE-TIME CODE: ' + code
+                        + ' (expires ' + ((d.code.expires_at) ? d.code.expires_at : '?')
+                        + '). Read it to the user in person — reloading this page masks it forever.';
+                }
                 issueBtn.innerHTML = '<i class="fa-solid fa-key"></i> Reissue code';
                 issueBtn.disabled = false;
             } catch (err) {

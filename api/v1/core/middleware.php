@@ -5,6 +5,9 @@
  */
 
 require_once __DIR__ . '/../../../admin/backend/services/SecurityRateLimiter.php';
+// Per-account login throttle (S12). Loaded here because auth.php constructs
+// it on the login path and this file already owns the limiter it wraps.
+require_once __DIR__ . '/../../../admin/backend/services/LoginThrottle.php';
 require_once __DIR__ . '/../../../admin/backend/services/ApiIdempotencyService.php';
 require_once __DIR__ . '/../../../admin/backend/services/ApiSyncAttemptMonitorService.php';
 

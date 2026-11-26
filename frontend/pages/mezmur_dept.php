@@ -860,8 +860,8 @@ ob_start();
             <input id="mzTkUser" class="school-input" maxlength="50" autocomplete="off">
         </div>
         <div class="school-form-group">
-            <label class="school-label" for="mzTkPass">Password * <span class="text-dim">(12+ characters)</span></label>
-            <input id="mzTkPass" class="school-input" type="password" minlength="12" maxlength="72" autocomplete="new-password">
+            <label class="school-label" for="mzTkPass">Password * <span class="text-dim">(6+ characters)</span></label>
+            <input id="mzTkPass" class="school-input" type="password" minlength="6" maxlength="72" autocomplete="new-password">
         </div>
         <div class="school-error-msg is-hidden" id="mzTkError" role="alert"></div>
         <button class="btn-primary btn-block" id="mzTkSaveBtn" onclick="Mezmur.createTaker()"><i class="fa-solid fa-save"></i> Create Account</button>

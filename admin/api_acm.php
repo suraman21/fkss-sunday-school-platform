@@ -52,6 +52,8 @@ use SSMS\Acm\Device\DeviceCrypto;
 use SSMS\Acm\Device\DeviceService;
 use SSMS\Acm\Enrollment\StaffEnrollmentRequestService;
 use SSMS\Acm\Identity\AcmPersonService;
+use SSMS\Acm\Requests\AcmActivationRequestService;
+use SSMS\Acm\Requests\AcmRequestDecisionService;
 use SSMS\Acm\Office\AcmOfficeService;
 use SSMS\Acm\OfficeNetwork\OfficeNetworkSignal;
 use SSMS\Acm\Policy\AcmPolicy;
@@ -539,15 +541,26 @@ try {
             // secret (pin-enforced, test_no_token_or_password_keys).
             acm_audit($pdo, 'acm.code.issued', [
                 'ticket_no' => (string)($ticket['ticket_no'] ?? ''),
-                'selector' => $issued->selector,
+                // Activation has no public selector any more; recording an
+                // empty string would look like a bug in the audit trail.
+                'selector' => $issued->purpose === CodePurpose::Activation ? 'otp' : $issued->selector,
                 'purpose' => $issued->purpose->value,
                 'expires_at' => $issued->expiresAt,
             ], 'acm_ticket', (int)($ticket['id'] ?? 0));
             // Plaintext travels ONLY in this response: the page shows
             // it once, then masks it (D3.2). Never logged, never stored.
+            //
+            // An ACTIVATION purpose is a six-digit OTP (S12): the officer
+            // reads it out grouped as "123 456". The selector is empty for
+            // an OTP row by construction, so it is reported as null rather
+            // than as an empty string the page would render as a blank.
+            $isOtp = $issued->purpose === CodePurpose::Activation;
             acm_ok(['code' => [
-                'display' => $issued->display(CodeAlphabet::prefixFor($issued->purpose)),
-                'selector' => $issued->selector,
+                'display' => $isOtp
+                    ? \SSMS\Acm\Activation\Otp::display($issued->secret)
+                    : $issued->display(CodeAlphabet::prefixFor($issued->purpose)),
+                'selector' => $isOtp ? null : $issued->selector,
+                'kind' => $isOtp ? 'otp' : 'pair',
                 'expires_at' => $issued->expiresAt,
             ], 'ticket' => $ticket]);
             break;
@@ -827,6 +840,201 @@ try {
                 'user_id' => (int)$row['user_id'],
             ], 'acm_staff_enrollment_request', (int)$row['id']);
             acm_ok(['request' => $row]);
+            break;
+        }
+
+        // ── S11: self-service activation requests ──────────────
+        case 'request_queue': {
+            if (!AcmPolicy::can($role, AcmPolicy::RES_REQUEST, 'view')) {
+                acm_err('Access denied.', 403);
+            }
+            $requestService = new AcmActivationRequestService($pdo);
+            $status = in_array((string)($_GET['status'] ?? ''), ['pending_review','approved','rejected','expired','canceled'], true)
+                ? (string)$_GET['status'] : 'pending_review';
+            acm_ok([
+                'requests' => $requestService->queue(
+                    $actorId,
+                    $status,
+                    max(1, min((int)($_GET['limit'] ?? 25), 100)),
+                    max(0, (int)($_GET['offset'] ?? 0))
+                ),
+                'status' => $status,
+            ]);
+            break;
+        }
+
+        case 'request': {
+            if (!AcmPolicy::can($role, AcmPolicy::RES_REQUEST, 'view')) {
+                acm_err('Access denied.', 403);
+            }
+            $requestService = new AcmActivationRequestService($pdo);
+            $row = $requestService->get((int)($_GET['id'] ?? 0));
+            if ($row === null) {
+                acm_err('Request not found.', 404);
+            }
+            // The timeline, read directly: acm_request_events is
+            // append-only, so this is the audit history of the request.
+            $eventStmt = $pdo->prepare(
+                'SELECT event, actor_id, note, meta, created_at'
+                . ' FROM acm_request_events WHERE request_id = :rid ORDER BY id ASC LIMIT 200'
+            );
+            $eventStmt->execute([':rid' => (int)$row['id']]);
+            $requestEvents = $eventStmt->fetchAll(PDO::FETCH_ASSOC);
+
+            // Candidates are SUGGESTIONS for the officer, never an
+            // automatic match: the approval binds to whichever person
+            // the officer picks, and match_basis records how it was
+            // justified.
+            acm_ok([
+                'request' => $row,
+                'candidates' => $requestService->candidates($row),
+                'events' => is_array($requestEvents) ? $requestEvents : [],
+            ]);
+            break;
+        }
+
+        case 'request_claim': {
+            if (!AcmPolicy::can($role, AcmPolicy::RES_REQUEST, 'claim')) {
+                acm_err('Access denied.', 403);
+            }
+            $requestService = new AcmActivationRequestService($pdo);
+            $id = (int)($_POST['id'] ?? 0);
+            if (!$requestService->claim($id, $actorId)) {
+                acm_err('That request is no longer available to claim.', 409);
+            }
+            acm_audit($pdo, 'acm.request.claimed', ['request_id' => $id], 'acm_activation_request', $id);
+            acm_ok(['claimed' => true]);
+            break;
+        }
+
+        case 'request_reject': {
+            if (!AcmPolicy::can($role, AcmPolicy::RES_REQUEST, 'reject')) {
+                acm_err('Access denied.', 403);
+            }
+            $requestService = new AcmActivationRequestService($pdo);
+            $id = (int)($_POST['id'] ?? 0);
+            try {
+                if (!$requestService->reject($id, $actorId, (string)($_POST['reason'] ?? ''))) {
+                    acm_err('That request was already decided.', 409);
+                }
+            } catch (InvalidArgumentException $e) {
+                acm_err($e->getMessage(), 422);
+            }
+            acm_audit($pdo, 'acm.request.rejected', ['request_id' => $id], 'acm_activation_request', $id);
+            acm_ok(['rejected' => true]);
+            break;
+        }
+
+        case 'request_approve': {
+            if (!AcmPolicy::can($role, AcmPolicy::RES_REQUEST, 'approve')) {
+                acm_err('Access denied.', 403);
+            }
+            $requestService = new AcmActivationRequestService($pdo);
+            $decisionService = new AcmRequestDecisionService($pdo, $tickets, $persons);
+
+            $id = (int)($_POST['id'] ?? 0);
+            $personId = (int)($_POST['person_id'] ?? 0);
+            $memberId = isset($_POST['member_id']) && $_POST['member_id'] !== '' ? (int)$_POST['member_id'] : null;
+            $guardianId = isset($_POST['guardian_id']) && $_POST['guardian_id'] !== '' ? (int)$_POST['guardian_id'] : null;
+
+            $requestRow = $requestService->get($id);
+            if ($requestRow === null) {
+                acm_err('Request not found.', 404);
+            }
+            $personRow = $persons->find($personId);
+            if ($personRow === null) {
+                acm_err('The selected person was not found.', 404);
+            }
+            // match_basis is COMPUTED from what the officer chose, so the
+            // audit trail records whether the code and the name agreed.
+            $basis = AcmActivationRequestService::matchBasis($requestRow, $personRow);
+            try {
+                $result = $decisionService->approve($id, $actorId, $personId, $memberId, $guardianId, $basis);
+            } catch (InvalidArgumentException $e) {
+                acm_err($e->getMessage(), 422);
+            }
+            acm_audit($pdo, 'acm.request.approved', [
+                'request_id' => $id,
+                'ticket_no' => (string)$result['ticket_no'],
+                'match_basis' => $basis,
+            ], 'acm_activation_ticket', (int)$result['ticket_id']);
+            acm_ok(['ticket' => $result, 'match_basis' => $basis]);
+            break;
+        }
+
+        // ── S11: device recovery for an active account ─────────
+        case 'device_recover': {
+            if ($method !== 'POST') {
+                acm_err('Method not allowed.', 405);
+            }
+            if (!AcmPolicy::can($role, AcmPolicy::RES_CODE, 'issue')) {
+                acm_err('Access denied.', 403);
+            }
+            $personId = (int)($_POST['person_id'] ?? 0);
+            $accountType = (string)($_POST['account_type'] ?? '');
+            $reason = trim((string)($_POST['reason'] ?? ''));
+            if (!in_array($accountType, ['member', 'parent'], true)) {
+                acm_err('Unknown account type.', 400);
+            }
+            if (mb_strlen($reason) < 3 || mb_strlen($reason) > 2000) {
+                acm_err('A reason (3-2000 chars) is required.', 400);
+            }
+            $person = $persons->find($personId);
+            if ($person === null) {
+                acm_err('The selected person was not found.', 404);
+            }
+
+            // Only an ACTIVE account is recoverable. A pending account is
+            // a different problem (reissue the activation code) and a
+            // suspended one must not be given a fresh device.
+            $active = false;
+            foreach ($persons->accounts($personId) as $account) {
+                if ((string)($account['account_type'] ?? '') === $accountType
+                    && (string)($account['status'] ?? '') === 'active'
+                    && (int)($account['is_active'] ?? 0) === 1) {
+                    $active = true;
+                    break;
+                }
+            }
+            if (!$active) {
+                acm_err('That person has no active account of that type.', 409);
+            }
+
+            // A recovery ticket goes through the SAME path as any other:
+            // created at 'submitted', decided by the office, then the
+            // existing screen issues the device_add code. Nothing here
+            // rewrites a ticket status or mints a grant directly.
+            $memberId = isset($person['member_id']) && $person['member_id'] !== null ? (int)$person['member_id'] : 0;
+            $guardianId = isset($person['guardian_id']) && $person['guardian_id'] !== null ? (int)$person['guardian_id'] : 0;
+            if ($accountType === 'member' && $memberId <= 0) {
+                acm_err('This person has no linked member record.', 409);
+            }
+            if ($accountType === 'parent' && $guardianId <= 0) {
+                acm_err('This person has no linked guardian record.', 409);
+            }
+            try {
+                $recovery = $tickets->create([
+                    'person_id'    => $personId,
+                    'account_type' => $accountType,
+                    'member_id'    => $accountType === 'member' ? $memberId : null,
+                    'guardian_id'  => $accountType === 'parent' ? $guardianId : null,
+                    'note'         => 'Device recovery: ' . $reason,
+                ], $actorId);
+            } catch (InvalidArgumentException $e) {
+                acm_err($e->getMessage(), 409);
+            }
+
+            acm_audit($pdo, 'acm.device_recovery.requested', [
+                'person_id'    => $personId,
+                'account_type' => $accountType,
+                'ticket_no'    => (string)($recovery['ticket_no'] ?? ''),
+                'reason'       => $reason,
+            ], 'acm_activation_ticket', (int)$recovery['id']);
+
+            acm_ok([
+                'ticket_id' => (int)$recovery['id'],
+                'ticket_no' => (string)($recovery['ticket_no'] ?? ''),
+            ]);
             break;
         }
 

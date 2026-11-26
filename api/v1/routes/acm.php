@@ -23,6 +23,7 @@
  * list + self-revoke.
  */
 
+use InvalidArgumentException;
 use SSMS\Acm\Accounts\AcmTicketService;
 use SSMS\Acm\Activation\ActivationException;
 use SSMS\Acm\Activation\ActivationService;
@@ -34,6 +35,7 @@ use SSMS\Acm\Device\DeviceService;
 use SSMS\Acm\Enrollment\StaffEnrollmentRequestService;
 use SSMS\Acm\Identity\AcmPersonService;
 use SSMS\Acm\OfficeNetwork\OfficeNetworkSignal;
+use Throwable;
 
 require_once __DIR__ . '/../../../acm/autoload.php';
 require_once __DIR__ . '/../../../admin/backend/services/PasswordPolicy.php';
@@ -176,6 +178,72 @@ $acmParts = array_slice($ROUTE['parts'] ?? [], 1);
 $acmPath = implode('/', $acmParts);
 
 // ============================================================
+// POST /acm/activate/request  —  THE ONLY PUBLIC ACM ENDPOINT
+// ------------------------------------------------------------
+// A student asks for their account to be activated. No token: by
+// definition an unactivated account has no credentials yet.
+//
+// THE RESPONSE CONTRACT (see design §3.1; do not "improve" this):
+//   Success, duplicate, unknown member code, wrong name, wrong
+//   phone — ALL return 202 with an identical body. Anything else
+//   would confirm or deny that a member code is real, turning this
+//   into a member-directory scraper. The only other outcome is 422
+//   for a malformed body (a client bug, not a probe) and 429 for
+//   rate limiting, which is keyed on what was TYPED, not what was
+//   found.
+// ============================================================
+if ($acmPath === 'activate/request' && $method === 'POST') {
+    $reqBody = acmStrictBody(['member_code', 'full_name', 'phone', 'account_type'], 2048);
+
+    // Three independent buckets, all DB-backed and atomic. Subject for
+    // the per-code bucket is a HASH so raw member codes never reach
+    // the limiter table.
+    $reqCodeNorm = \SSMS\Acm\Requests\AcmActivationRequestService::normalizeMemberCode(
+        (string)($reqBody['member_code'] ?? '')
+    );
+    apiEnforceRateLimits([
+        ['action' => 'acm_request_ip', 'subject' => (string)($_SERVER['REMOTE_ADDR'] ?? 'unknown'), 'limit' => 10, 'window' => 3600],
+        ['action' => 'acm_request_code', 'subject' => 'code:' . hash('sha256', $reqCodeNorm), 'limit' => 3, 'window' => 3600],
+        ['action' => 'acm_request_global', 'subject' => 'all', 'limit' => 200, 'window' => 3600],
+    ]);
+
+    $requestService = new \SSMS\Acm\Requests\AcmActivationRequestService($pdo);
+
+    try {
+        $reqResult = $requestService->submit([
+            'member_code'  => $reqBody['member_code'] ?? '',
+            'full_name'    => $reqBody['full_name'] ?? '',
+            'phone'        => $reqBody['phone'] ?? null,
+            'account_type' => $reqBody['account_type'] ?? 'member',
+        ], (string)($_SERVER['REMOTE_ADDR'] ?? ''));
+    } catch (InvalidArgumentException $e) {
+        // Field validation only. The message names the FIELD, never
+        // whether the person exists -- but the route owns the wire
+        // contract here (S3 rule: no exception message reaches err()),
+        // so each cause maps to a fixed string.
+        // One fixed message. The exception's own text is never read
+        // here: this route is pinned by test_acm_s3_ceremony, which
+        // forbids exception text reaching err() from a mobile-reachable
+        // file, and the client shows its own field hints anyway.
+        err('Check the details you entered and try again.', 422, ['code' => 'invalid_request']);
+    } catch (Throwable $e) {
+        // Fail closed and generically. NO error_log text here: this file
+        // is pinned by tests/security/test_acm_s3_ceremony.py, which
+        // forbids variables inside error_log() on a mobile-reachable
+        // route. Logging a Throwable message on an unauthenticated
+        // endpoint would also risk leaking SQL or paths.
+        error_log('acm_request_failed');
+        err('Your request could not be recorded. Please try again.', 503, ['code' => 'temporarily_unavailable']);
+    }
+
+    // Identical whether the row was created or a duplicate collapsed.
+    ok([
+        'request_ref' => $reqResult['request_ref'],
+        'message'     => 'Your request has been received. The accounts office will review it and give you a code.',
+    ], 202);
+}
+
+// ============================================================
 // POST /acm/activate/verify
 // ============================================================
 if ($acmAction === 'activate/verify' && $method === 'POST') {
@@ -183,13 +251,20 @@ if ($acmAction === 'activate/verify' && $method === 'POST') {
     if (isApiRateLimited('acm_verify', 30)) {
         err('Too many attempts. Wait a while and try again.', 429, ['code' => 'rate_limited']);
     }
-    $body = acmStrictBody(['selector', 'secret', 'purpose', 'installation_id']);
-    try {
-        $purpose = CodePurpose::from($body['purpose']);
-    } catch (\ValueError $e) {
-        err('The code is invalid or expired.', 400, ['code' => 'code_invalid']);
+    // Two accepted bodies, never mixed:
+    //   { otp, reference, installation_id }             activation (S12)
+    //   { selector, secret, purpose, installation_id }   device_add / reset
+    // acmStrictBody rejects unknown fields but permits both sets at once,
+    // so the ambiguity is refused explicitly below: a body carrying an OTP
+    // AND a selector pair would leave the server choosing which to trust.
+    $body = acmStrictBody(['otp', 'reference', 'ticket_no', 'selector', 'secret', 'purpose', 'installation_id']);
+    $hasOtp = isset($body['otp']) && $body['otp'] !== '';
+    $hasPair = (isset($body['selector']) && $body['selector'] !== '')
+        || (isset($body['secret']) && $body['secret'] !== '');
+    if ($hasOtp && $hasPair) {
+        err('The request is invalid.', 400, ['code' => 'invalid_request']);
     }
-    $installationId = $body['installation_id'];
+    $installationId = (string)($body['installation_id'] ?? '');
     if ($installationId !== '' && !preg_match('/^[A-Za-z0-9._:-]{1,128}$/', $installationId)) {
         err('The code is invalid or expired.', 400, ['code' => 'code_invalid']);
     }
@@ -198,11 +273,41 @@ if ($acmAction === 'activate/verify' && $method === 'POST') {
     // enforcement is on).
     $signal = $ceremony->networkSignal();
     $clientIp = OfficeNetworkSignal::resolveClientIp($_SERVER, $signal->trustedProxies());
+    $meta = new RequestMeta($clientIp, $installationId !== '' ? $installationId : null);
+
     try {
-        $grant = $ceremony->verifyCode(
-            $body['selector'], $body['secret'], $purpose,
-            new RequestMeta($clientIp, $installationId !== '' ? $installationId : null)
-        );
+        if ($hasOtp) {
+            // The six-digit path. The ticket number is the SCOPE of the
+            // comparison, not a secret: it is what stops a guess from being
+            // evaluated against every live code in the school. See
+            // ActivationService::verifyOtp.
+            // `reference` is the member's own request reference; `ticket_no`
+            // stays accepted as an alias for a member handed a ticket number
+            // in the office. verifyOtp() resolves either.
+            $reference = (string)($body['reference'] ?? '');
+            if ($reference === '') {
+                $reference = (string)($body['ticket_no'] ?? '');
+            }
+            $grant = $ceremony->verifyOtp($body['otp'], $reference, $meta);
+        } else {
+            try {
+                $purpose = CodePurpose::from((string)($body['purpose'] ?? ''));
+            } catch (\ValueError $e) {
+                err('The code is invalid or expired.', 400, ['code' => 'code_invalid']);
+            }
+            if ($purpose === CodePurpose::Activation) {
+                // Activation is an OTP now. Accepting the old pair here would
+                // keep two verification paths for one state, and the weaker
+                // one would be the one an attacker picks.
+                err('The code is invalid or expired.', 400, ['code' => 'code_invalid']);
+            }
+            $grant = $ceremony->verifyCode(
+                (string)($body['selector'] ?? ''),
+                (string)($body['secret'] ?? ''),
+                $purpose,
+                $meta
+            );
+        }
     } catch (ActivationException $e) {
         acmWireError($e);
     } catch (InvalidArgumentException $e) {
@@ -223,15 +328,28 @@ if ($acmAction === 'activate/credentials' && $method === 'POST') {
         err('Too many attempts. Wait a while and try again.', 429, ['code' => 'rate_limited']);
     }
     // One password value over HTTPS (D3.4) — confirmation is app-UI-only.
-    $body = acmStrictBody(['grant', 'password', 'idempotency_key'], 4096);
+    // `username` is OPTIONAL (design D3): when supplied it becomes a
+    // login identifier for this account; when absent the member code
+    // already bound at approval is the identifier instead.
+    $body = acmStrictBody(['grant', 'password', 'idempotency_key', 'username'], 4096);
     try {
         $account = $ceremony->establishCredentials(
-            $body['grant'], $body['password'], $body['idempotency_key']
+            $body['grant'], $body['password'], $body['idempotency_key'],
+            isset($body['username']) && $body['username'] !== '' ? (string)$body['username'] : null
         );
     } catch (ActivationException $e) {
         acmWireError($e, $body['password']);
     } catch (InvalidArgumentException $e) {
-        err('The request is invalid.', 400, ['code' => 'invalid_request']);
+        // D3: a username the member chose may already be taken. That is
+        // a USER-FIXABLE condition, not a server fault, so it must not
+        // surface as a 500 -- the member simply picks another. The
+        // message is a fixed string: no exception text escapes here
+        // (pinned by test_acm_s3_ceremony).
+        err(
+            'That username is already in use. Choose another, or retry without a username to use your member ID number instead.',
+            409,
+            ['code' => 'username_unavailable']
+        );
     }
     $credentialsResponse = [
         'message' => 'Account created. Complete device registration to sign in.',

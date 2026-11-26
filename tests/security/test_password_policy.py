@@ -47,7 +47,7 @@ class PasswordPolicyTests(unittest.TestCase):
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
         result = json.loads(completed.stdout.strip().splitlines()[-1])
-        self.assertEqual(result["minimum"], 12)
+        self.assertEqual(result["minimum"], 6)
         self.assertEqual(result["maximum_bytes"], 72)
         self.assertEqual(result["cases"]["valid_passphrase"], [])
         self.assertEqual(result["cases"]["valid_unicode"], [])
@@ -58,7 +58,7 @@ class PasswordPolicyTests(unittest.TestCase):
         block = self.config.split("function validatePassword", 1)[1].split("\n}", 1)[0]
         self.assertIn("PasswordPolicy::errors", block)
         self.assertNotIn("< 6", block)
-        self.assertIn("MIN_CHARACTERS = 12", self.policy)
+        self.assertIn("MIN_CHARACTERS = 6", self.policy)
         self.assertIn("MAX_BYTES = 72", self.policy)
 
     def test_every_password_write_uses_the_shared_policy(self):
@@ -82,11 +82,32 @@ class PasswordPolicyTests(unittest.TestCase):
         self.assertNotIn("PASSWORD_BCRYPT", self.mobile_api + self.credentials)
 
     def test_browser_and_flutter_clients_explain_the_same_minimum(self):
-        self.assertIn("pw.length<12", self.school_ui)
-        self.assertIn("pw.length<12", self.education_ui)
-        self.assertIn('minlength="12"', self.school_ui)
-        self.assertIn('minlength="12"', self.education_ui)
-        self.assertIn("newPwd.runes.length < 12", self.mobile_ui)
+        self.assertIn("pw.length<6", self.school_ui)
+        self.assertIn("pw.length<6", self.education_ui)
+        self.assertIn('minlength="6"', self.school_ui)
+        self.assertIn('minlength="6"', self.education_ui)
+        self.assertIn("newPwd.runes.length < 6", self.mobile_ui)
+
+    def test_no_client_still_enforces_the_old_floor(self):
+        """A client left at 12 would reject passwords the server accepts."""
+        for name, source in (
+            ("school_admin", self.school_ui),
+            ("edu_dept", self.education_ui),
+            ("profile_tab", (ROOT / "admin/components/profile_tab_section.php").read_text(encoding="utf-8")),
+            ("account_js", (ROOT / "frontend/js/account.js").read_text(encoding="utf-8")),
+            ("mobile_ui", self.mobile_ui),
+            ("mobile_model", (ROOT / "Mobile/wbws_flutter_app/lib/models/user_profile.dart").read_text(encoding="utf-8")),
+        ):
+            self.assertNotIn("length < 12", source, name)
+            self.assertNotIn("length<12", source, name)
+            self.assertNotIn('minlength="12"', source, name)
+            self.assertNotIn("at least 12 characters", source, name)
+
+    def test_department_taker_uses_the_shared_policy(self):
+        """It used to hardcode 12, diverging from PasswordPolicy."""
+        source = (ROOT / "admin/backend/services/DeptTakerService.php").read_text(encoding="utf-8")
+        self.assertIn("PasswordPolicy::errors", source)
+        self.assertNotIn("strlen($password) < 12", source)
         self.assertIn("utf8.encode(newPwd).length > 72", self.mobile_ui)
 
 

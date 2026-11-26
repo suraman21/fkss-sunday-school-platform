@@ -163,7 +163,7 @@ ob_start();
                 </div>
                 <i class="fa-solid fa-shield-halved account-security-icon" aria-hidden="true"></i>
             </div>
-            <p>Use a unique password with at least 12 characters and no more than 72 UTF-8 bytes.</p>
+            <p>Use a unique password with at least 6 characters and no more than 72 UTF-8 bytes.</p>
             <button class="account-button account-button-secondary" type="button" id="openPasswordButton" data-mutation disabled>
                 <i class="fa-solid fa-key" aria-hidden="true"></i>
                 Change password

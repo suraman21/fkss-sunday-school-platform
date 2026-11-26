@@ -347,8 +347,8 @@ class ProfileInputPolicy {
         confirmation.isEmpty) {
       return 'Fill in all password fields.';
     }
-    if (newPassword.runes.length < 12) {
-      return 'New password must be at least 12 characters.';
+    if (newPassword.runes.length < 6) {
+      return 'New password must be at least 6 characters.';
     }
     if (_utf8Length(newPassword) > 72) {
       return 'New password must be at most 72 UTF-8 bytes.';

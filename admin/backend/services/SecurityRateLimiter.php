@@ -43,6 +43,71 @@ final class SecurityRateLimiter
         return $this->consumeFile($bucket, $limit, $windowSeconds);
     }
 
+    /**
+     * Read a bucket WITHOUT consuming an attempt.
+     *
+     * Needed by callers that must decide before doing work — e.g. the
+     * login throttle refuses an over-limit account before spending a
+     * bcrypt verification. `consume()` cannot be used for that: incrementing
+     * to ask "am I blocked?" locks people out of their own account simply
+     * by logging in correctly enough times.
+     *
+     * @return array{attempts:int,retry_after:int}
+     */
+    public function peek(string $action, string $subject): array
+    {
+        $bucket = $this->bucket($action, $subject);
+
+        if ($this->database instanceof \PDO) {
+            try {
+                $statement = $this->database->prepare(
+                    'SELECT attempts, GREATEST(0, TIMESTAMPDIFF(SECOND, CURRENT_TIMESTAMP, window_ends_at)) AS retry_after
+                     FROM security_rate_limits WHERE bucket_hash = ? AND window_ends_at > CURRENT_TIMESTAMP'
+                );
+                $statement->execute([$bucket]);
+                $row = $statement->fetch(\PDO::FETCH_ASSOC);
+                if (!$row) {
+                    // No live window: the bucket has expired or never existed.
+                    return ['attempts' => 0, 'retry_after' => 0];
+                }
+                return [
+                    'attempts' => (int)($row['attempts'] ?? 0),
+                    'retry_after' => max(0, (int)($row['retry_after'] ?? 0)),
+                ];
+            } catch (\Throwable $error) {
+                // Fall through to the file backend.
+            }
+        }
+
+        $path = $this->fallbackPath($bucket);
+        if (!is_file($path)) {
+            return ['attempts' => 0, 'retry_after' => 0];
+        }
+        $handle = @fopen($path, 'r');
+        if ($handle === false) {
+            // Cannot read the counter: report a full window and let the
+            // caller fail closed rather than pretending there were no
+            // attempts.
+            return ['attempts' => PHP_INT_MAX, 'retry_after' => 60];
+        }
+        try {
+            @flock($handle, LOCK_SH);
+            $decoded = json_decode((string)stream_get_contents($handle), true);
+        } finally {
+            @flock($handle, LOCK_UN);
+            fclose($handle);
+        }
+        $now = time();
+        $windowEnds = is_array($decoded) ? (int)($decoded['window_ends'] ?? 0) : 0;
+        if ($windowEnds <= $now) {
+            return ['attempts' => 0, 'retry_after' => 0];
+        }
+        return [
+            'attempts' => (int)($decoded['attempts'] ?? 0),
+            'retry_after' => max(1, $windowEnds - $now),
+        ];
+    }
+
     public function clear(string $action, string $subject): void
     {
         $bucket = $this->bucket($action, $subject);

@@ -3265,7 +3265,7 @@
     function createTaker() {
         var name = $('mzTkName').value.trim(), user = $('mzTkUser').value.trim(), pass = $('mzTkPass').value;
         if (!name || !user || !pass) { showError($('mzTkError'), 'All fields are required.'); return; }
-        if (pass.length < 12) { showError($('mzTkError'), 'Password must be at least 12 characters.'); return; }
+        if (pass.length < 6) { showError($('mzTkError'), 'Password must be at least 6 characters.'); return; }
         var btn = $('mzTkSaveBtn');
         btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Creating…';
         // Governed department-taker endpoint: the server re-checks
