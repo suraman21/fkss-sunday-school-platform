@@ -1,0 +1,2023 @@
+From a4f81dfeda9cdcc2bbd17c6f2105391524012644 Mon Sep 17 00:00:00 2001
+From: suraman21 <240521193+suraman21@users.noreply.github.com>
+Date: Thu, 26 Nov 2026 17:17:54 +0000
+Subject: [PATCH] Archive the prototype and lay down the app structure
+
+The repository previously held the earlier prototype flat at the root.
+That layout is what we are not adopting: its backend/ implements a
+parallel API and a second staff/session model, and its database/
+migrations collide with the platform's sql/001-098.
+
+Move all six prototype folders together under
+docs/prototypes/member-app-2026-11-26/ using git mv, so every file keeps
+its history, and put the agreed structure at the now-empty root:
+
+  src/{Auth,Http,Repository,Service,Support,View}
+  templates/{layouts,pages}
+  assets/{css,js,favicon}
+  docs/  -- the handbook
+
+The prototype is reference material only. Only frontend/ is intended for
+reuse, and even then js/session.js must be replaced rather than adapted.
+
+Add docs/00-START-HERE.md for a cold start: what this repository is, how
+to get it running, the six facts that change design decisions, and what
+to read in what order. HANDBOOK links to it from the top.
+
+Documentation adjustments for the move:
+- members/ no longer exists, so paths and link targets are root-relative
+- 06 section 1 is marked done, recording what the move actually involved
+  (including the prototype's own docs/ collision)
+- HANDBOOK correction 3 now states the separation as fact
+
+No behaviour is included.
+---
+ .gitignore                                    |  14 +
+ README.md                                     |  48 ++
+ assets/css/.gitkeep                           |   0
+ assets/favicon/.gitkeep                       |   0
+ assets/js/.gitkeep                            |   0
+ docs/00-START-HERE.md                         | 116 +++++
+ docs/01-SYSTEM-CONTEXT.md                     | 111 +++++
+ docs/02-FOLDER-STRUCTURE.md                   |  91 ++++
+ docs/03-API-INTEGRATION.md                    | 446 ++++++++++++++++++
+ docs/04-CONVENTIONS.md                        | 108 +++++
+ docs/05-OPEN-DECISIONS.md                     | 172 +++++++
+ docs/06-FIRST-TASKS.md                        | 148 ++++++
+ docs/HANDBOOK.md                              |  90 ++++
+ .../member-app-2026-11-26/ARCHIVE.md          |  80 ++++
+ .../backend}/api-backup-before-quiz.php       |   0
+ .../member-app-2026-11-26/backend}/api.php    |   0
+ .../backend}/api/auth/login.php               |   0
+ .../backend}/api/auth/register.php            |   0
+ .../backend}/api/auth_staff.php               |   0
+ .../backend}/api/extras.php                   |   0
+ .../backend}/api/learning.php                 |   0
+ .../backend}/api/lessons/get.php              |   0
+ .../backend}/api/lessons/unlock.php           |   0
+ .../backend}/api/question.php                 |   0
+ .../backend}/api/question_import.php          |   0
+ .../backend}/api/quiz.php                     |   0
+ .../backend}/config/database.php              |   0
+ .../backend}/data/lesson_text_grade10.json    |   0
+ .../backend}/data/lessons.json                |   0
+ .../backend}/data/verses.json                 |   0
+ .../backend}/lib/security.php                 |   0
+ .../member-app-2026-11-26/backend}/router.php |   0
+ .../member-app-2026-11-26/backend}/server.js  |   0
+ .../backend}/test-db.php                      |   0
+ .../backend}/test_db.php                      |   0
+ .../backend}/tools/check_setup.php            |   0
+ .../backend}/tools/create_staff.php           |   0
+ .../backend}/tools/import_lesson_text.php     |   0
+ .../database}/demo/demo_past_paper.sql        |   0
+ .../001_stage1_auth_and_unlocks.sql           |   0
+ .../migrations/001_stage1_rollback.sql        |   0
+ .../migrations/002_lesson_progress.sql        |   0
+ .../database}/migrations/002_rollback.sql     |   0
+ .../database}/migrations/003_rollback.sql     |   0
+ .../003_unit_unlocks_and_student_extras.sql   |   0
+ .../docs}/HANDOVER_FOR_DEVELOPER.md           |   0
+ .../docs}/README_START_HERE.md                |   0
+ .../docs}/STAGE1_SETUP.md                     |   0
+ .../docs}/TEST_CHECKLIST.md                   |   0
+ .../docs}/lesson_text_for_proofreading.md     |   0
+ .../frontend}/change-password.html            |   0
+ .../frontend}/css/fk-theme.css                |   0
+ .../frontend}/exam-prep.html                  |   0
+ .../frontend}/index.html                      |   0
+ .../frontend}/js/fk-ui.js                     |   0
+ .../frontend}/js/session.js                   |   0
+ .../frontend}/lesson.html                     |   0
+ .../frontend}/lessons.html                    |   0
+ .../frontend}/login.html                      |   0
+ .../frontend}/progress.html                   |   0
+ .../frontend}/quiz-me.html                    |   0
+ .../frontend}/staff.html                      |   0
+ .../frontend}/student-dashboard.html          |   0
+ .../member-app-2026-11-26/frontend}/style.css |   0
+ .../frontend}/tasks.html                      |   0
+ .../tests}/frontend-mock/README.md            |   0
+ .../tests}/frontend-mock/interact.js          |   0
+ .../tests}/frontend-mock/run.js               |   0
+ .../tests}/frontend-mock/server.js            |   0
+ .../member-app-2026-11-26/uploads}/README.txt |   0
+ .../2018-grade10-final-exam-demo.pdf          | Bin
+ src/Auth/.gitkeep                             |   0
+ src/Http/.gitkeep                             |   0
+ src/Repository/.gitkeep                       |   0
+ src/Service/.gitkeep                          |   0
+ src/Support/HttpException.php                 |  42 ++
+ src/Support/bootstrap.php                     |  25 +
+ src/View/.gitkeep                             |   0
+ templates/layouts/.gitkeep                    |   0
+ templates/pages/.gitkeep                      |   0
+ 80 files changed, 1491 insertions(+)
+ create mode 100644 .gitignore
+ create mode 100644 README.md
+ create mode 100644 assets/css/.gitkeep
+ create mode 100644 assets/favicon/.gitkeep
+ create mode 100644 assets/js/.gitkeep
+ create mode 100644 docs/00-START-HERE.md
+ create mode 100644 docs/01-SYSTEM-CONTEXT.md
+ create mode 100644 docs/02-FOLDER-STRUCTURE.md
+ create mode 100644 docs/03-API-INTEGRATION.md
+ create mode 100644 docs/04-CONVENTIONS.md
+ create mode 100644 docs/05-OPEN-DECISIONS.md
+ create mode 100644 docs/06-FIRST-TASKS.md
+ create mode 100644 docs/HANDBOOK.md
+ create mode 100644 docs/prototypes/member-app-2026-11-26/ARCHIVE.md
+ rename {backend => docs/prototypes/member-app-2026-11-26/backend}/api-backup-before-quiz.php (100%)
+ rename {backend => docs/prototypes/member-app-2026-11-26/backend}/api.php (100%)
+ rename {backend => docs/prototypes/member-app-2026-11-26/backend}/api/auth/login.php (100%)
+ rename {backend => docs/prototypes/member-app-2026-11-26/backend}/api/auth/register.php (100%)
+ rename {backend => docs/prototypes/member-app-2026-11-26/backend}/api/auth_staff.php (100%)
+ rename {backend => docs/prototypes/member-app-2026-11-26/backend}/api/extras.php (100%)
+ rename {backend => docs/prototypes/member-app-2026-11-26/backend}/api/learning.php (100%)
+ rename {backend => docs/prototypes/member-app-2026-11-26/backend}/api/lessons/get.php (100%)
+ rename {backend => docs/prototypes/member-app-2026-11-26/backend}/api/lessons/unlock.php (100%)
+ rename {backend => docs/prototypes/member-app-2026-11-26/backend}/api/question.php (100%)
+ rename {backend => docs/prototypes/member-app-2026-11-26/backend}/api/question_import.php (100%)
+ rename {backend => docs/prototypes/member-app-2026-11-26/backend}/api/quiz.php (100%)
+ rename {backend => docs/prototypes/member-app-2026-11-26/backend}/config/database.php (100%)
+ rename {backend => docs/prototypes/member-app-2026-11-26/backend}/data/lesson_text_grade10.json (100%)
+ rename {backend => docs/prototypes/member-app-2026-11-26/backend}/data/lessons.json (100%)
+ rename {backend => docs/prototypes/member-app-2026-11-26/backend}/data/verses.json (100%)
+ rename {backend => docs/prototypes/member-app-2026-11-26/backend}/lib/security.php (100%)
+ rename {backend => docs/prototypes/member-app-2026-11-26/backend}/router.php (100%)
+ rename {backend => docs/prototypes/member-app-2026-11-26/backend}/server.js (100%)
+ rename {backend => docs/prototypes/member-app-2026-11-26/backend}/test-db.php (100%)
+ rename {backend => docs/prototypes/member-app-2026-11-26/backend}/test_db.php (100%)
+ rename {backend => docs/prototypes/member-app-2026-11-26/backend}/tools/check_setup.php (100%)
+ rename {backend => docs/prototypes/member-app-2026-11-26/backend}/tools/create_staff.php (100%)
+ rename {backend => docs/prototypes/member-app-2026-11-26/backend}/tools/import_lesson_text.php (100%)
+ rename {database => docs/prototypes/member-app-2026-11-26/database}/demo/demo_past_paper.sql (100%)
+ rename {database => docs/prototypes/member-app-2026-11-26/database}/migrations/001_stage1_auth_and_unlocks.sql (100%)
+ rename {database => docs/prototypes/member-app-2026-11-26/database}/migrations/001_stage1_rollback.sql (100%)
+ rename {database => docs/prototypes/member-app-2026-11-26/database}/migrations/002_lesson_progress.sql (100%)
+ rename {database => docs/prototypes/member-app-2026-11-26/database}/migrations/002_rollback.sql (100%)
+ rename {database => docs/prototypes/member-app-2026-11-26/database}/migrations/003_rollback.sql (100%)
+ rename {database => docs/prototypes/member-app-2026-11-26/database}/migrations/003_unit_unlocks_and_student_extras.sql (100%)
+ rename docs/{ => prototypes/member-app-2026-11-26/docs}/HANDOVER_FOR_DEVELOPER.md (100%)
+ rename docs/{ => prototypes/member-app-2026-11-26/docs}/README_START_HERE.md (100%)
+ rename docs/{ => prototypes/member-app-2026-11-26/docs}/STAGE1_SETUP.md (100%)
+ rename docs/{ => prototypes/member-app-2026-11-26/docs}/TEST_CHECKLIST.md (100%)
+ rename docs/{ => prototypes/member-app-2026-11-26/docs}/lesson_text_for_proofreading.md (100%)
+ rename {frontend => docs/prototypes/member-app-2026-11-26/frontend}/change-password.html (100%)
+ rename {frontend => docs/prototypes/member-app-2026-11-26/frontend}/css/fk-theme.css (100%)
+ rename {frontend => docs/prototypes/member-app-2026-11-26/frontend}/exam-prep.html (100%)
+ rename {frontend => docs/prototypes/member-app-2026-11-26/frontend}/index.html (100%)
+ rename {frontend => docs/prototypes/member-app-2026-11-26/frontend}/js/fk-ui.js (100%)
+ rename {frontend => docs/prototypes/member-app-2026-11-26/frontend}/js/session.js (100%)
+ rename {frontend => docs/prototypes/member-app-2026-11-26/frontend}/lesson.html (100%)
+ rename {frontend => docs/prototypes/member-app-2026-11-26/frontend}/lessons.html (100%)
+ rename {frontend => docs/prototypes/member-app-2026-11-26/frontend}/login.html (100%)
+ rename {frontend => docs/prototypes/member-app-2026-11-26/frontend}/progress.html (100%)
+ rename {frontend => docs/prototypes/member-app-2026-11-26/frontend}/quiz-me.html (100%)
+ rename {frontend => docs/prototypes/member-app-2026-11-26/frontend}/staff.html (100%)
+ rename {frontend => docs/prototypes/member-app-2026-11-26/frontend}/student-dashboard.html (100%)
+ rename {frontend => docs/prototypes/member-app-2026-11-26/frontend}/style.css (100%)
+ rename {frontend => docs/prototypes/member-app-2026-11-26/frontend}/tasks.html (100%)
+ rename {tests => docs/prototypes/member-app-2026-11-26/tests}/frontend-mock/README.md (100%)
+ rename {tests => docs/prototypes/member-app-2026-11-26/tests}/frontend-mock/interact.js (100%)
+ rename {tests => docs/prototypes/member-app-2026-11-26/tests}/frontend-mock/run.js (100%)
+ rename {tests => docs/prototypes/member-app-2026-11-26/tests}/frontend-mock/server.js (100%)
+ rename {uploads => docs/prototypes/member-app-2026-11-26/uploads}/README.txt (100%)
+ rename {uploads => docs/prototypes/member-app-2026-11-26/uploads}/past-papers/2018-grade10-final-exam-demo.pdf (100%)
+ create mode 100644 src/Auth/.gitkeep
+ create mode 100644 src/Http/.gitkeep
+ create mode 100644 src/Repository/.gitkeep
+ create mode 100644 src/Service/.gitkeep
+ create mode 100644 src/Support/HttpException.php
+ create mode 100644 src/Support/bootstrap.php
+ create mode 100644 src/View/.gitkeep
+ create mode 100644 templates/layouts/.gitkeep
+ create mode 100644 templates/pages/.gitkeep
+
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..a79516f
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,14 @@
++# Local configuration and secrets — never committed.
++.fkss_env.php
++.env
++.env.*
++
++# Logs and OS noise.
++*.log
++.DS_Store
++Thumbs.db
++
++# Editor and IDE state.
++.idea/
++.vscode/
++*.swp
+diff --git a/README.md b/README.md
+new file mode 100644
+index 0000000..1650a13
+--- /dev/null
++++ b/README.md
+@@ -0,0 +1,48 @@
++# Members web app
++
++The web application for **members (students) and parents** of the Sunday school.
++
++| | |
++|---|---|
++| **Status** | Folder structure only — no behaviour yet |
++| **Repository** | Its own repository — [ssms-member-app](https://github.com/suraman21/ssms-member-app) |
++| **Deployed to** | Its own subdomain |
++| **Talks to** | The platform's REST API at `/api/v1` — not its files, not its database |
++
++## Start here
++
++[docs/HANDBOOK.md](docs/HANDBOOK.md) — what this app is, how it connects to the
++platform, the full API contract, the conventions, the open decisions, and the
++first tasks in order.
++
++Written so that a new contributor (or a new chat) can work on this app without
++the conversation that produced it.
++
++## Layout
++
++```
++├── src/            application code — never served by the web
++│   ├── Auth/       tokens, refresh, the portal's own role check
++│   ├── Http/       route table, request/response
++│   ├── Repository/ the ONLY layer that calls the platform API
++│   ├── Service/    business rules
++│   ├── Support/    bootstrap.php (autoload map), HttpException.php
++│   └── View/       rendering prepared data
++├── templates/{layouts,pages}
++├── assets/{css,js,favicon}
++└── docs/           the handbook, plus the archived prototype
++```
++
++## The two facts that shape everything
++
++1. **Integration is HTTP only.** No `require` of a platform file, no database
++   connection, no shared PHP session. Everything about a member arrives as JSON
++   from `/api/v1`.
++2. **No Composer on the host.** Classes are listed by hand in
++   `src/Support/bootstrap.php`, in dependency order.
++
++## Before writing code
++
++Read [docs/05-OPEN-DECISIONS.md](docs/05-OPEN-DECISIONS.md). Two items block
++real screens: CORS for the members subdomain, and the absence of any
++member-side authorisation in the API. Neither is a coding problem.
+diff --git a/assets/css/.gitkeep b/assets/css/.gitkeep
+new file mode 100644
+index 0000000..e69de29
+diff --git a/assets/favicon/.gitkeep b/assets/favicon/.gitkeep
+new file mode 100644
+index 0000000..e69de29
+diff --git a/assets/js/.gitkeep b/assets/js/.gitkeep
+new file mode 100644
+index 0000000..e69de29
+diff --git a/docs/00-START-HERE.md b/docs/00-START-HERE.md
+new file mode 100644
+index 0000000..37274c1
+--- /dev/null
++++ b/docs/00-START-HERE.md
+@@ -0,0 +1,116 @@
++# 00 — Start here (new chat / new contributor)
++
++This file exists so someone with **no conversation history** can start working
++without asking a question first. Read this page, then open
++[`HANDBOOK.md`](HANDBOOK.md).
++
++---
++
++## What this repository is
++
++The **members (students) and parents web app** of the Felege Kidusan Sunday
++School. It is a PHP application that talks to the Sunday-school platform's REST
++API. It is **not** part of the platform and shares no code with it.
++
++| | |
++|---|---|
++| Status | Structure only — no behaviour yet |
++| Next task | Scaffold the frontend from the archived prototype |
++| Talks to | The platform's `/api/v1` (HTTP only) |
++| Deployed to | Its own subdomain (not yet chosen) |
++
++## Get running locally
++
++Nothing to build, no dependencies, no package manager. Clone and you have
++everything:
++
++```bash
++git clone https://github.com/suraman21/ssms-member-app.git
++cd ssms-member-app
++```
++
++There is no entry point yet (that is the next task), so there is nothing to run
++today. Reading `docs/` is the correct first move.
++
++## Read in this order
++
++| # | File | Why |
++|---|---|---|
++| 1 | [`HANDBOOK.md`](HANDBOOK.md) | Index, plus three corrections to anything said earlier |
++| 2 | [`01-SYSTEM-CONTEXT.md`](01-SYSTEM-CONTEXT.md) | What the platform is, who the users are |
++| 3 | [`02-FOLDER-STRUCTURE.md`](02-FOLDER-STRUCTURE.md) | The tree and the layers |
++| 4 | [`03-API-INTEGRATION.md`](03-API-INTEGRATION.md) | The full API contract — the long one |
++| 5 | [`04-CONVENTIONS.md`](04-CONVENTIONS.md) | How code in here is written |
++| 6 | [`05-OPEN-DECISIONS.md`](05-OPEN-DECISIONS.md) | **Unanswered questions — check before building** |
++| 7 | [`06-FIRST-TASKS.md`](06-FIRST-TASKS.md) | The ordered task list |
++
++## The six facts that change your decisions
++
++1. **No platform files are ever `require`d.** No `config.php`, no
++   `admin/backend/*`, no shared session. Everything arrives as JSON over HTTP.
++   `src/Repository/` is the **only** layer allowed to make those calls.
++2. **The platform has no member self-path.** `GET /members/{id}` is 403 for a
++   member token — the `member` role is in no allow-list. Only `parent` works,
++   via `apiParentChildren()`. This is the app's **headline blocker**; see
++   [`03 §5`](03-API-INTEGRATION.md) and [`05`](05-OPEN-DECISIONS.md) before
++   designing a member-facing screen.
++3. **CORS blocks the subdomain today.** `handleCors()` on the platform allows
++   only `SITE_URL`, `http://SITE_DOMAIN` and `https://www.SITE_DOMAIN`. The
++   members subdomain must be added there, in the **platform** repository, before
++   any browser call succeeds.
++4. **Auth is `Bearer` only**, access token 900 s, refresh 90 d and **rotating**.
++   Refresh is single-flight — a concurrent second refresh revokes the whole
++   token family. See [`03 §3`](03-API-INTEGRATION.md).
++5. **The prototype's `backend/` and `database/` are not adopted.** They are an
++   older parallel API with a second `staff`/session model and migrations that
++   collide with the platform's `sql/001–098`. Only `frontend/` is meant for
++   reuse.
++6. **`frontend/js/session.js` must be replaced, not adapted.** It logs in
++   against the prototype's own API, which no longer exists.
++
++## The prototype
++
++`docs/prototypes/member-app-2026-11-26/` holds the earlier app built by another
++developer. It is **reference only** — read
++[`ARCHIVE.md`](prototypes/member-app-2026-11-26/ARCHIVE.md) before opening
++anything else in there. It is not wired up and never will be.
++
++Its `frontend/` is the source for the scaffold. Useful as markup, CSS and
++interaction patterns. Not useful as an integration model.
++
++## Where the structure stops today
++
++```
++.
++├── docs/           the handbook (you are in it)
++├── src/
++│   ├── Auth/       empty — tokens, refresh, role check
++│   ├── Http/       empty — route table, request/response
++│   ├── Repository/ empty — the only layer that calls the platform API
++│   ├── Service/    empty — business rules
++│   ├── Support/    bootstrap.php (autoload map) + HttpException.php
++│   └── View/       empty — rendering prepared data
++├── templates/      empty — {layouts,pages}
++└── assets/         empty — {css,js,favicon}
++```
++
++Entry files (`index.php` and one per page) will go at the **repository root**,
++not in a `public/` layer — the reasoning is in
++[`02 §5`](02-FOLDER-STRUCTURE.md).
++
++## Before writing code
++
++1. Read [`05-OPEN-DECISIONS.md`](05-OPEN-DECISIONS.md). Several questions are
++   unanswered and they change the design — most importantly the **deployment
++   target** (subdomain, Apache or nginx, HTTPS) and the **member-role gap**.
++2. Read [`06-FIRST-TASKS.md`](06-FIRST-TASKS.md) §2 onward. Task 1 (the move to
++   this repository) is done.
++3. Do not invent API endpoints. [`03`](03-API-INTEGRATION.md) lists what exists,
++   read from the platform's source. Anything not in that table does not exist.
++
++## A warning about the prototype's endpoint list
++
++The prototype calls about 29 `/api/…` paths. They belong to **its own discarded
++backend**. Lessons, quizzes, progress, tasks, past papers, verses and
++permissions do not exist on the platform API. Do not scaffold a screen against
++them.
+diff --git a/docs/01-SYSTEM-CONTEXT.md b/docs/01-SYSTEM-CONTEXT.md
+new file mode 100644
+index 0000000..7acd69a
+--- /dev/null
++++ b/docs/01-SYSTEM-CONTEXT.md
+@@ -0,0 +1,111 @@
++# 01 — System context
++
++## 1. The platform (what this app talks to)
++
++A PHP 8.4/8.5 Sunday-school management system, deployed by SFTP upload to shared
++hosting where **the repository root is the web root**. Source:
++`suraman21/fkss-sunday-school-platform`.
++
++| Piece | Where | Relevance here |
++|---|---|---|
++| Staff web console | `admin/`, `frontend/`, `monitor/` | Not used by this app |
++| REST API | `api/v1/` | **The only integration point** |
++| Database | MariaDB, `users`/`members`/`attendance`/… | **Not reachable** from this app |
++| ACM (account/device) subsystem | `acm/` | Drives activation; reachable only through `/api/v1/acm/*` |
++| Mobile app (Flutter) | `Mobile/wbws_flutter_app/` | Another API client; useful as a reference for token handling |
++
++The API is versioned by path (`/api/v1`), lives behind
++`api/v1/.htaccess` (rewrites everything to `index.php?_route=…`), and is
++consumed today by the Flutter app. **The installed Android builds pin these
++paths**, so the API contract is effectively frozen — an excellent property for
++a second client, because it will not shift under you.
++
++## 2. This app (what is being built)
++
++A web application for **members** (students) and **parents** of the Sunday
++school, delivered as its own repository on its own subdomain. It replaces a
++developer prototype (`docs/prototypes/member-app-2026-11-26/` in the platform
++repository) that was never adopted.
++
++| Property | Value |
++|---|---|
++| Language / runtime | PHP 8.4 or 8.5 (match production; the platform's CI lints both) |
++| Framework | **None.** No Composer, no Laravel, no Symfony — see [04 §2](04-CONVENTIONS.md#2-no-composer) |
++| Data layer | HTTP calls to the platform's `/api/v1` |
++| Session | JWT access token + rotating refresh token, both issued by the API |
++| Rendering | Server-rendered PHP templates |
++
++## 3. What this app may do
++
++| Allowed | How |
++|---|---|
++| Read a member's own profile | `GET /api/v1/users/me` with a bearer token |
++| Read a parent's linked children | `GET /api/v1/users/me/children` |
++| Read one member record | `GET /api/v1/members/{id}` (the API decides if you may) |
++| Read a member's attendance | `GET /api/v1/members/{id}/attendance?days=90` |
++| Complete activation | `POST /api/v1/acm/activate/*`, `/reset/*`, `/devices/*` |
++| Sign in / refresh / sign out | `POST /api/v1/auth/login`, `/refresh-token`, `/logout` |
++| Manage own profile & password | `/users/me` (PATCH), `/users/change-password` |
++
++## 4. What this app may not do
++
++| Not allowed | Why |
++|---|---|
++| Connect to the platform's database | Separate host boundary; credentials would have to be copied across, and any schema change would break this app silently |
++| `require`/`include` a platform file | Different repository, different deployment, different release cadence |
++| Trust a member id sent by the browser | Every ownership decision is made by the API from the bearer token; see [03 §4](03-API-INTEGRATION.md#4-who-may-see-what) |
++| Re-implement platform authorisation | The ACL is `api/v1/core/acl.php`, it is tested, and a copy would drift ([03 §5](03-API-INTEGRATION.md#5-the-acl-in-one-table)) |
++| Build a second API for members | The platform's API is the integration surface; a parallel one was one of the prototype's main defects |
++
++## 5. The trust model, in one diagram
++
++```
++Browser (member / parent)
++   │  HTTPS, JWT bearer token (+ DPoP proof when the session is device-bound)
++   ▼
++Members web app  (this repo, own subdomain)          ← no database, no platform files
++   │  HTTPS, JSON
++   ▼
++Platform /api/v1   (fkss-sunday-school-platform)     ← auth, ACL, database
++   │
++   ▼
++MariaDB
++```
++
++Every arrow carries data, never code and never credentials for the layer below.
++The subdomain boundary is real, not cosmetic: it is what makes this app
++shippable and testable on its own, and what stops a change here from breaking
++the staff console.
++
++## 6. Cross-origin consequences you must plan for
++
++Because the app is on a **different origin** from the API, the browser applies
++CORS. The platform decides CORS in PHP
++(`api/v1/core/middleware.php::handleCors()`), against a fixed allow-list:
++
++```php
++$allowedOrigins = [
++    SITE_URL,                                // https://<SITE_DOMAIN>
++    'http://' . SITE_DOMAIN,
++    'https://www.' . SITE_DOMAIN,
++];
++```
++
++`SITE_DOMAIN` comes from the platform's private env file (`school_config.php`
++falls back to `felegekidusan.arkeonethiopia.com`). **The members subdomain is
++not in that list**, so a browser `fetch()` from it will be blocked today.
++
++Two ways to fix it, and the choice is the platform owner's
++([05 §5](05-OPEN-DECISIONS.md#5-cors-for-the-members-subdomain)):
++
++1. Add the members subdomain to `$allowedOrigins` in the platform (a one-line
++   change, but it touches the platform's release train).
++2. Proxy API traffic through this app's own server (`/api/*` on the members
++   host forwards to the platform). No platform change, but the app must then
++   forward `Authorization` and `DPoP` headers verbatim and must never cache.
++
++Until either exists, browser calls fail — this is not a bug in this app.
++
++Related, already correct in the platform: `Access-Control-Allow-Headers`
++includes `Authorization`, and a bearer header is passed through to PHP by
++`api/v1/.htaccess` and `admin/.htaccess` (`E=HTTP_AUTHORIZATION`).
+diff --git a/docs/02-FOLDER-STRUCTURE.md b/docs/02-FOLDER-STRUCTURE.md
+new file mode 100644
+index 0000000..18d8852
+--- /dev/null
++++ b/docs/02-FOLDER-STRUCTURE.md
+@@ -0,0 +1,91 @@
++# 02 — Folder structure
++
++## 1. The tree
++
++```
++├── src/                        application code — never served by the web
++│   ├── Auth/                   token storage, refresh, the role check
++│   ├── Http/                   routing table, request/response objects
++│   ├── Repository/             the ONLY layer that talks to the API
++│   ├── Service/                business rules
++│   ├── Support/                bootstrap.php, HttpException.php
++│   └── View/                   rendering prepared data
++├── templates/
++│   ├── layouts/                page shell(s)
++│   └── pages/                  one template per page
++├── assets/
++│   ├── css/
++│   ├── js/
++│   └── favicon/
++└── docs/                       this handbook + prototypes/ (archived, not adopted)
++```
++
++Entry files (`index.php`, and one file per page once routing exists) go at the
++**repository root**, not in a `public/` subfolder — see §5.
++
++## 2. What exists today
++
++Only three files, and two of them exist to carry a convention:
++
++| File | Why it is here before any feature |
++|---|---|
++| `src/Support/bootstrap.php` | The hand-written autoload map. No Composer on the host, so classes are listed by hand; that rule has to be written down before the first class exists or it gets skipped. |
++| `src/Support/HttpException.php` | The one error type that crosses a layer boundary. Deliberately distinct from internal failures: this one is safe to show a person. |
++| `docs/HANDBOOK.md` + this folder | So the next chat does not have to rediscover the integration contract. |
++
++Everything else is a `.gitkeep`. That is intentional: creating a class is a
++deliberate act, and an empty file communicates nothing that the folder name and
++this document do not already say.
++
++## 3. Layering
++
++One direction only:
++
++```
++Http  →  Service  →  Repository  →  API
++```
++
++| Layer | Owns | Must not |
++|---|---|---|
++| `Http` | Parsing the request, the route table, sending a response | contain an API URL, a token rule, or a business decision |
++| `Service` | Rules: which child a parent may open, how attendance rate is presented | call the API directly; read `$_GET`/`$_POST` |
++| `Repository` | API URLs, payload shapes, error-envelope translation, token header attachment | make a decision |
++| `View` / `templates` | Turning an array into HTML | reach for the session, the repository or the API |
++| `Auth` | Token storage, refresh scheduling, the "is this role allowed in this app" check | contain markup |
++
++Why the strictness: the only failure mode that matters here is a page rendering
++data the API did not authorise. If `templates/` can only see an array that
++`Service` prepared, that failure becomes a visible mistake in a diff instead of
++a query hidden in a view.
++
++## 4. Where the API contract lives
++
++Nowhere yet — that is deliberate. When it is written, it goes in
++`Repository/`, one class per API resource, and it is the **only** place that
++contains strings like `/api/v1/members`. Rationale: the platform's API is a
++frozen contract; when it changes (it does — the platform adds fields additively
++per release), exactly one directory should need editing.
++
++## 5. Why entry files are at the repository root
++
++Two reasons, and they agree:
++
++1. **Deployment.** The app's own folder is its document root on its subdomain,
++   so `index.php` is `https://<subdomain>/` with no rewriting. A
++   `public/` subfolder would require the host's document root to be pointed one
++   level deeper, which is an extra deployment dependency for no benefit.
++2. **Nothing to conflict with.** This app does not use the platform's clean-URL
++   registry (`admin/backend/services/BrowserPageRoutes.php`), which is what
++   forces that repository's pages into directory-matching layouts. With no
++   registry, the constraint disappears.
++
++## 6. Folder names are fixed; new folders are not forbidden
++
++The six `src/` folders and three `templates`/`assets` folders map to
++responsibilities, not to features. A new feature adds a **class**, not a folder.
++If a genuinely new responsibility appears (e.g. `src/Api/` for a generated
++client, or `src/Middleware/`), add it and record it here.
++
++Do not add: `vendor/` (no Composer), `node_modules/` (no build step), `tests/`
++at the top level (tests live next to what they test, see
++[04 §6](04-CONVENTIONS.md#6-testing)).
+diff --git a/docs/03-API-INTEGRATION.md b/docs/03-API-INTEGRATION.md
+new file mode 100644
+index 0000000..922f32f
+--- /dev/null
++++ b/docs/03-API-INTEGRATION.md
+@@ -0,0 +1,446 @@
++# 03 — API integration
++
++The contract between this app and the platform. Read from the platform source at
++`d7d27c1`; every endpoint below exists in `api/v1/routes/`.
++
++---
++
++## 1. Base URL and transport
++
++| | |
++|---|---|
++| Base | `https://<platform-host>/api/v1` |
++| Routing | `api/v1/.htaccess` rewrites any non-file path to `index.php?_route=<path>` |
++| Format | JSON in, JSON out (`Content-Type: application/json; charset=utf-8`) |
++| Auth header | `Authorization: Bearer <access_token>` — **must** be a header. `?token=` is rejected because it lands in access logs. |
++| Device proof header | `DPOP: <proof>` — only for device-bound sessions, see §6 |
++| Correlation | Responses carry `X-Request-Id`. Clients may send `X-Client-Attempt-Id` (≤64 chars, `[A-Za-z0-9._-]`) to correlate. |
++| Version header | `X-API-Version: 1.0` on every response |
++
++`GET /api/v1/ping` is liveness only: no database, no auth. Use it for a health
++check, never as a readiness signal for data.
++
++---
++
++## 2. Response envelope
++
++Every response — success or failure — is one of two shapes. This is the whole
++grammar; there are no others.
++
++```jsonc
++// success
++{ "status": "success", "data": { … } }
++
++// success with a message
++{ "status": "success", "message": "Signed out.", "data": { … } }
++
++// failure
++{ "status": "error", "message": "Human-readable text.", "code": "MACHINE_CODE" }
++```
++
++- `data` is omitted when there is nothing to return.
++- `code` is **not always present**. Auth, ACM and profile routes set it; older
++  routes do not. Code must therefore never be the only thing your client checks.
++- `paginated()` responses put `data.items` and `data.pagination`
++  (`total/page/limit/pages/has_more`) in the same envelope.
++- HTTP status is meaningful and must be honoured: `200/201`, `207` (partial),
++  `400`, `401`, `403`, `404`, `405`, `409`, `410`, `413`, `422`, `429`, `500`,
++  `503`.
++- `429` carries `Retry-After`, and `X-RateLimit-Limit` when a limit was hit.
++- `503` means "retry later" (`AUTH_REVALIDATION_UNAVAILABLE`,
++  `AUTH_SERVICE_UNAVAILABLE`, `CACHE_UNAVAILABLE`). Do not treat it as a
++  permission failure.
++
++Wire it into `Repository` as one parser, once:
++
++```php
++// sketch, not final code
++$body = json_decode($raw, true);
++if (!is_array($body) || !isset($body['status'])) → transport error
++if ($body['status'] === 'error')  → ApiError(status, message, code)
++return $body['data'] ?? [];
++```
++
++---
++
++## 3. Authentication
++
++Tokens are minted by the API and have no relationship to the platform's PHP
++session. Nothing in this app can read the platform's `$_SESSION`.
++
++### 3.1 Login
++
++`POST /api/v1/auth/login`
++
++```jsonc
++{ "username": "abebe", "password": "…",
++  "installation_id": "…",        // optional, see §6
++  "device_fingerprint": "…" }    // optional, see §6
++```
++
++200:
++
++```jsonc
++{ "status": "success", "data": {
++    "token": "…",                 // access token, 15 min
++    "refresh_token": "…",         // rotating, 90 days
++    "expires_in": 900,
++    "device_bound": true,         // if true → every refresh AND every API call needs a DPoP proof
++    "user": { "id": 7, "username": "…", "full_name": "…", "email": "…",
++              "role": "member", "is_active": true,
++              "profile_image": { "present": false, "version": null, "url": null },
++              "profile_version": "…", "authorization_version": 1 }
++} }
++```
++
++Failure modes worth handling distinctly:
++
++| Status | `code` | Meaning and what the UI should do |
++|---|---|---|
++| 401 | — | Wrong username or password. Generic message, no oracle. |
++| 403 | `activation_pending` | Credentials are right, but the ACM ceremony is unfinished. **This is the important one**: the account cannot be activated by staff, only by completing device setup. Link to the activation flow. |
++| 403 | — | Account inactive for another reason. "Contact the office." |
++| 429 | — | 10 attempts/minute/IP. Show `Retry-After`. |
++| 503 | `AUTH_SERVICE_UNAVAILABLE` | Retry later. |
++
++Rate limits: login 10/min, refresh 30/min, logout 30/min.
++
++### 3.2 Refresh
++
++`POST /api/v1/auth/refresh-token` → `{ "refresh_token": "…" }`
++
++Refresh tokens are **single-use and rotating**. Presenting a used one returns
++`401 REFRESH_REUSED` and revokes the whole family — the user is signed out.
++
++**Implementation rule:** the refresh must be single-flight. Two concurrent
++refreshes will invalidate each other and sign the user out. Guard with one
++in-flight promise in `assets/js/` and a server-side lock if refresh ever happens
++server-side.
++
++Codes to handle: `REFRESH_EXPIRED` (re-login), `REFRESH_REUSED` (re-login,
++explain), `SESSION_REVOKED` (re-login), `ACCOUNT_DISABLED`, `ACCOUNT_REMOVED`,
++`DEVICE_PROOF_REQUIRED` / `DEVICE_PROOF_INVALID` (see §6),
++`AUTH_SERVICE_UNAVAILABLE` (retry later).
++
++Success: same shape as login (`token`, `refresh_token`, `expires_in`, `user`).
++
++### 3.3 Verify, logout
++
++- `GET /api/v1/auth/verify` → `{ "valid": true, "user": {claims}, "expires_at": "…" }`
++- `POST /api/v1/auth/logout` → `{ "refresh_token": "…" }`, revokes the family.
++  Idempotent: an empty token still returns success.
++
++### 3.4 Every authenticated call re-checks authority
++
++`apiRequireAuth()` re-validates against the database on the server for every
++request (role and `authorization_version` must still match the token, and the
++account must still be `is_active`). Consequences for this app:
++
++- A role change or password change invalidates tokens mid-session →
++  `401 AUTH_SCOPE_CHANGED` / `PROFILE_CLAIMS_CHANGED` (`409`). **Handle both by
++  refreshing once, then signing out if it recurs.**
++- Tokens cannot be forged, extended or kept alive client-side. Do not try.
++
++### 3.5 Token storage on the web
++
++The platform's own model is a server-side session; this app cannot use it. For a
++browser the options are:
++
++| Option | XSS risk | CSRF risk | Note |
++|---|---|---|---|
++| `localStorage` | token readable by any XSS | none for the API (no cookies) | simplest; acceptable only with a strict CSP and no third-party JS |
++| `HttpOnly` cookie set by this app's own server | not readable by JS | needs CSRF protection on state-changing calls | requires the app to proxy API calls (§1 of [01](01-SYSTEM-CONTEXT.md#6-cross-origin-consequences-you-must-plan-for)) |
++
++**Decision owed** — [05 §4](05-OPEN-DECISIONS.md#4-token-storage-in-the-browser).
++
++---
++
++## 4. Who may see what
++
++Columns: what a **member** token can do today, and what a **parent** token can
++do today. `—` means "not authorised"; `✅` means reachable with normal scoping.
++
++### 4.1 Profile and self-service — `api/v1/routes/users.php`
++
++These routes carry **no role gate at all**: any authenticated account, including
++`member` and `parent`, reaches them.
++
++| Endpoint | Member | Parent | Notes |
++|---|---|---|---|
++| `GET /users/me` | ✅ | ✅ | Own profile. Includes `profile_version` (optimistic concurrency) |
++| `PATCH /users/me` | ✅ | ✅ | Requires `profile_version`; changing username/full_name → `claims_refresh_required: true` |
++| `GET/POST/DELETE /users/me/profile-image` | ✅ | ✅ | Ownership derived from the token, never from a client id |
++| `POST /users/change-password` | ✅ | ✅ | `current_password`, `new_password`, `confirm_password`; rate-limited 5/15 min |
++| `GET /users/me/children` | — | ✅ | `403` for non-parents. Verified links only |
++
++### 4.2 Member records — `api/v1/routes/members.php`
++
++| Endpoint | Member | Parent | Notes |
++|---|---|---|---|
++| `GET /members` (list) | — | — | Info/Education staff only |
++| `GET /members/{id}` | — | ✅ *own verified children only* | Parent path is `apiParentCanSeeMember()`, deny-by-default. Returns **safe row** (no phones/address) |
++| `GET /members/{id}/attendance?days=90` | — | ✅ own children | Stats + records. **This is the first real screen a parent app shows** |
++| `GET /members/{id}/attendance-risk` | — | — | Department staff |
++| `GET /members/{id}/department-status` | — | — | PII roles / HR / Edu / Mezmur |
++| `PUT /members/{id}`, `POST /members` | — | — | Staff only; `POST` is not supported by the API at all (web-only HR workflow) |
++| `POST /members/{id}/photo` | — | — | Staff/photo roles |
++
++**The member gap:** `GET /members/{id}` has no member self-path. A member token
++gets a 403 for every id, including its own. See
++[05 §2](05-OPEN-DECISIONS.md#2-no-member-side-authorisation-model).
++
++### 4.3 Routes a member/parent token should NOT reach
++
++Verified by reading the gate at the top of each file. This list exists so you do
++not build UI against something that returns 403 in production.
++
++| Route | Gate |
++|---|---|
++| `classes`, `dashboard`, `notifications` | `apiRequireStaffRole()` (allow-list; member/parent absent) |
++| `attendance` (+ `attendance/warnings`) | `apiRolesAttendance()` |
++| `grades`, `grades/followups` | `apiRolesGrades()` |
++| `subjects` | education roles + `teacher` |
++| `timetable` | education roles + `teacher` |
++| `teachers`, `enrollment` | education roles |
++| `mezmur` | `$MEZMUR_ROLES` (staff) |
++| `sync` | `apiRolesAttendance()` |
++| `hr` | retired, `410 HR_ATTENDANCE_RETIRED` |
++| `telemetry`, `app` | no auth by design (device facts / APK download) — client-only, no member data |
++
++So today a member's usable surface is `/users/me*` plus the ACM device routes,
++and a parent's is that plus `/users/me/children` and
++`/members/{childId}(/attendance)`.
++
++### 4.4 The "safe row" — know exactly what you receive
++
++`apiMemberSafeRow()` is what a parent gets for a child:
++
++```
++id, member_code, student_name, father_name, grandfather_name, full_name_am,
++gender, age_group, status, member_type, current_section, photo_url,
++created_at, (current_class when available)
++```
++
++No phone, no address, no date of birth, no baptismal name. Staff PII roles get
++`apiMemberStaffRow()` instead. **Do not design a screen that assumes a field
++exists because the database has it.**
++
++`photo_url` is absolute (`SITE_URL`-prefixed) or root-relative. It is a public
++upload path, not an authenticated stream — treat it as public.
++
++Every member id, including a parent's own child, must come from the API, never
++from a URL the user can edit to another number. The API enforces this; the app
++must not create the impression that a client-supplied id is trusted.
++
++---
++
++## 5. The ACL in one table
++
++`api/v1/core/acl.php`. Useful for reading errors, not for re-implementing:
++
++| Helper | Roles |
++|---|---|
++| `apiRolesStaff()` | super_admin, school_admin, info_dept, hr_dept, photo_importer, photo_dept, edu_dept, finance_dept, material_dept, mezmur_dept, teacher, attendance_taker, content_editor, mezmur_attendance_taker, hr_attendance_taker, accounts_office |
++| `apiRolesPii()` | info_dept, school_admin, super_admin |
++| `apiRolesEducation()` | edu_dept, school_admin, super_admin |
++| `apiRolesAttendance()` | teacher, attendance_taker, edu_dept, school_admin, super_admin |
++| `apiRolesGrades()` | teacher, edu_dept, school_admin, super_admin |
++| `apiParentCanSeeMember()` | a `parent` whose guardian link to that member is **verified** (`member_guardians.verified_by IS NOT NULL`) |
++
++Note the audit note in that file: `member` and `parent` are absent from
++`apiRolesStaff()` **on purpose** — those accounts are created only by ACM
++activation, never by staff user creation. An allow-list, so any future role
++fails closed.
++
++---
++
++## 6. The browser crypto problem (you will hit this first)
++
++The platform's device registration expects input shaped for Android. A browser
++can produce all of it, but **one conversion is mandatory and nothing in the
++platform hints at it.**
++
++### 6.1 What the server accepts
++
++From `acm/src/Device/DeviceCrypto.php` (authoritative):
++
++| Input | Format | Size |
++|---|---|---|
++| `pubkey` | base64 of **X.509 SubjectPublicKeyInfo DER** | ≤4096 B; P-256 is 91 B |
++| challenge | 32 random bytes, transported base64url, stored hash-only | exactly 32 B |
++| signature | base64 of **DER-encoded ECDSA** for ES256 | ≤4096 B |
++| curve | **P-256 only** (`prime256v1`); RSA ≥2048 accepted for legacy Android | — |
++| `installation_id` | `[A-Za-z0-9._:-]{1,128}`, client-generated and stable | — |
++
++`DeviceCrypto::verify()` calls `openssl_verify($challenge, $signature, $pem, OPENSSL_ALGO_SHA256)`,
++which requires **DER**. Android's `SHA256withECDSA` emits DER natively, so the
++docblock's "no P1363 conversion on either side" is true for the platform's only
++client today.
++
++### 6.2 What WebCrypto produces
++
++`crypto.subtle.sign({name:'ECDSA', hash:'SHA-256'}, key, data)` returns **raw
++`r||s`, 64 bytes** (IEEE P1363), not DER.
++
++Verified in this sandbox: P-256 SPKI export is **91 bytes** (fits), and the
++signature is **64 bytes** starting with a random byte — OpenSSL rejects it.
++
++```
++raw r||s (64 B) accepted by OpenSSL: false
++DER      (70 B) accepted by OpenSSL: true
++```
++
++### 6.3 The conversion you must write
++
++~15 lines, no library needed: split at 32 bytes, strip leading zeros, prepend
++`0x00` when the high bit is set, wrap each in `0x02 <len>`, wrap both in
++`0x30 <len>`.
++
++```js
++function rawToDer(raw) {                       // raw: Uint8Array(64)
++  const toInt = (b) => {
++    let i = 0; while (i < b.length - 1 && b[i] === 0) i++;
++    let v = b.slice(i);
++    if (v[0] & 0x80) v = new Uint8Array([0, ...v]);
++    return v;
++  };
++  const r = toInt(raw.slice(0, 32)), s = toInt(raw.slice(32, 64));
++  const body = new Uint8Array([0x02, r.length, ...r, 0x02, s.length, ...s]);
++  return new Uint8Array([0x30, body.length, ...body]);
++}
++```
++
++The DPoP proofs (§6.5) need the **same** conversion — `verifyDpopSignature()`
++also calls `openssl_verify`.
++
++### 6.4 The activation ceremony, end to end
++
++No session is required for the first two steps; protection is the code material
++plus throttling.
++
++```
++1. POST /acm/activate/verify        {selector, secret, purpose, installation_id?}
++   → {grant, operation, expires_at}
++   NOTE: strict body — an unknown field is a 400. Send exactly these keys.
++
++2. POST /acm/activate/credentials   {grant, password, idempotency_key}
++   → {user_id, username, account_type, account_status:'account_pending_device',
++      resume:'devices/register/begin', device_grant?}
++   NOTE: password rules are the platform's (PasswordPolicy), minimum length is
++   not assumed here — surface the API's error, do not pre-validate to your own
++   rule. `idempotency_key` must be stable across retries.
++
++3. POST /acm/devices/register/begin {grant, installation_id, pubkey, name}
++   → {challenge_id, challenge (base64url), expires_at}
++
++4. POST /acm/devices/register/complete {challenge_id, challenge, signature}
++   → {device_uuid, fingerprint, status}
++
++5. POST /auth/login (with installation_id + device_fingerprint)  → tokens,
++   device_bound: true
++```
++
++Storage decision: the private key must live where it survives a page reload but
++not a reinstall — **IndexedDB**, extractable P-256 key, per `installation_id`.
++`localStorage` holds only the public key and `installation_id`. Losing the
++private key means re-running the ceremony through the office; say so in the UI.
++
++Recovery (R-codes) is the same machinery: `POST /acm/reset/verify` then
++`/acm/reset/credentials`.
++
++### 6.5 DPoP: the part that will surprise you later
++
++`device_bound: true` means **every request** — not just refresh — needs a
++`DPOP:` header (verified in `apiRequireAuth()`), and a *different kind* of proof
++than the refresh route:
++
++| | Refresh (`/auth/refresh-token`) | Every other authenticated request |
++|---|---|---|
++| `htm` | `POST` | the actual method |
++| `htu` | URL whose **path ends with** `/auth/refresh-token` | **exact** request path, trailing slash folded |
++| `ath` | absent | **required**: base64url(sha256(access token)) |
++| `jti` | unique, replay-tracked | unique, replay-tracked |
++| `iat` | within skew (default 300 s) | same |
++| header | `typ: dpop+jwt`, `alg: ES256`, `jwk` = **public** key (`kty:EC`, `crv:P-256`, no `d`) | same |
++| signature | over `header.payload`, **DER** | same |
++
++`ath` is 43 base64url chars (verified) against a 128-char cap. Because `htu`
++binds the exact path, a proof is bound to one endpoint: generate per request,
++never reuse.
++
++Server defaults (seeded, may differ in production): proof skew 300 s, `jti` TTL
++900 s.
++
++**Practical warning:** with `jti` replay tracking and per-path binding, a
++mis-built proof fails as `ACCESS_PROOF_INVALID` with no detail — deliberately no
++oracle. Budget time for this; test against a device-bound account early rather
++than assuming unbound (which is what a login without `installation_id` gives
++you).
++
++---
++
++## 7. What the prototype expected vs what exists
++
++The archived prototype (`docs/prototypes/member-app-2026-11-26/`) calls 29 paths
++under `/api/…`. **None of them are the platform's API.** They belong to its own
++throwaway backend (own `staff` tables, own session auth, no CSRF) which was
++never adopted.
++
++| Prototype area | Prototype path | Reality on the platform |
++|---|---|---|
++| Login / refresh | `/api/auth/login`, `/api/auth/me`, `/api/auth/logout` | `/api/v1/auth/login` and friends (§3) |
++| Change password | `/api/auth/change-password` | `POST /api/v1/users/change-password` |
++| Lessons / materials | `/api/learning/*`, `/api/past-papers` | **Nothing.** No lessons, materials or past papers exist in the API |
++| Quiz engine | `/api/quiz/*` | **Nothing.** No quiz/question storage on the platform |
++| Progress, weak topics | `/api/progress/*` | **Nothing** |
++| Tasks | `/api/tasks` | **Nothing** |
++| Verse of the day | `/api/verse/today` | **Nothing** |
++| Notifications | `/api/notifications*` | Exists as a **staff** route — a member token gets 403 |
++| Attendance | `/api/attendance` | Staff route; parents use `/members/{id}/attendance` |
++| Permissions | `/api/permissions` | **Nothing** |
++
++**So the prototype's visual shell is reusable and its data layer is not.** Two
++honest options for the frontend scaffold
++([06 §3](06-FIRST-TASKS.md#3-frontend-scaffold-from-the-prototype)):
++
++- **Scaffold what exists**: sign-in, activation, profile, children list, child
++  record and attendance. Small, buildable now, real.
++- **Scaffold the prototype's shape**: all pages, with a stub `Repository` for
++  the missing areas. Looks complete, does nothing, and risks cementing a data
++  model nobody has approved (lessons/quizzes would need new platform tables or
++  a new service).
++
++The handbook recommends the first, and says so with a reason in
++[05 §1](05-OPEN-DECISIONS.md#1-what-happened-to-the-prototype-features).
++
++---
++
++## 8. Endpoint reference the app can rely on today
++
++Copy this into `Repository/` when it is written.
++
++| Method | Path | Auth | Purpose |
++|---|---|---|---|
++| GET | `/ping` | none | liveness |
++| POST | `/auth/login` | none | tokens |
++| POST | `/auth/refresh-token` | refresh token | rotate |
++| POST | `/auth/logout` | refresh token | revoke family |
++| GET | `/auth/verify` | bearer | token check |
++| POST | `/acm/activate/verify` | none | redeem activation code |
++| POST | `/acm/activate/credentials` | grant | set password |
++| POST | `/acm/reset/verify` | none | redeem recovery code |
++| POST | `/acm/reset/credentials` | grant | set new password |
++| POST | `/acm/devices/register/begin` | grant **or** bearer | register device, get challenge |
++| POST | `/acm/devices/register/complete` | possession (signature) | finish registration |
++| GET | `/acm/devices` | bearer | own devices |
++| POST | `/acm/devices/revoke` | bearer | revoke own device |
++| GET | `/users/me` | bearer | own profile |
++| PATCH | `/users/me` | bearer | update own profile |
++| GET/POST/DELETE | `/users/me/profile-image` | bearer | own photo |
++| POST | `/users/change-password` | bearer | own password |
++| GET | `/users/me/children` | bearer, `parent` | linked children |
++| GET | `/members/{id}` | bearer, scoped | one member (safe row for parents) |
++| GET | `/members/{id}/attendance?days=` | bearer, scoped | attendance history + stats |
++
++Everything else needs a staff role. Treat the list as the app's whole data
++surface until §2 of the open decisions is answered.
+diff --git a/docs/04-CONVENTIONS.md b/docs/04-CONVENTIONS.md
+new file mode 100644
+index 0000000..dd9106f
+--- /dev/null
++++ b/docs/04-CONVENTIONS.md
+@@ -0,0 +1,108 @@
++# 04 — Conventions
++
++Follow these and the app will look like the platform it talks to. Deviate and be
++explicit — several of these are load-bearing, not taste.
++
++## 1. Naming
++
++| Kind | Convention | Example |
++|---|---|---|
++| Class file | `PascalCase.php`, one class, name matches the file | `src/Http/Router.php` |
++| Namespace | `MembersPortal\` + folder path | `MembersPortal\Repository\MemberRepository` |
++| `src/` folder | `PascalCase` | `src/Repository/` |
++| Template | `kebab-case.php` | `templates/pages/sign-in.php` |
++| Page entry file | `lowercase.php` | `index.php`, `children.php` |
++| Asset | `kebab-case` | `assets/css/base.css` |
++| Documentation | `UPPER_SNAKE_CASE.md` at the top, `NN-Topic.md` in `docs/` | `HANDBOOK.md` |
++
++The namespace is **`MembersPortal`**, not `Members`. Reason: `Members` collides
++conceptually with `member.php` and with the API's own member routes, and a
++reader would assume it belongs to the platform.
++
++## 2. No Composer
++
++There is no Composer on the deployment host (the platform's ADR-0001), and this
++app inherits that. Consequences:
++
++- Classes are listed by hand in `src/Support/bootstrap.php`, **in dependency
++  order**. Adding a class means adding a line. There is no autoloader to save
++  you and no `composer dump-autoload`.
++- No third-party libraries unless they are vendored as plain PHP files with a
++  licence note. In practice: write the 30 lines yourself.
++- Paths in `bootstrap.php` are written `__DIR__ . '/…'`, never built from a
++  constant, so a static include check can resolve them.
++
++## 3. Errors
++
++- Throw `Support\HttpException` for anything a person should see. Its message is
++  public by construction.
++- Anything else is an internal failure: catch at the top level, log it, answer
++  with a neutral message. Never echo an exception message, a path, a query or a
++  stack trace — the platform learned this the hard way (`apiSendJson()`
++  deliberately replaces PHP errors with a stable envelope).
++- `Repository` translates API failures into `HttpException`; no other layer
++  should know the API's error codes. Keep the machine `code` on the exception so
++  a page can branch (`activation_pending` deserves a different screen from
++  "wrong password").
++
++## 4. Security defaults, not options
++
++| Rule | Why it is not negotiable |
++|---|---|
++| Escape on output, always | `htmlspecialchars($v, ENT_QUOTES \| ENT_SUBSTITUTE, 'UTF-8')` |
++| Never put a token in a URL | the platform rejects `?token=` for this exact reason; URLs land in logs, `Referer` and history |
++| Never send a member id the user can edit without the API deciding | ownership is the API's call ([03 §4](03-API-INTEGRATION.md#4-who-may-see-what)) |
++| `Cache-Control: no-store` on any page with personal data | a shared phone or a proxy must not keep it |
++| `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` | matches the API's own headers |
++| Send a CSRF token on every state-changing request **that uses a cookie** | irrelevant with bearer tokens in `localStorage`, mandatory with `HttpOnly` cookies |
++| No third-party JS | an XSS in a dependency reads the token; the page is small enough to need none |
++
++## 5. Configuration
++
++One file, outside the web root, loaded once by `bootstrap.php`. Never committed.
++
++```
++MEMBERS_API_BASE=https://<platform-host>/api/v1
++MEMBERS_ENV=production            # or development
++```
++
++The platform does exactly this (`.fkss_env.php` outside `public_html`). Until the
++file is wired, `bootstrap.php` must not guess a base URL — a wrong default that
++silently points at production is worse than a hard failure.
++
++## 6. Testing
++
++No PHPUnit and no Composer, so no framework. Use the platform's pattern, which
++already works in its CI:
++
++- A test is a plain `.php` script that exits non-zero on failure and prints one
++  JSON line (`{"status":"PASS","checks":N}`). Reference:
++  `tests/fixtures/browser_page_routes.fixture` and
++  `tests/fixtures/members_portal.fixture` in the platform repository — the
++  latter was written for this app's earlier skeleton.
++- Put them next to what they test once there is something to test:
++  `src/Repository/ApiClient.test.php`, or a top-level `tests/` when there are
++  enough to organise.
++- What to test, in order of value: the envelope parser (including malformed and
++  `status`-missing responses), the single-flight refresh, the DER conversion
++  ([03 §6.3](03-API-INTEGRATION.md#63-the-conversion-you-must-write)), and the
++  route table's refusal of unknown paths.
++- Lint every PHP file in CI with `php -l` on **8.4 and 8.5**, with
++  `-d error_reporting=-1`, failing on `Deprecated:` — that is what the platform
++  does, and production has run both versions.
++
++## 7. Git and review
++
++One repository for this app, its own history, its own release cadence. Nothing
++in this app's build should require a platform release, and nothing in the
++platform should require this app. That is the point of the split.
++
++Commit messages: state the *why* when a choice was not obvious, and record what
++was verified versus assumed. Both habits exist in the platform's history for a
++reason — several of its commits exist solely to correct an earlier claim.
++
++## 8. Documentation
++
++`docs/` holds this handbook. Keep it true: when a decision in
++[05](05-OPEN-DECISIONS.md) is settled, edit that file rather than adding a new
++one. A stale handbook is worse than none, because it will be believed.
+diff --git a/docs/05-OPEN-DECISIONS.md b/docs/05-OPEN-DECISIONS.md
+new file mode 100644
+index 0000000..d00cca9
+--- /dev/null
++++ b/docs/05-OPEN-DECISIONS.md
+@@ -0,0 +1,172 @@
++# 05 — Open decisions and unknowns
++
++Each entry states what is blocked, what is known, and who must decide. Nothing
++here should be resolved by a developer guessing.
++
++---
++
++## 1. What happened to the prototype features
++
++**Status: needs a product decision. Not technical.**
++
++The prototype has lessons, units, quiz-me, exam prep, past papers, progress and
++weak topics. **The platform has none of these**: no lessons tables, no quiz
++engine, no materials storage, no progress model. Its API has no route for any of
++them ([03 §7](03-API-INTEGRATION.md#7-what-the-prototype-expected-vs-what-exists)).
++
++So "scaffold the prototype" can mean two very different things:
++
++| Option | What it needs | Consequence |
++|---|---|---|
++| **(a) Scaffold only what the API supports** — sign-in, activation, profile, children, child record, attendance | Nothing new on the platform | Buildable today. Smaller than the prototype's page set |
++| **(b) Scaffold the prototype's full page set with stubs** | A decision that lessons/quizzes will be built, and a data model for them | Looks complete, no data, and risks cementing a schema nobody approved |
++
++Recommendation: **(a)**, then add each prototype page when its data has an owner.
++Reason: the prototype's backend was written against tables that collide with the
++platform's (`attendance`, `notifications`) and was never run against a real
++database. Its pages are a design reference, not a specification.
++
++---
++
++## 2. No member-side authorisation model
++
++**Status: blocked on a platform decision. Blocks every member (not parent) screen.**
++
++Verified: `member` appears in **no allow-list** anywhere in the API. The only
++places `parent` is named are `apiParentGuardianId()`,
++`apiParentCanSeeMember()`, `apiParentChildren()`, the `/users/me/children` route,
++and two clauses in `members.php`.
++
++What this means concretely:
++
++| Screen | Parent | Member |
++|---|---|---|
++| Own profile, password, photo | ✅ `/users/me*` | ✅ `/users/me*` |
++| Linked children | ✅ `/users/me/children` | n/a |
++| A child's record | ✅ verified links only | ❌ `403` for every id, including its own |
++| A child's attendance | ✅ | ❌ |
++| Lessons, grades, timetable | ❌ (staff routes) | ❌ |
++
++A member is a student with an activated account that can edit its own profile and
++nothing else. Closing this needs the platform to decide what a member may read
++about **itself** — most plausibly a `member` self-path in
++`members.php` (`/members/me`, or allowing `apiParentCanSeeMember`'s sibling
++`apiMemberCanSeeSelf`), which is a platform change with its own review.
++
++**Do not** work around it in this app. A client-side check is not a control, and
++calling it one is how the audit's §9.1 leaks happened.
++
++---
++
++## 3. Activation still requires an office-issued code
++
++**Status: understood, not blocked. Affects the UI, not the architecture.**
++
++The ceremony is browser-capable ([03 §6](03-API-INTEGRATION.md#6-the-browser-crypto-problem-you-will-hit-this-first)),
++but it starts with `selector` + `secret` from a code the office hands out, and
++the redemption may additionally be gated on the office network
++(`ActivationException` has `network_denied`). So "sign up from home" is not a
++flow that exists.
++
++Consequence: this app's sign-in page needs a "I have an activation code" path and
++a clear message for `403 activation_pending`
++([03 §3.1](03-API-INTEGRATION.md#31-login)). It does **not** need a public
++registration form.
++
++Unknown (not verified): whether `network_denied` is enforced in production. The
++service reads it from seeds; the seed values in the production database were not
++available here.
++
++---
++
++## 4. Token storage in the browser
++
++**Status: needs a decision before the first authenticated page.**
++
++| Option | Requires | XSS | CSRF |
++|---|---|---|---|
++| `localStorage` + bearer header | nothing | token readable by any injected script | none |
++| `HttpOnly` cookie set by this app's server | the app to proxy API calls; a CSRF token scheme | token unreadable | must implement |
++
++Note the device private key has the same question and a stronger answer: it
++belongs in **IndexedDB as a non-exportable or extractable-with-warning
++CryptoKey**, never in `localStorage` as JWK text.
++
++---
++
++## 5. CORS for the members subdomain
++
++**Status: blocked on a platform change, or on this app proxying.**
++
++The platform's `handleCors()` allows `SITE_URL`, `http://<domain>`,
++`https://www.<domain>`. The members subdomain is not among them
++([01 §6](01-SYSTEM-CONTEXT.md#6-cross-origin-consequences-you-must-plan-for)).
++
++Two fixes, both real:
++
++1. **Add the subdomain to `$allowedOrigins`** in `api/v1/core/middleware.php`.
++   One line, but it rides the platform's release train and widens what the API
++   accepts from a browser.
++2. **Proxy through this app** (`/api/*` on the members host → platform). No
++   platform change; the app must forward `Authorization` and `DPOP` verbatim,
++   must not cache, and adds a hop.
++
++**Unverified:** whether production actually serves the API on the same host as
++the site or on a separate API hostname. `SITE_DOMAIN` comes from the deployment's
++private env file, which was not available. Confirm before choosing.
++
++---
++
++## 6. Deployment target
++
++**Status: unknown, needs the owner.**
++
++Not yet confirmed: the subdomain name, whether the host supports
++`open_basedir`-style isolation, whether HTTPS is provisioned there, and whether
++the app's own `.htaccess` may be used (Apache) or the host is nginx.
++
++This matters for exactly one thing so far: whether entry files at the top of the
++folder are the document root (§02-5) or need a `public/` split after all.
++
++---
++
++## 7. Fields the app may show
++
++**Status: mostly answered by the API, one gap.**
++
++`apiMemberSafeRow()` defines what a parent receives for a child
++([03 §4.4](03-API-INTEGRATION.md#44-the-safe-row--know-exactly-what-you-receive)).
++That is the answer for parents. For a **member looking at itself** the answer
++does not exist, because the endpoint does not exist (§2 above).
++
++Unknown but relevant: whether the office wants a member to see its own guardian
++contact details (the "safe row" excludes them by design). If yes, that is part of
++the platform change in §2 — not something to fetch from elsewhere.
++
++---
++
++## 8. Amharic UI
++
++**Status: needs native review, not code.**
++
++The prototype's UI is bilingual. The platform's data carries Amharic fields
++(`full_name_am`, `class_name` plus `class_name_en`). Two rules that follow:
++
++- Never machine-translate a label without review; Sunday-school terminology
++  (መዝሙር, ክፍል, etc.) has established usage in this school.
++- Store both values where the API sends both; do not strip `*_am` fields.
++
++---
++
++## 9. Summary: what a developer can start today
++
++| Work | Blocked by |
++|---|---|
++| Move the folder to its own repository, add CI | nothing |
++| Scaffold the shell: layout, CSS, route table, error page | nothing |
++| `Repository` for `/ping`, `/auth/*`, `/users/me*` | nothing |
++| Sign-in page (against real API) | §5 CORS, §4 token storage |
++| Activation wizard (code → password → device) | §5 (browser calls) |
++| Parent children + child attendance screens | §5 (browser calls) |
++| Any member screen beyond its own profile | §2 |
++| Lessons / quiz / progress screens | §1 |
+diff --git a/docs/06-FIRST-TASKS.md b/docs/06-FIRST-TASKS.md
+new file mode 100644
+index 0000000..da50861
+--- /dev/null
++++ b/docs/06-FIRST-TASKS.md
+@@ -0,0 +1,148 @@
++# 06 — First tasks, in order
++
++Each step is small, verifiable, and needs no decision from anyone else. Items
++that need a product decision are in [05](05-OPEN-DECISIONS.md) and are not
++repeated here.
++
++---
++
++## 1. Move the folder to its own repository
++
++**Done** on 2026-11-26. The structure lives in
++[`suraman21/ssms-member-app`](https://github.com/suraman21/ssms-member-app), and
++`members/` was deleted from `fkss-sunday-school-platform` in PR #90.
++
++What the move actually involved, so the next person does not redo it:
++
++- The repository already existed and held the earlier **prototype**, dropped
++  flat at the root (`backend/`, `database/`, `docs/`, `frontend/`, `tests/`,
++  `uploads/`). Those six folders were moved together under
++  `docs/prototypes/member-app-2026-11-26/` — one folder, so the root stays
++  readable — and the skeleton was laid on top of the now-empty root. History was
++  preserved with `git mv`, so every prototype file keeps its blame.
++- The prototype is **reference only**. `backend/` and `database/` are not
++  adopted: they implement a parallel API and a second `staff`/session model, and
++  their migrations collide with the platform's `sql/001–098`. Only `frontend/`
++  is meant to be reused, and even then `frontend/js/session.js` must be
++  **replaced**, not adapted.
++- `docs/` had a naming collision: the prototype also shipped a `docs/`. The
++  prototype's notes moved with it under `prototypes/`, so this handbook owns
++  `docs/` alone.
++
++Checklist for the new repository:
++
++- [ ] `.gitignore` — `.fkss_env.php`, `*.log`, `.DS_Store`
++- [ ] Everything documented is inside; the handbook's links resolve from the
++      new root (they are all relative within `docs/`)
++- [ ] CI: `php -l` on 8.4 **and** 8.5 with `-d error_reporting=-1`, failing on
++      `Deprecated:` (the platform lints both, because production has run both)
++- [ ] `README.md` at the root: one paragraph plus a link to `docs/HANDBOOK.md`
++
++---
++
++## 2. Confirm the deployment target
++
++Answer the four questions in
++[05 §6](05-OPEN-DECISIONS.md#6-deployment-target) before writing an entry point,
++because they decide whether the repository root is the document root or
++whether a `public/` layer is needed:
++
++- subdomain name
++- Apache or nginx
++- is HTTPS provisioned
++- can the app read a config file **outside** the document root
++
++If Apache: the app needs its own `.htaccess` with `Options -Indexes`, no
++`RewriteEngine` until there is a reason, and `Authorization` passthrough only if
++the app ever proxies to the API.
++
++---
++
++## 3. Frontend scaffold from the prototype
++
++The prototype's frontend is the reusable half of that work. Verified:
++`fk-theme.css` (1058 lines), `style.css` (2445), `fk-ui.js` (505),
++`session.js` (50) — **zero external dependencies**, no CDN, no build step. It is
++plain HTML + CSS + vanilla JS and can be dropped into this app as-is.
++
++### 3.1 What to take
++
++| From `docs/prototypes/member-app-2026-11-26/frontend/` | To | Why |
++|---|---|---|
++| `css/fk-theme.css` | `assets/css/fk-theme.css` | The school's palette is defined there (`--fk-gold`, `--fk-wine`, …) and is not in the platform's own themes |
++| `style.css` | `assets/css/style.css` | Page-level layout. Review before taking wholesale — it was written alongside the prototype's own markup |
++| `js/fk-ui.js` | `assets/js/fk-ui.js` | UI helpers, 505 lines, no dependencies |
++| The markup of `login.html`, `student-dashboard.html` | `templates/pages/` | The two pages whose data the API actually has |
++
++### 3.2 What not to take
++
++| Skip | Why |
++|---|---|
++| `js/session.js` | Its auth is the prototype's own (`/api/auth/login`, `/api/auth/staff-login`). **Replace, do not adapt** — see §3.4 |
++| `quiz-me.html`, `lesson.html`, `lessons.html`, `exam-prep.html`, `progress.html`, `tasks.html` | No API behind them ([03 §7](03-API-INTEGRATION.md#7-what-the-prototype-expected-vs-what-exists)). Their markup is still useful as a visual reference |
++| `staff.html`, `change-password.html` partly | `staff.html` is a staff surface; `change-password.html` is reusable once pointed at `/users/change-password` |
++| `backend/`, `database/` | Never. Own tables, colliding migration numbers, no CSRF ([ARCHIVE.md](prototypes/member-app-2026-11-26/ARCHIVE.md)) |
++
++### 3.3 Order inside the scaffold
++
++1. `templates/layouts/base.php` — the shell (head, nav, footer) with the theme's
++   CSS classes.
++2. `src/Http/Router.php` — a finite route table mapping path → template. No
++   request-derived file paths, ever.
++3. `src/View/Template.php` — render a page inside the layout, with an escaper and
++   prepared data only.
++4. `templates/pages/` — start with `sign-in`, `error`, `activation`, then
++   `children`.
++5. `assets/` — drop in the theme CSS, then delete rules that reference markup you
++   did not take.
++
++Stop after step 5. The scaffold has no token handling and no API calls; that is
++the next task, and it depends on the CORS and token-storage decisions.
++
++### 3.4 `session.js` must be replaced, not adapted
++
++The prototype's session helper signs in against its own backend and keeps the
++result in its own storage. The real flow is
++[03 §3](03-API-INTEGRATION.md#3-authentication) and it differs in three
++load-bearing ways:
++
++1. **single-flight refresh** — refresh tokens are one-time; two concurrent
++   refreshes sign the user out (`REFRESH_REUSED`)
++2. **`activation_pending`** — a 403 at login that means "finish device setup",
++   not "wrong password"
++3. **DPoP** — for a device-bound session every request needs a proof, and the
++   proof differs between refresh and normal requests
++   ([03 §6.5](03-API-INTEGRATION.md#65-dpop-the-part-that-will-surprise-you-later))
++
++---
++
++## 4. Then: the API client
++
++`Repository/` is the only place that may contain `/api/v1` strings.
++
++1. `ApiClient.php` — one method per HTTP verb; attaches `Authorization` and, when
++   present, `DPOP`; parses the envelope
++   ([03 §2](03-API-INTEGRATION.md#2-response-envelope)); throws `HttpException`
++   carrying status + message + code.
++2. `AuthRepository.php` — login, refresh, logout, verify.
++3. `ProfileRepository.php` — `/users/me*`.
++4. `MembersRepository.php` — `/members/{id}`, `/members/{id}/attendance`,
++   `/users/me/children`.
++5. `AcmRepository.php` — the activation ceremony, including the DER conversion.
++
++Test the envelope parser against: success with no `data`, success with
++`message`, error with `code`, error without `code`, non-JSON body (an HTML error
++page from a misconfigured host), and `429` with `Retry-After`.
++
++---
++
++## 5. Before declaring any of it done
++
++- [ ] No `/api/v1` string outside `src/Repository/`
++- [ ] No token in a URL, a log line or a template
++- [ ] Every rendered value escaped; every page with personal data sends
++      `Cache-Control: no-store`
++- [ ] An unknown path renders a 404 page, not a stack trace
++- [ ] `php -l` clean on 8.4 and 8.5
++- [ ] The handbook is still true — edit
++      [05](05-OPEN-DECISIONS.md) when a decision lands
+diff --git a/docs/HANDBOOK.md b/docs/HANDBOOK.md
+new file mode 100644
+index 0000000..eb5cda1
+--- /dev/null
++++ b/docs/HANDBOOK.md
+@@ -0,0 +1,90 @@
++# Members Web App — Standalone Repository Handbook
++
++Everything a new chat needs to work on the members/parents web app **as its own
++repository**, without access to the conversation that produced this folder.
++
++| | |
++|---|---|
++| **Written** | 2026-11-26 |
++| **Platform baseline** | `suraman21/fkss-sunday-school-platform`, commit `d7d27c1` |
++| **App status** | Folder structure only. No behaviour, no routing, no styling. |
++| **Scope** | Structure, integration contract, conventions, and the decisions still owed |
++
++> **New here, or starting a fresh chat?** Read
++> [`00-START-HERE.md`](00-START-HERE.md) first. It is the short version: what
++> this repository is, how to get it running, the six facts that change your
++> decisions, and which page to open next.
++
++Read in this order: **01** (what this is and the constraints), **02** (the
++folder), **03** (the integration contract — the long one), **04** (conventions),
++**05** (what is blocked and on whom), **06** (first tasks).
++
++---
++
++## The one-paragraph summary
++
++The members/parents web app is a separate PHP repository deployed on its own
++subdomain. It has **no access to the platform's database, files or
++`config.php`**. Everything it knows about a member arrives as JSON from the
++platform's existing REST API at `/api/v1`. Those two facts determine the folder
++layout, the layering, the security rules and the order of work. This handbook
++records them, plus the traps — including one that will otherwise cost a day, in
++[03 §6](03-API-INTEGRATION.md#6-the-browser-crypto-problem-you-will-hit-this-first).
++
++---
++
++## Contents
++
++| File | What it answers |
++|---|---|
++| [`01-SYSTEM-CONTEXT.md`](01-SYSTEM-CONTEXT.md) | What the platform is, what this app is, what it may and may not do |
++| [`02-FOLDER-STRUCTURE.md`](02-FOLDER-STRUCTURE.md) | The layout, why each folder exists, the layering rules |
++| [`03-API-INTEGRATION.md`](03-API-INTEGRATION.md) | Auth, every endpoint a members app can use, payloads, errors, CORS, the gaps |
++| [`04-CONVENTIONS.md`](04-CONVENTIONS.md) | Naming, autoloading, errors, security defaults, testing |
++| [`05-OPEN-DECISIONS.md`](05-OPEN-DECISIONS.md) | What is blocked, what is verified vs unknown, who must decide |
++| [`06-FIRST-TASKS.md`](06-FIRST-TASKS.md) | The next steps in order, starting with the frontend scaffold |
++
++---
++
++## Three corrections to anything said earlier in conversation
++
++Recorded here because a new chat will only have this handbook.
++
++1. **There is no `/members/*` route on the platform, and there must not be.**
++   An earlier plan wired clean URLs through `BrowserPageRoutes` and `.htaccess`
++   in the platform repository. That was wrong: this app is not served by the
++   platform's dispatcher. Those changes were reverted; the platform is
++   byte-identical to `d7d27c1`.
++
++2. **The app does not `require` anything from the platform.** Not `config.php`,
++   not `admin/backend/*`, not an `api/v1` route file. Integration is HTTP only.
++
++3. **The app is not inside the platform repository.** This is now true and
++   permanent: the structure lives in its own repository and `members/` has been
++   removed from the platform. The prototype that came before it is archived
++   under `docs/prototypes/member-app-2026-11-26/` — it is reference material
++   only. Its `backend/` and `database/` are **not** adopted; integration is the
++   platform's `/api/v1`. See
++   [06 §1](06-FIRST-TASKS.md#1-move-the-folder-to-its-own-repository).
++
++---
++
++## What is verified, and how
++
++Every claim about the API in [`03`](03-API-INTEGRATION.md) was read from the
++platform's source at `d7d27c1`, not recalled. Where something could not be
++confirmed, it is marked **UNVERIFIED** with the reason. The two most important
++verified findings:
++
++- **A browser can complete the ACM activation ceremony.** The platform's
++  `/api/v1/acm/*` endpoints are Android-agnostic: no Play Integrity, no
++  platform attestation, no vendor check. The only device-specific input is a
++  P-256 SPKI public key and a signature over a challenge — both of which
++  WebCrypto produces. Verified by generating a key in WebCrypto and verifying
++  its signature against the platform's own `DeviceCrypto::verify()`. One
++  conversion is required; see [03 §6](03-API-INTEGRATION.md#6-the-browser-crypto-problem-you-will-hit-this-first).
++
++- **The API already has a parent surface, and no member surface.** `parent` is
++  in the ACL (`apiParentChildren`, `apiParentCanSeeMember`); `member` appears in
++  no allow-list anywhere. A member token today is authenticated but authorised
++  for almost nothing. See [05 §2](05-OPEN-DECISIONS.md#2-no-member-side-authorisation-model).
+diff --git a/docs/prototypes/member-app-2026-11-26/ARCHIVE.md b/docs/prototypes/member-app-2026-11-26/ARCHIVE.md
+new file mode 100644
+index 0000000..eb0fd5a
+--- /dev/null
++++ b/docs/prototypes/member-app-2026-11-26/ARCHIVE.md
+@@ -0,0 +1,80 @@
++# Member app prototype — archive
++
++Frozen copy of the standalone prototype supplied by an external developer, kept
++so its design work and content are preserved after the real members web app
++starts being built in `/members` (`members/`).
++
++| | |
++|---|---|
++| **Source repository** | `https://github.com/suraman21/ssms-member-app.git` |
++| **Commit** | `61d50b44574e67803ba489db8cd346e3a4024c29` ("inital base", 2026-11-26) |
++| **Archived on** | 2026-11-26 |
++| **Files** | 57 (including a 697 KB demo past-paper PDF and two ~127 KB lesson-text files) |
++| **Status** | **Reference only. Not deployed, not executed, not maintained.** |
++
++## This is not part of the running application
++
++Nothing in this folder is loaded by the site. It sits under `docs/`, which the
++root `.htaccess` blocks from the web (`RewriteRule ^(sql|docs|tests|scripts|tools|vendor|Mobile|\.github)(/|$) - [F,L]`),
++and which `tests/security/structure_paths.py` excludes from first-party code
++scans.
++
++**The PHP in here is still linted by CI.** The `php-lint` and `php-lint-85`
++jobs run `git ls-files '*.php'` and exclude only `vendor/` and
++`id_cards/libs/`. That is deliberate: archived code that no longer compiles is
++not evidence of anything. If a future PHP version rejects this file set, the
++honest fix is to record that in this README — not to widen the lint exclusions.
++
++## What the prototype is
++
++A **complete student-facing front end** and a **deliberately basic backend**,
++built against a separate standalone database (`felege_kidusan_test`) rather
++than the production schema. Its own handover note
++(`backend/../docs/HANDOVER_FOR_DEVELOPER.md`) says plainly that nothing in it
++was ever run against a real PHP/MySQL server by its author.
++
++Pages: Home, Lessons, Lesson reader, Tasks, Quiz Me, Exam Prep, Progress,
++Login, Change password.
++Content: Grade 10 lesson text, verses, a demo past paper.
++
++## Why it was archived rather than adopted
++
++It solves the same problem with a different foundation. Its constraints are not
++the ours:
++
++- **Its own user tables.** `staff`, `staff_scopes` and student accounts from
++  `database/migrations/001`–`003` — not `users` / `members` / `acm_person_accounts`.
++- **Its own session auth.** `backend/lib/security.php::fk_gate()` reads
++  `$_SESSION`, whereas every `/api/v1` route in this repository authenticates
++  with bearer tokens via `apiRequireAuth()`.
++- **Table-name collisions.** Migrations 002 and 003 create `attendance` and
++  `notifications`, which already exist here with different columns and
++  different meanings. Applying them to this database would corrupt live data.
++- **No CSRF token**, by its own admission.
++- Its own `.htaccess`-free `router.php` and a second, parallel API surface
++  (`/api/learning/*`, `/api/quiz/*`) that would duplicate `/api/v1`.
++
++## What is worth carrying forward
++
++The design, not the plumbing:
++
++- **`frontend/css/fk-theme.css`** (56 KB) and `frontend/style.css` (32 KB) — the
++  visual language: palette, typography, component shapes.
++- **`frontend/js/fk-ui.js`** (35 KB) — shared header, popups, assistant window.
++- **Page structure** — what a student app actually shows, in what order.
++- **`backend/data/verses.json`**, `lessons.json`, `lesson_text_grade10.json` —
++  real content.
++- **The unlock rules** in `backend/api/learning.php`: unit 1 open, first two
++  lessons of an open unit open, later lessons need a teacher unlock, unit N+1
++  requires every lesson of unit N completed *and* the unit quiz passed *and* a
++  manual unlock. That is a considered product rule set worth re-implementing
++  against our own schema.
++- **`docs/TEST_CHECKLIST.md`** — a usable acceptance list.
++
++## Do not
++
++- Do not copy `backend/` into the application. In particular never run
++  `database/migrations/*.sql` against this repository's database.
++- Do not "fix" files here. If a rule from this prototype is adopted, implement
++  it in `members/` and leave the original untouched as the record.
++- Do not wire this folder into `BrowserPageRoutes` or any `.htaccess`.
+diff --git a/backend/api-backup-before-quiz.php b/docs/prototypes/member-app-2026-11-26/backend/api-backup-before-quiz.php
+similarity index 100%
+rename from backend/api-backup-before-quiz.php
+rename to docs/prototypes/member-app-2026-11-26/backend/api-backup-before-quiz.php
+diff --git a/backend/api.php b/docs/prototypes/member-app-2026-11-26/backend/api.php
+similarity index 100%
+rename from backend/api.php
+rename to docs/prototypes/member-app-2026-11-26/backend/api.php
+diff --git a/backend/api/auth/login.php b/docs/prototypes/member-app-2026-11-26/backend/api/auth/login.php
+similarity index 100%
+rename from backend/api/auth/login.php
+rename to docs/prototypes/member-app-2026-11-26/backend/api/auth/login.php
+diff --git a/backend/api/auth/register.php b/docs/prototypes/member-app-2026-11-26/backend/api/auth/register.php
+similarity index 100%
+rename from backend/api/auth/register.php
+rename to docs/prototypes/member-app-2026-11-26/backend/api/auth/register.php
+diff --git a/backend/api/auth_staff.php b/docs/prototypes/member-app-2026-11-26/backend/api/auth_staff.php
+similarity index 100%
+rename from backend/api/auth_staff.php
+rename to docs/prototypes/member-app-2026-11-26/backend/api/auth_staff.php
+diff --git a/backend/api/extras.php b/docs/prototypes/member-app-2026-11-26/backend/api/extras.php
+similarity index 100%
+rename from backend/api/extras.php
+rename to docs/prototypes/member-app-2026-11-26/backend/api/extras.php
+diff --git a/backend/api/learning.php b/docs/prototypes/member-app-2026-11-26/backend/api/learning.php
+similarity index 100%
+rename from backend/api/learning.php
+rename to docs/prototypes/member-app-2026-11-26/backend/api/learning.php
+diff --git a/backend/api/lessons/get.php b/docs/prototypes/member-app-2026-11-26/backend/api/lessons/get.php
+similarity index 100%
+rename from backend/api/lessons/get.php
+rename to docs/prototypes/member-app-2026-11-26/backend/api/lessons/get.php
+diff --git a/backend/api/lessons/unlock.php b/docs/prototypes/member-app-2026-11-26/backend/api/lessons/unlock.php
+similarity index 100%
+rename from backend/api/lessons/unlock.php
+rename to docs/prototypes/member-app-2026-11-26/backend/api/lessons/unlock.php
+diff --git a/backend/api/question.php b/docs/prototypes/member-app-2026-11-26/backend/api/question.php
+similarity index 100%
+rename from backend/api/question.php
+rename to docs/prototypes/member-app-2026-11-26/backend/api/question.php
+diff --git a/backend/api/question_import.php b/docs/prototypes/member-app-2026-11-26/backend/api/question_import.php
+similarity index 100%
+rename from backend/api/question_import.php
+rename to docs/prototypes/member-app-2026-11-26/backend/api/question_import.php
+diff --git a/backend/api/quiz.php b/docs/prototypes/member-app-2026-11-26/backend/api/quiz.php
+similarity index 100%
+rename from backend/api/quiz.php
+rename to docs/prototypes/member-app-2026-11-26/backend/api/quiz.php
+diff --git a/backend/config/database.php b/docs/prototypes/member-app-2026-11-26/backend/config/database.php
+similarity index 100%
+rename from backend/config/database.php
+rename to docs/prototypes/member-app-2026-11-26/backend/config/database.php
+diff --git a/backend/data/lesson_text_grade10.json b/docs/prototypes/member-app-2026-11-26/backend/data/lesson_text_grade10.json
+similarity index 100%
+rename from backend/data/lesson_text_grade10.json
+rename to docs/prototypes/member-app-2026-11-26/backend/data/lesson_text_grade10.json
+diff --git a/backend/data/lessons.json b/docs/prototypes/member-app-2026-11-26/backend/data/lessons.json
+similarity index 100%
+rename from backend/data/lessons.json
+rename to docs/prototypes/member-app-2026-11-26/backend/data/lessons.json
+diff --git a/backend/data/verses.json b/docs/prototypes/member-app-2026-11-26/backend/data/verses.json
+similarity index 100%
+rename from backend/data/verses.json
+rename to docs/prototypes/member-app-2026-11-26/backend/data/verses.json
+diff --git a/backend/lib/security.php b/docs/prototypes/member-app-2026-11-26/backend/lib/security.php
+similarity index 100%
+rename from backend/lib/security.php
+rename to docs/prototypes/member-app-2026-11-26/backend/lib/security.php
+diff --git a/backend/router.php b/docs/prototypes/member-app-2026-11-26/backend/router.php
+similarity index 100%
+rename from backend/router.php
+rename to docs/prototypes/member-app-2026-11-26/backend/router.php
+diff --git a/backend/server.js b/docs/prototypes/member-app-2026-11-26/backend/server.js
+similarity index 100%
+rename from backend/server.js
+rename to docs/prototypes/member-app-2026-11-26/backend/server.js
+diff --git a/backend/test-db.php b/docs/prototypes/member-app-2026-11-26/backend/test-db.php
+similarity index 100%
+rename from backend/test-db.php
+rename to docs/prototypes/member-app-2026-11-26/backend/test-db.php
+diff --git a/backend/test_db.php b/docs/prototypes/member-app-2026-11-26/backend/test_db.php
+similarity index 100%
+rename from backend/test_db.php
+rename to docs/prototypes/member-app-2026-11-26/backend/test_db.php
+diff --git a/backend/tools/check_setup.php b/docs/prototypes/member-app-2026-11-26/backend/tools/check_setup.php
+similarity index 100%
+rename from backend/tools/check_setup.php
+rename to docs/prototypes/member-app-2026-11-26/backend/tools/check_setup.php
+diff --git a/backend/tools/create_staff.php b/docs/prototypes/member-app-2026-11-26/backend/tools/create_staff.php
+similarity index 100%
+rename from backend/tools/create_staff.php
+rename to docs/prototypes/member-app-2026-11-26/backend/tools/create_staff.php
+diff --git a/backend/tools/import_lesson_text.php b/docs/prototypes/member-app-2026-11-26/backend/tools/import_lesson_text.php
+similarity index 100%
+rename from backend/tools/import_lesson_text.php
+rename to docs/prototypes/member-app-2026-11-26/backend/tools/import_lesson_text.php
+diff --git a/database/demo/demo_past_paper.sql b/docs/prototypes/member-app-2026-11-26/database/demo/demo_past_paper.sql
+similarity index 100%
+rename from database/demo/demo_past_paper.sql
+rename to docs/prototypes/member-app-2026-11-26/database/demo/demo_past_paper.sql
+diff --git a/database/migrations/001_stage1_auth_and_unlocks.sql b/docs/prototypes/member-app-2026-11-26/database/migrations/001_stage1_auth_and_unlocks.sql
+similarity index 100%
+rename from database/migrations/001_stage1_auth_and_unlocks.sql
+rename to docs/prototypes/member-app-2026-11-26/database/migrations/001_stage1_auth_and_unlocks.sql
+diff --git a/database/migrations/001_stage1_rollback.sql b/docs/prototypes/member-app-2026-11-26/database/migrations/001_stage1_rollback.sql
+similarity index 100%
+rename from database/migrations/001_stage1_rollback.sql
+rename to docs/prototypes/member-app-2026-11-26/database/migrations/001_stage1_rollback.sql
+diff --git a/database/migrations/002_lesson_progress.sql b/docs/prototypes/member-app-2026-11-26/database/migrations/002_lesson_progress.sql
+similarity index 100%
+rename from database/migrations/002_lesson_progress.sql
+rename to docs/prototypes/member-app-2026-11-26/database/migrations/002_lesson_progress.sql
+diff --git a/database/migrations/002_rollback.sql b/docs/prototypes/member-app-2026-11-26/database/migrations/002_rollback.sql
+similarity index 100%
+rename from database/migrations/002_rollback.sql
+rename to docs/prototypes/member-app-2026-11-26/database/migrations/002_rollback.sql
+diff --git a/database/migrations/003_rollback.sql b/docs/prototypes/member-app-2026-11-26/database/migrations/003_rollback.sql
+similarity index 100%
+rename from database/migrations/003_rollback.sql
+rename to docs/prototypes/member-app-2026-11-26/database/migrations/003_rollback.sql
+diff --git a/database/migrations/003_unit_unlocks_and_student_extras.sql b/docs/prototypes/member-app-2026-11-26/database/migrations/003_unit_unlocks_and_student_extras.sql
+similarity index 100%
+rename from database/migrations/003_unit_unlocks_and_student_extras.sql
+rename to docs/prototypes/member-app-2026-11-26/database/migrations/003_unit_unlocks_and_student_extras.sql
+diff --git a/docs/HANDOVER_FOR_DEVELOPER.md b/docs/prototypes/member-app-2026-11-26/docs/HANDOVER_FOR_DEVELOPER.md
+similarity index 100%
+rename from docs/HANDOVER_FOR_DEVELOPER.md
+rename to docs/prototypes/member-app-2026-11-26/docs/HANDOVER_FOR_DEVELOPER.md
+diff --git a/docs/README_START_HERE.md b/docs/prototypes/member-app-2026-11-26/docs/README_START_HERE.md
+similarity index 100%
+rename from docs/README_START_HERE.md
+rename to docs/prototypes/member-app-2026-11-26/docs/README_START_HERE.md
+diff --git a/docs/STAGE1_SETUP.md b/docs/prototypes/member-app-2026-11-26/docs/STAGE1_SETUP.md
+similarity index 100%
+rename from docs/STAGE1_SETUP.md
+rename to docs/prototypes/member-app-2026-11-26/docs/STAGE1_SETUP.md
+diff --git a/docs/TEST_CHECKLIST.md b/docs/prototypes/member-app-2026-11-26/docs/TEST_CHECKLIST.md
+similarity index 100%
+rename from docs/TEST_CHECKLIST.md
+rename to docs/prototypes/member-app-2026-11-26/docs/TEST_CHECKLIST.md
+diff --git a/docs/lesson_text_for_proofreading.md b/docs/prototypes/member-app-2026-11-26/docs/lesson_text_for_proofreading.md
+similarity index 100%
+rename from docs/lesson_text_for_proofreading.md
+rename to docs/prototypes/member-app-2026-11-26/docs/lesson_text_for_proofreading.md
+diff --git a/frontend/change-password.html b/docs/prototypes/member-app-2026-11-26/frontend/change-password.html
+similarity index 100%
+rename from frontend/change-password.html
+rename to docs/prototypes/member-app-2026-11-26/frontend/change-password.html
+diff --git a/frontend/css/fk-theme.css b/docs/prototypes/member-app-2026-11-26/frontend/css/fk-theme.css
+similarity index 100%
+rename from frontend/css/fk-theme.css
+rename to docs/prototypes/member-app-2026-11-26/frontend/css/fk-theme.css
+diff --git a/frontend/exam-prep.html b/docs/prototypes/member-app-2026-11-26/frontend/exam-prep.html
+similarity index 100%
+rename from frontend/exam-prep.html
+rename to docs/prototypes/member-app-2026-11-26/frontend/exam-prep.html
+diff --git a/frontend/index.html b/docs/prototypes/member-app-2026-11-26/frontend/index.html
+similarity index 100%
+rename from frontend/index.html
+rename to docs/prototypes/member-app-2026-11-26/frontend/index.html
+diff --git a/frontend/js/fk-ui.js b/docs/prototypes/member-app-2026-11-26/frontend/js/fk-ui.js
+similarity index 100%
+rename from frontend/js/fk-ui.js
+rename to docs/prototypes/member-app-2026-11-26/frontend/js/fk-ui.js
+diff --git a/frontend/js/session.js b/docs/prototypes/member-app-2026-11-26/frontend/js/session.js
+similarity index 100%
+rename from frontend/js/session.js
+rename to docs/prototypes/member-app-2026-11-26/frontend/js/session.js
+diff --git a/frontend/lesson.html b/docs/prototypes/member-app-2026-11-26/frontend/lesson.html
+similarity index 100%
+rename from frontend/lesson.html
+rename to docs/prototypes/member-app-2026-11-26/frontend/lesson.html
+diff --git a/frontend/lessons.html b/docs/prototypes/member-app-2026-11-26/frontend/lessons.html
+similarity index 100%
+rename from frontend/lessons.html
+rename to docs/prototypes/member-app-2026-11-26/frontend/lessons.html
+diff --git a/frontend/login.html b/docs/prototypes/member-app-2026-11-26/frontend/login.html
+similarity index 100%
+rename from frontend/login.html
+rename to docs/prototypes/member-app-2026-11-26/frontend/login.html
+diff --git a/frontend/progress.html b/docs/prototypes/member-app-2026-11-26/frontend/progress.html
+similarity index 100%
+rename from frontend/progress.html
+rename to docs/prototypes/member-app-2026-11-26/frontend/progress.html
+diff --git a/frontend/quiz-me.html b/docs/prototypes/member-app-2026-11-26/frontend/quiz-me.html
+similarity index 100%
+rename from frontend/quiz-me.html
+rename to docs/prototypes/member-app-2026-11-26/frontend/quiz-me.html
+diff --git a/frontend/staff.html b/docs/prototypes/member-app-2026-11-26/frontend/staff.html
+similarity index 100%
+rename from frontend/staff.html
+rename to docs/prototypes/member-app-2026-11-26/frontend/staff.html
+diff --git a/frontend/student-dashboard.html b/docs/prototypes/member-app-2026-11-26/frontend/student-dashboard.html
+similarity index 100%
+rename from frontend/student-dashboard.html
+rename to docs/prototypes/member-app-2026-11-26/frontend/student-dashboard.html
+diff --git a/frontend/style.css b/docs/prototypes/member-app-2026-11-26/frontend/style.css
+similarity index 100%
+rename from frontend/style.css
+rename to docs/prototypes/member-app-2026-11-26/frontend/style.css
+diff --git a/frontend/tasks.html b/docs/prototypes/member-app-2026-11-26/frontend/tasks.html
+similarity index 100%
+rename from frontend/tasks.html
+rename to docs/prototypes/member-app-2026-11-26/frontend/tasks.html
+diff --git a/tests/frontend-mock/README.md b/docs/prototypes/member-app-2026-11-26/tests/frontend-mock/README.md
+similarity index 100%
+rename from tests/frontend-mock/README.md
+rename to docs/prototypes/member-app-2026-11-26/tests/frontend-mock/README.md
+diff --git a/tests/frontend-mock/interact.js b/docs/prototypes/member-app-2026-11-26/tests/frontend-mock/interact.js
+similarity index 100%
+rename from tests/frontend-mock/interact.js
+rename to docs/prototypes/member-app-2026-11-26/tests/frontend-mock/interact.js
+diff --git a/tests/frontend-mock/run.js b/docs/prototypes/member-app-2026-11-26/tests/frontend-mock/run.js
+similarity index 100%
+rename from tests/frontend-mock/run.js
+rename to docs/prototypes/member-app-2026-11-26/tests/frontend-mock/run.js
+diff --git a/tests/frontend-mock/server.js b/docs/prototypes/member-app-2026-11-26/tests/frontend-mock/server.js
+similarity index 100%
+rename from tests/frontend-mock/server.js
+rename to docs/prototypes/member-app-2026-11-26/tests/frontend-mock/server.js
+diff --git a/uploads/README.txt b/docs/prototypes/member-app-2026-11-26/uploads/README.txt
+similarity index 100%
+rename from uploads/README.txt
+rename to docs/prototypes/member-app-2026-11-26/uploads/README.txt
+diff --git a/uploads/past-papers/2018-grade10-final-exam-demo.pdf b/docs/prototypes/member-app-2026-11-26/uploads/past-papers/2018-grade10-final-exam-demo.pdf
+similarity index 100%
+rename from uploads/past-papers/2018-grade10-final-exam-demo.pdf
+rename to docs/prototypes/member-app-2026-11-26/uploads/past-papers/2018-grade10-final-exam-demo.pdf
+diff --git a/src/Auth/.gitkeep b/src/Auth/.gitkeep
+new file mode 100644
+index 0000000..e69de29
+diff --git a/src/Http/.gitkeep b/src/Http/.gitkeep
+new file mode 100644
+index 0000000..e69de29
+diff --git a/src/Repository/.gitkeep b/src/Repository/.gitkeep
+new file mode 100644
+index 0000000..e69de29
+diff --git a/src/Service/.gitkeep b/src/Service/.gitkeep
+new file mode 100644
+index 0000000..e69de29
+diff --git a/src/Support/HttpException.php b/src/Support/HttpException.php
+new file mode 100644
+index 0000000..d518c83
+--- /dev/null
++++ b/src/Support/HttpException.php
+@@ -0,0 +1,42 @@
++<?php
++declare(strict_types=1);
++
++namespace MembersPortal\Support;
++
++use RuntimeException;
++
++/**
++ * An error that carries an HTTP status and a message safe to show a user.
++ *
++ * Why this exists in the skeleton: it is the type every layer will throw
++ * across a boundary. Anything that is NOT this class is an internal failure
++ * — logged, and answered with a generic message. Keeping the two apart is
++ * what makes "did I mean to show this text to a member?" a decision rather
++ * than an accident.
++ *
++ * Statuses used so far: 404 (no such page), 500 (unexpected).
++ */
++final class HttpException extends RuntimeException
++{
++    private int $status;
++
++    /** Extra public fields (e.g. a machine-readable code). Never diagnostics. */
++    private array $publicPayload;
++
++    public function __construct(int $status, string $message, array $publicPayload = [])
++    {
++        parent::__construct($message);
++        $this->status = $status;
++        $this->publicPayload = $publicPayload;
++    }
++
++    public function status(): int
++    {
++        return $this->status;
++    }
++
++    public function publicPayload(): array
++    {
++        return $this->publicPayload;
++    }
++}
+diff --git a/src/Support/bootstrap.php b/src/Support/bootstrap.php
+new file mode 100644
+index 0000000..094d8df
+--- /dev/null
++++ b/src/Support/bootstrap.php
+@@ -0,0 +1,25 @@
++<?php
++/**
++ * Members web app — bootstrap.
++ *
++ * This is the ONLY file that loads anything, and it exists for one reason:
++ * the deployment host has no Composer (ADR-0001), so first-party classes are
++ * listed here by hand, in dependency order.
++ *
++ * Nothing else is wired yet. There is no configuration, no database, no
++ * session and no HTTP entry point: the application has no behaviour, so this
++ * file has nothing to start.
++ *
++ * HOW TO ADD A CLASS
++ *   1. create the file under src/
++ *   2. add one require_once line below, in dependency order
++ *   3. keep the dependency direction one-way: Http -> Service -> Repository
++ *
++ * Paths are written as __DIR__ . '/…' so that a static include check can
++ * resolve them. A path built from a constant reads as "dynamic" to such a
++ * check and needs a permanent allowlist entry.
++ */
++
++declare(strict_types=1);
++
++require_once __DIR__ . '/HttpException.php';
+diff --git a/src/View/.gitkeep b/src/View/.gitkeep
+new file mode 100644
+index 0000000..e69de29
+diff --git a/templates/layouts/.gitkeep b/templates/layouts/.gitkeep
+new file mode 100644
+index 0000000..e69de29
+diff --git a/templates/pages/.gitkeep b/templates/pages/.gitkeep
+new file mode 100644
+index 0000000..e69de29
