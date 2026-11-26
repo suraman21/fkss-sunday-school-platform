@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="am">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>ፈለገ ቅዱሳን | Lessons</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="css/fk-theme.css">
+</head>
+<body>
+    <header id="fk-header"></header>
+    <main class="fk-page">
+        <div class="fk-card fk-pagehead"><h1 class="fk-title" data-i18n="les.title"></h1><p class="fk-sub" data-i18n="les.sub"></p></div>
+        <div id="path"><div class="fk-skel"></div></div>
+    </main>
+    <div id="live" class="fk-toast" role="status" aria-live="polite" hidden></div>
+    <script src="js/session.js"></script>
+    <script src="js/fk-ui.js"></script>
+    <script>
+
+FK.addStrings({
+ am: { "les.title": "የትምህርት ጉዞዬ", "les.sub": "መምህርዎ የከፈታቸውን ትምህርቶች ደረጃ በደረጃ ይማሩ።", "les.overall": "አጠቃላይ እድገት", "les.of": "{a} ከ {b} ትምህርቶች ተጠናቀዋል",
+  "les.unit": "ምዕራፍ {n}", "les.continue": "ትምህርትዎን ይቀጥሉ", "les.start": "ቀጥል", "les.waiting": "መምህርዎ ቀጣዩን ትምህርት እስኪከፍት ይጠብቁ።", "les.none": "ለክፍልዎ ገና ትምህርት አልተጨመረም።",
+  "les.locked": "ይህ ትምህርት መምህርዎ እስኪከፍተው እየጠበቀ ነው።", "les.stDone": "ተጠናቋል", "les.stOpen": "ክፍት", "les.stLocked": "ተቆልፏል", "les.allDone": "ሁሉንም ትምህርቶች አጠናቀዋል።",
+  "les.waitQuiz": "ይህን ምዕራፍ ለመክፈት የቀደመውን ምዕራፍ ትምህርቶች አጠናቀው ጥያቄውን ማለፍ አለብዎት።", "les.waitTeacher": "የቀደመውን ምዕራፍ ጥያቄ አልፈዋል። መምህርዎ ይህን ምዕራፍ እስኪከፍት ይጠብቁ።",
+  "les.quiz": "የምዕራፍ ማጠቃለያ ጥያቄ", "les.quizLocked": "ጥያቄውን ለመጀመር የምዕራፉን ሁሉንም ትምህርቶች ያጠናቅቁ።", "les.quizPassed": "ጥያቄውን አልፈዋል።", "les.quizGo": "ጥያቄውን ጀምር" },
+ en: { "les.title": "My learning journey", "les.sub": "Learn step by step through the lessons your teacher has opened.", "les.overall": "Overall progress", "les.of": "{a} of {b} lessons completed",
+  "les.unit": "Unit {n}", "les.continue": "Continue learning", "les.start": "Continue", "les.waiting": "Waiting for your teacher to open the next lesson.", "les.none": "No lessons have been added for your grade yet.",
+  "les.locked": "This lesson is waiting for your teacher to unlock it.", "les.stDone": "completed", "les.stOpen": "open", "les.stLocked": "locked", "les.allDone": "You have completed every lesson.",
+  "les.waitQuiz": "To open this unit, finish the previous unit's lessons and pass its quiz.", "les.waitTeacher": "You passed the previous unit's quiz. Wait for your teacher to open this unit.",
+  "les.quiz": "Unit quiz", "les.quizLocked": "Finish all lessons of this unit to start the quiz.", "les.quizPassed": "You passed the quiz.", "les.quizGo": "Start the quiz" }
+});
+var liveTimer = null;
+function toast(text) { var n = document.getElementById("live"); n.textContent = text; n.hidden = false; clearTimeout(liveTimer); liveTimer = setTimeout(function () { n.hidden = true; }, 3800); }
+
+async function load() {
+  var host = document.getElementById("path");
+  host.textContent = ""; host.appendChild(FK.el("div", { class: "fk-skel" }));
+  var me = await FK.me(); if (!me) { return; }
+  var r = await FK.api("/api/learning/path");
+  host.textContent = "";
+  if (!r.ok) { FK.message(host, r.data.message || FK.t("common.error"), "error", load); return; }
+  var d = r.data;
+  if (d.totals.total === 0) { FK.message(host, FK.t("les.none")); return; }
+
+  host.appendChild(FK.el("section", { class: "fk-card" }, [FK.el("div", { class: "fk-row" }, [
+    FK.el("div", { class: "fk-ring", style: "--p:" + (d.percent || 0), role: "img", "aria-label": (d.percent || 0) + "%" }, [FK.el("div", { text: (d.percent || 0) + "%" })]),
+    FK.el("div", { style: "flex:1 1 220px" }, [
+      FK.el("h2", { text: FK.t("les.overall") }), FK.el("p", { text: FK.t("les.of", { a: d.totals.completed, b: d.totals.total }) }),
+      d.current_lesson ? FK.el("a", { class: "fk-btn gold", href: "lesson.html?id=" + d.current_lesson.lesson_id, text: FK.t("les.continue") + " →" })
+        : FK.el("p", { class: d.totals.completed === d.totals.total ? "fk-ok" : "fk-note", text: d.totals.completed === d.totals.total ? FK.t("les.allDone") : FK.t("les.waiting") })
+    ])
+  ])]));
+
+  d.subjects.forEach(function (s) {
+    host.appendChild(FK.el("h2", { class: "fk-section-title fk-onbg", text: s.name }));
+    host.appendChild(FK.el("div", { class: "fk-bar", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(s.percent || 0), "aria-label": s.name }, [FK.el("span", { style: "width:" + (s.percent || 0) + "%" })]));
+    s.units.forEach(function (u) {
+      host.appendChild(FK.el("div", { class: "fk-unit-head" + (u.open ? "" : " locked") }, [
+        FK.el("h3", { text: FK.t("les.unit", { n: u.number }) + " · " + u.title }), FK.el("span", { text: u.completed + "/" + u.total })
+      ]));
+      if (!u.open) { host.appendChild(FK.el("p", { class: "fk-unit-note", text: u.waiting_for === "teacher" ? FK.t("les.waitTeacher") : FK.t("les.waitQuiz") })); }
+      var pathEl = FK.el("div", { class: "fk-path" });
+      u.lessons.forEach(function (l, i) {
+        var isCurrent = d.current_lesson && d.current_lesson.lesson_id === l.lesson_id;
+        var stateText = l.state === "completed" ? FK.t("les.stDone") : (l.state === "available" ? FK.t("les.stOpen") : FK.t("les.stLocked"));
+        var label = l.lesson_number + ". " + l.title + " — " + stateText;
+        var icon = l.state === "completed" ? "check" : (l.state === "available" ? "play" : "lock");
+        var node;
+        if (l.state === "locked") {
+          node = FK.el("button", { type: "button", class: "fk-node locked", "aria-disabled": "true", "aria-label": label }, [FK.svg(icon)]);
+          node.addEventListener("click", function () { toast(u.open ? FK.t("les.locked") : (u.waiting_for === "teacher" ? FK.t("les.waitTeacher") : FK.t("les.waitQuiz"))); });
+        } else {
+          node = FK.el("a", { href: "lesson.html?id=" + l.lesson_id, class: "fk-node " + l.state + (isCurrent ? " current" : ""), "aria-label": label }, [FK.svg(icon)]);
+        }
+        pathEl.appendChild(FK.el("div", { class: "fk-step o" + (i % 4) + (l.state === "locked" ? " locked" : "") }, [
+          isCurrent ? FK.el("span", { class: "fk-tag", text: FK.t("les.start") }) : null, node,
+          FK.el("div", { class: "fk-step-label" }, [l.title, FK.el("small", { text: l.lesson_number })])
+        ]));
+      });
+      if (u.quiz.required) {
+        var qState = u.quiz.passed ? "passed" : (u.quiz.available ? "available" : "locked");
+        var qLabel = FK.t("les.quiz") + " — " + (qState === "passed" ? FK.t("les.quizPassed") : (qState === "available" ? FK.t("les.quizGo") : FK.t("les.quizLocked")));
+        var qNode;
+        if (qState === "locked") {
+          qNode = FK.el("button", { type: "button", class: "fk-node quiz locked", "aria-disabled": "true", "aria-label": qLabel }, [FK.svg("lock")]);
+          qNode.addEventListener("click", function () { toast(FK.t("les.quizLocked")); });
+        } else {
+          qNode = FK.el("a", { href: "quiz-me.html?subject=" + s.subject_id + "&unit=" + u.chapter_id, class: "fk-node quiz " + (qState === "passed" ? "completed" : "available"), "aria-label": qLabel }, [FK.svg(qState === "passed" ? "check" : "trophy")]);
+        }
+        pathEl.appendChild(FK.el("div", { class: "fk-step o1" + (qState === "locked" ? " locked" : "") }, [
+          qState === "available" ? FK.el("span", { class: "fk-tag", text: FK.t("les.quiz") }) : null, qNode, FK.el("div", { class: "fk-step-label", text: FK.t("les.quiz") })
+        ]));
+      }
+      host.appendChild(pathEl);
+    });
+  });
+}
+load();
+
+    </script>
+</body>
+</html>

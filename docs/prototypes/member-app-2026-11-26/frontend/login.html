@@ -1,0 +1,481 @@
+
+<!DOCTYPE html>
+<html lang="am">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>መግቢያ - ፈለገ ቅዱሳን</title>
+
+    <link
+        rel="stylesheet"
+        href="style.css"
+    >
+
+    <link rel="stylesheet" href="css/fk-theme.css">
+</head>
+
+
+<body class="login-page">
+
+
+    <!-- =========================================
+         SIMPLE HEADER
+         ========================================= -->
+
+    <header class="simple-header">
+
+        <div class="language-selector">
+
+            <button
+                class="language-button"
+                type="button"
+                id="language-button"
+            >
+                🌐 አማ
+            </button>
+
+
+            <div
+                class="language-menu"
+                id="language-menu"
+            >
+
+                <button
+                    type="button"
+                    id="amharic-language"
+                >
+                    🇪🇹 አማርኛ
+                </button>
+
+                <button
+                    type="button"
+                    id="english-language"
+                >
+                    🇬🇧 English
+                </button>
+
+            </div>
+
+        </div>
+
+    </header>
+
+
+
+    <!-- =========================================
+         LOGIN CONTENT
+         ========================================= -->
+
+    <main class="login-main">
+
+        <div class="login-container">
+
+
+            <h1>
+                ፈለገ ቅዱሳን
+            </h1>
+
+
+            <h2>
+                መግቢያ
+            </h2>
+
+
+            <p>
+                ወደ የእርስዎ የተማሪ መለያ ለመግባት
+                የተማሪ መለያዎን እና የይለፍ ቃልዎን
+                ያስገቡ።
+            </p>
+
+
+
+            <!-- =================================
+                 LOGIN FORM
+                 ================================= -->
+
+            <form
+                id="login-form"
+            >
+
+
+                <label
+                    for="student-id"
+                >
+                    የተማሪ መለያ
+                </label>
+
+
+                <input
+                    type="text"
+                    id="student-id"
+                    name="student_id"
+                    placeholder="ለምሳሌ FK-1001"
+                    autocomplete="username"
+                    required
+                >
+
+
+
+                <label
+                    for="password"
+                >
+                    የይለፍ ቃል
+                </label>
+
+
+                <input
+                    type="password"
+                    id="password"
+                    name="password"
+                    placeholder="የይለፍ ቃልዎን ያስገቡ"
+                    autocomplete="current-password"
+                    required
+                >
+
+
+
+                <p id="login-message" class="fk-message" role="alert" aria-live="polite"></p>
+
+                <button
+                    type="submit"
+                    class="login-button"
+                >
+                    ግባ
+                </button>
+
+
+            </form>
+
+
+        </div>
+
+    </main>
+
+
+
+    <!-- =========================================
+         JAVASCRIPT
+         ========================================= -->
+
+    <script src="js/session.js"></script>
+    <script src="js/fk-ui.js"></script>
+    <script>
+
+
+        /* =========================================
+           GET ELEMENTS
+           ========================================= */
+
+        const loginForm =
+            document.getElementById("login-form");
+
+        const languageButton =
+            document.getElementById("language-button");
+
+        const languageMenu =
+            document.getElementById("language-menu");
+
+        const amharicLanguage =
+            document.getElementById("amharic-language");
+
+        const englishLanguage =
+            document.getElementById("english-language");
+
+
+
+        /* =========================================
+           LANGUAGE MENU
+           ========================================= */
+
+        languageButton.addEventListener(
+            "click",
+            function (event) {
+
+                event.stopPropagation();
+
+                languageMenu.classList.toggle("show");
+
+            }
+        );
+
+
+        languageMenu.addEventListener(
+            "click",
+            function (event) {
+
+                event.stopPropagation();
+
+            }
+        );
+
+
+        document.addEventListener(
+            "click",
+            function () {
+
+                languageMenu.classList.remove("show");
+
+            }
+        );
+
+
+
+        /* =========================================
+           AMHARIC
+           ========================================= */
+
+        amharicLanguage.addEventListener(
+            "click",
+            function () {
+
+                sessionStorage.setItem(
+                    "language",
+                    "am"
+                );
+
+                languageButton.textContent =
+                    "🌐 አማ";
+
+                languageMenu.classList.remove(
+                    "show"
+                );
+
+            }
+        );
+
+
+
+        /* =========================================
+           ENGLISH
+           ========================================= */
+
+        englishLanguage.addEventListener(
+            "click",
+            function () {
+
+                sessionStorage.setItem(
+                    "language",
+                    "en"
+                );
+
+                languageButton.textContent =
+                    "🌐 EN";
+
+                languageMenu.classList.remove(
+                    "show"
+                );
+
+            }
+        );
+
+
+
+        /* =========================================
+           RESTORE LANGUAGE
+           ========================================= */
+
+        const savedLanguage =
+            sessionStorage.getItem("language");
+
+
+        if (savedLanguage === "en") {
+
+            languageButton.textContent =
+                "🌐 EN";
+
+        } else {
+
+            languageButton.textContent =
+                "🌐 አማ";
+
+        }
+
+
+
+        /* =========================================
+           LOGIN
+           ========================================= */
+
+        loginForm.addEventListener(
+            "submit",
+            async function (event) {
+
+                event.preventDefault();
+
+
+                const studentId =
+                    document
+                        .getElementById("student-id")
+                        .value
+                        .trim();
+
+
+                const password =
+                    document
+                        .getElementById("password")
+                        .value;
+
+
+                /* ================================
+                   BASIC VALIDATION
+                   ================================ */
+
+                if (!studentId || !password) {
+
+                    showLoginMessage(
+                        "እባክዎ የተማሪ መለያ እና የይለፍ ቃል ያስገቡ።"
+                    );
+
+                    return;
+
+                }
+
+
+
+                try {
+
+
+                    /* ================================
+                       LOGIN API
+                       ================================ */
+
+                    const response =
+                        await fetch(
+                            "/api/auth/login",
+                            {
+                                method: "POST",
+
+                                headers: {
+                                    "Content-Type":
+                                        "application/json"
+                                },
+
+                                body: JSON.stringify({
+                                    student_id:
+                                        studentId,
+
+                                    password:
+                                        password
+                                })
+                            }
+                        );
+
+
+
+                    /* ================================
+                       READ RESPONSE
+                       ================================ */
+
+                    const data =
+                        await response.json();
+
+
+
+                    /* ================================
+                       LOGIN FAILED
+                       ================================ */
+
+                    if (
+                        !response.ok ||
+                        !data.success
+                    ) {
+
+                        showLoginMessage(
+                            data.message ||
+                            "መግባት አልተቻለም። እባክዎ መረጃዎን ያረጋግጡ።"
+                        );
+
+                        return;
+
+                    }
+
+
+
+                    /* ================================
+                       SAVE LOGGED-IN STUDENT
+                       ================================
+
+                       IMPORTANT:
+
+                       The dashboard and Tasks page
+                       read the student from:
+
+                       sessionStorage.getItem("student")
+
+                       Therefore we save the COMPLETE
+                       student object returned by the API.
+                    */
+
+                    sessionStorage.setItem(
+                        "student",
+                        JSON.stringify(
+                            data.student
+                        )
+                    );
+
+
+
+                    /* ================================
+                       SAVE LANGUAGE
+                       ================================ */
+
+                    if (
+                        !sessionStorage.getItem(
+                            "language"
+                        )
+                    ) {
+
+                        sessionStorage.setItem(
+                            "language",
+                            "am"
+                        );
+
+                    }
+
+
+
+                    /* ================================
+                       GO TO DASHBOARD
+                       ================================ */
+
+                    window.location.href = data.mustChangePassword
+                        ? "change-password.html"
+                        : "student-dashboard.html";
+
+
+                } catch (error) {
+
+
+                    /* ================================
+                       CONNECTION ERROR
+                       ================================ */
+
+                    console.error(
+                        "Login error:",
+                        error
+                    );
+
+
+                    showLoginMessage(
+                        "ከአገልጋዩ ጋር መገናኘት አልተቻለም።"
+                    );
+
+                }
+
+            }
+        );
+
+    </script>
+
+
+</body>
+
+</html>
+

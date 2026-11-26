@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="am">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>ፈለገ ቅዱሳን | Progress</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="css/fk-theme.css">
+</head>
+<body>
+    <header id="fk-header"></header>
+    <main class="fk-page">
+        <div class="fk-card fk-pagehead"><h1 class="fk-title" data-i18n="pr.title"></h1><p class="fk-sub" data-i18n="pr.sub"></p></div>
+        <div id="pr"><div class="fk-skel"></div></div>
+    </main>
+    <div id="live" class="fk-toast" role="status" aria-live="polite" hidden></div>
+    <script src="js/session.js"></script>
+    <script src="js/fk-ui.js"></script>
+    <script>
+
+FK.addStrings({
+ am: { "pr.title": "እድገቴ", "pr.sub": "ይህ ገጽ ከተመዘገቡ እንቅስቃሴዎችዎ ብቻ የተሰላ ነው።",
+  "pr.lessons": "ትምህርቶች", "pr.of": "{a} ከ {b} ተጠናቀዋል", "pr.avail": "ክፍት", "pr.locked": "የተቆለፉ", "pr.subjects": "በትምህርት አይነት", "pr.quizzes": "የጥያቄ ሙከራዎች",
+  "pr.completed": "የተጠናቀቁ", "pr.passed": "ያለፉባቸው", "pr.avg": "አማካይ ውጤት", "pr.noQuiz": "እስካሁን ጥያቄ አልጨረሱም", "pr.miles": "ስኬቶች", "pr.activity": "የቅርብ ጊዜ እንቅስቃሴ",
+  "pr.noAct": "እስካሁን ምንም እንቅስቃሴ የለም። የመጀመሪያ ትምህርትዎን ይጀምሩ።", "pr.next": "ቀጥሎ ምን ይማሩ?", "pr.nextBtn": "ትምህርቱን ክፈት", "pr.nextNone": "አሁን የተከፈተ አዲስ ትምህርት የለም። መምህርዎ እስኪከፍት ድረስ ይለማመዱ።", "pr.toExam": "የፈተና ዝግጅት",
+  "pr.cheer0": "የመጀመሪያ ትምህርትዎን ዛሬ ይጀምሩ!", "pr.cheerWeek": "በዚህ ሳምንት በ{n} ቀናት ተምረዋል፤ እጅግ ጥሩ!", "pr.cheerWait": "ቀጣዩ ትምህርትዎ ይጠብቅዎታል።",
+  "pr.week": "ይህ ሳምንት", "pr.chart": "የጥያቄ ውጤቶችዎ", "pr.chartNeed": "የውጤት ሰንጠረዥ ለማየት ቢያንስ 2 ጥያቄዎችን ይጨርሱ።", "pr.second": "እንደገና ማየት የሚገባቸው", "pr.secondNone": "አሁን እንደገና መከለስ የሚያስፈልገው ትምህርት የለም።",
+  "pr.exam": "የፈተና ዝግጅት", "pr.examText": "የጥናት መርሐ ግብር እና የብሔራዊ ፈተና ጉዞ ሲዘጋጁ እድገትዎ እዚህ ይታያል። እስካሁን ያልተዘጋጁ ናቸው።", "pr.open": "ትምህርቱን ክፈት",
+  "m.first_lesson": "የመጀመሪያ ትምህርት ተጠናቀቀ", "m.five_lessons": "5 ትምህርቶች ተጠናቀዋል", "m.first_quiz": "የመጀመሪያ ጥያቄ ተጠናቀቀ", "m.first_pass": "በጥያቄ አልፈዋል", "m.subject_done": "አንድ ሙሉ ትምህርት ተጠናቀቀ",
+  "act.lesson": "ትምህርት ተጠናቀቀ፦ {title}", "act.quiz": "የጥያቄ ውጤት፦ {score}% — {result}", "q.passed": "አልፈዋል", "q.failed": "አላለፉም" },
+ en: { "pr.title": "My progress", "pr.sub": "Everything on this page is calculated from your saved activity.",
+  "pr.lessons": "Lessons", "pr.of": "{a} of {b} completed", "pr.avail": "open", "pr.locked": "locked", "pr.subjects": "By subject", "pr.quizzes": "Quiz attempts",
+  "pr.completed": "Completed", "pr.passed": "Passed", "pr.avg": "Average score", "pr.noQuiz": "No finished quiz yet", "pr.miles": "Milestones", "pr.activity": "Recent activity",
+  "pr.noAct": "No activity yet. Start your first lesson.", "pr.next": "What to study next", "pr.nextBtn": "Open the lesson", "pr.nextNone": "No new lesson is open right now. Practise until your teacher opens the next one.", "pr.toExam": "Exam Prep",
+  "pr.cheer0": "Start your first lesson today!", "pr.cheerWeek": "You studied on {n} days this week. Well done!", "pr.cheerWait": "Your next lesson is waiting for you.",
+  "pr.week": "This week", "pr.chart": "Your quiz scores", "pr.chartNeed": "Finish at least 2 quizzes to see the score chart.", "pr.second": "Worth a second look", "pr.secondNone": "No lesson needs another look right now.",
+  "pr.exam": "Exam Prep", "pr.examText": "Your study-plan and National Exam Roadmap progress will appear here once those parts exist. They have not been built yet.", "pr.open": "Open the lesson",
+  "m.first_lesson": "Completed your first lesson", "m.five_lessons": "Completed 5 lessons", "m.first_quiz": "Finished your first quiz", "m.first_pass": "Passed a quiz", "m.subject_done": "Completed a whole subject",
+  "act.lesson": "Lesson completed: {title}", "act.quiz": "Quiz score: {score}% — {result}", "q.passed": "Passed", "q.failed": "Not passed" }
+});
+var host = document.getElementById("pr");
+function stat(value, label) { return FK.el("div", { class: "fk-card" }, [FK.el("div", { class: "fk-stat", text: value }, [FK.el("small", { text: label })])]); }
+function title(text) { return FK.el("h2", { class: "fk-section-title fk-onbg", text: text }); }
+
+function chart(points) {
+  var NS = "http://www.w3.org/2000/svg", W = 320, H = 150, L = 30, B = 22, T = 10, R = 10;
+  var svg = document.createElementNS(NS, "svg"); svg.setAttribute("viewBox", "0 0 " + W + " " + H); svg.setAttribute("class", "fk-chart"); svg.setAttribute("role", "img"); svg.setAttribute("aria-label", FK.t("pr.chart"));
+  function mk(tag, attrs, text) { var e = document.createElementNS(NS, tag); Object.keys(attrs).forEach(function (k) { e.setAttribute(k, attrs[k]); }); if (text) { e.textContent = text; } return e; }
+  [0, 50, 100].forEach(function (v) { var y = T + (H - T - B) * (1 - v / 100); svg.appendChild(mk("line", { x1: L, x2: W - R, y1: y, y2: y, stroke: "#E2CD94", "stroke-width": 1 })); svg.appendChild(mk("text", { x: 4, y: y + 4, "font-size": 10, fill: "#6B4A3A" }, String(v))); });
+  var n = points.length, xs = function (i) { return L + (W - L - R) * (n === 1 ? 0.5 : i / (n - 1)); }, ys = function (v) { return T + (H - T - B) * (1 - Math.max(0, Math.min(100, v)) / 100); };
+  svg.appendChild(mk("polyline", { points: points.map(function (p, i) { return xs(i) + "," + ys(p.score); }).join(" "), fill: "none", stroke: "#C69334", "stroke-width": 3, "stroke-linejoin": "round" }));
+  points.forEach(function (p, i) { svg.appendChild(mk("circle", { cx: xs(i), cy: ys(p.score), r: 5, fill: p.passed ? "#F4B137" : "#FFFDF6", stroke: "#64211C", "stroke-width": 2 })); });
+  return svg;
+}
+
+async function load() {
+  var me = await FK.me(); if (!me) { return; }
+  var res = await Promise.all([FK.api("/api/progress"), FK.api("/api/progress/weak-topics")]);
+  var r = res[0], weak = res[1];
+  host.textContent = "";
+  if (!r.ok) { FK.message(host, r.data.message || FK.t("common.error"), "error", load); return; }
+  var p = r.data, pct = p.lessons.percent || 0;
+  var activeDays = (p.week || []).filter(function (d) { return d.active; }).length;
+  var cheer = p.lessons.completed === 0 && p.quizzes.completed === 0 ? FK.t("pr.cheer0") : (activeDays > 0 ? FK.t("pr.cheerWeek", { n: activeDays }) : FK.t("pr.cheerWait"));
+
+  var top = FK.el("section", { class: "fk-card" }, [FK.el("div", { class: "fk-row" }, [
+    FK.el("div", { class: "fk-ring", style: "--p:" + pct, role: "img", "aria-label": pct + "%" }, [FK.el("div", { text: pct + "%" })]),
+    FK.el("div", { style: "flex:1 1 200px" }, [FK.el("p", { class: "fk-cheer", text: cheer }), FK.el("p", { text: FK.t("pr.of", { a: p.lessons.completed, b: p.lessons.total }) }),
+      FK.el("p", { class: "fk-task-meta", text: p.lessons.available + " " + FK.t("pr.avail") + " · " + p.lessons.locked + " " + FK.t("pr.locked") })])
+  ])]);
+  var week = FK.el("div", { class: "fk-week", "aria-label": FK.t("pr.week") });
+  (p.week || []).forEach(function (d) {
+    var dt = new Date(d.date + "T12:00:00Z");
+    week.appendChild(FK.el("div", { class: d.active ? "on" : "" }, [FK.el("i"), FK.el("span", { text: dt.toLocaleDateString(FK.lang() === "en" ? "en-GB" : "am-ET", { weekday: "short", timeZone: "UTC" }) })]));
+  });
+  top.appendChild(week); host.appendChild(top);
+
+  host.appendChild(title(FK.t("pr.quizzes")));
+  var avg = p.quizzes.average_score;
+  host.appendChild(FK.el("div", { class: "fk-grid three" }, [stat(String(p.quizzes.completed), FK.t("pr.completed")), stat(String(p.quizzes.passed), FK.t("pr.passed")), stat(avg === null ? "—" : Math.round(avg) + "%", avg === null ? FK.t("pr.noQuiz") : FK.t("pr.avg"))]));
+
+  var cc = FK.el("section", { class: "fk-card", style: "margin-top:16px" }, [FK.el("h3", { text: FK.t("pr.chart") })]);
+  if ((p.score_history || []).length >= 2) { cc.appendChild(chart(p.score_history)); } else { cc.appendChild(FK.el("p", { class: "fk-task-meta", text: FK.t("pr.chartNeed") })); }
+  host.appendChild(cc);
+
+  if (p.subjects.length) {
+    host.appendChild(title(FK.t("pr.subjects")));
+    var sc = FK.el("section", { class: "fk-card" });
+    p.subjects.forEach(function (s) {
+      sc.appendChild(FK.el("p", { style: "margin:8px 0 4px" }, [FK.el("strong", { text: s.name }), " — " + FK.t("pr.of", { a: s.completed, b: s.total })]));
+      sc.appendChild(FK.el("div", { class: "fk-bar", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(s.percent || 0), "aria-label": s.name }, [FK.el("span", { style: "width:" + (s.percent || 0) + "%" })]));
+    });
+    host.appendChild(sc);
+  }
+
+  host.appendChild(title(FK.t("pr.next")));
+  var nc = FK.el("section", { class: "fk-card" });
+  if (p.next_lesson) { nc.appendChild(FK.el("p", { text: p.next_lesson.lesson_number + ". " + p.next_lesson.title })); nc.appendChild(FK.el("a", { class: "fk-btn gold", href: "lesson.html?id=" + p.next_lesson.lesson_id, text: FK.t("pr.nextBtn") })); }
+  else { nc.appendChild(FK.el("p", { text: FK.t("pr.nextNone") })); nc.appendChild(FK.el("a", { class: "fk-btn ghost", href: "exam-prep.html", text: FK.t("pr.toExam") })); }
+  host.appendChild(nc);
+
+  host.appendChild(title(FK.t("pr.second")));
+  var wc = FK.el("section", { class: "fk-card" });
+  if (!weak.ok || !weak.data.topics.length) { wc.appendChild(FK.el("p", { text: FK.t("pr.secondNone") })); }
+  else { weak.data.topics.forEach(function (t) { wc.appendChild(FK.el("div", { class: "fk-attempt" }, [FK.el("strong", { text: t.lesson_number + ". " + t.title }), t.open ? FK.el("a", { class: "fk-btn ghost", href: "lesson.html?id=" + t.lesson_id, text: FK.t("pr.open") }) : null])); }); }
+  host.appendChild(wc);
+
+  host.appendChild(title(FK.t("pr.miles")));
+  var ml = FK.el("ul", { class: "fk-miles" });
+  p.milestones.forEach(function (m) { ml.appendChild(FK.el("li", { class: m.earned ? "on" : "" }, [FK.svg("star"), FK.el("span", { text: FK.t("m." + m.key) + (m.earned ? " ✓" : "") })])); });
+  host.appendChild(ml);
+
+  host.appendChild(title(FK.t("pr.exam")));
+  host.appendChild(FK.el("section", { class: "fk-card" }, [FK.el("p", { class: "fk-task-meta", text: FK.t("pr.examText") })]));
+
+  host.appendChild(title(FK.t("pr.activity")));
+  var ac = FK.el("section", { class: "fk-card" });
+  if (!p.activity.length) { ac.appendChild(FK.el("p", { text: FK.t("pr.noAct") })); }
+  p.activity.forEach(function (a) {
+    var text = a.type === "lesson_completed" ? FK.t("act.lesson", { title: a.title }) : FK.t("act.quiz", { score: a.score === null ? "—" : Math.round(a.score), result: a.passed ? FK.t("q.passed") : FK.t("q.failed") });
+    ac.appendChild(FK.el("div", { class: "fk-attempt" }, [FK.el("span", { text: text }), FK.el("span", { class: "fk-task-meta", text: FK.date(a.at) })]));
+  });
+  host.appendChild(ac);
+}
+load();
+
+    </script>
+</body>
+</html>
