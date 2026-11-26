@@ -178,6 +178,28 @@ office can revoke a device, but the student then needs a code of purpose
 The machinery exists (`CodePurpose::DeviceAdd`); only the console action and the
 policy entry are missing.
 
+**What it took (built).** Two things were true, and both had to be handled:
+
+1. `issueCode()` only runs for `AcmTicketService::ISSUABLE_STATUSES`
+   (`approved`, `code_issued`, `grant_verified`, `expired`). An activated account
+   is at `active` and a device ceremony at `account_pending_device` — neither is
+   issuable. So "show the code panel on active tickets" cannot work; the panel
+   would offer a button that always refuses.
+2. Nothing else mints a `device_add` grant: the chained grant exists only inside
+   an in-flight activation.
+
+So recovery **creates a ticket**, through `AcmTicketService::create()`, at
+`submitted` like any other. The officer approves it, and the *existing* panel
+issues the `device_add` code from that ticket. Statuses are never rewritten and
+no grant is minted directly.
+
+Screen: `admin/acm_device_recovery.php` (nav: *Device recovery*), action
+`device_recover`. Only ACTIVE, `is_active = 1` accounts are offered; a suspended
+account is refused, not silently accepted. Requires a reason (3–2000 chars),
+audited as `acm.device_recovery.requested`. `acm_activation_tickets` has no
+discriminator column, so the reason is what tells a recovery ticket apart in
+audit — do not drop it.
+
 ### 5.3 Password forgotten, device intact
 Exists: `reset` purpose, 24 h, plus `/users/change-password` when logged in.
 **No new work.** Note the reset path leaves the existing device intact, which is
@@ -273,5 +295,26 @@ re-runnable, guarded ALTERs, no `FOREIGN KEY`, no JSON column type.
   *some* member exists by watching whether an approval eventually happens; they
   cannot do it at scale or in one request.
 - **`allow_url_fopen`/`curl` cost:** no. Not relevant here.
-- **I have not verified `DeviceService` replay protection (§6 R8).** It is the
-  one guard I am assuming rather than reading; the test in §9 covers it.
+- ~~I have not verified `DeviceService` replay protection (§6 R8).~~
+  **Now verified.** `DeviceService` consumes challenges and enrollment grants by
+  compare-and-set: `rowCount() !== 1` takes a deterministic `replayCompleted()`
+  branch. No assumption remains in §6.
+
+---
+
+## 12. What the console has now (built)
+
+| Screen | Action | Guard |
+|---|---|---|
+| `admin/acm_requests.php` | — (list) | `RES_REQUEST` `view` |
+| `admin/acm_request.php` | `request`, `request_approve`, `request_reject`, `request_claim` | `view` / `approve` / `reject` / `claim` |
+| `admin/acm_device_recovery.php` | `device_recover` | `RES_CODE` `issue` |
+
+`request_approve` computes `match_basis` **server-side** from the person the
+officer picked — the client cannot assert a stronger basis than the data
+supports. A searched person with no `member_id`/`guardian_id` shows
+*"none — link it first"* and links to the person screen, rather than failing
+after the officer has committed.
+
+Tests: `tests/security/test_acm_self_service_activation.py` — 37 pins covering
+the services, the endpoint contract, the console wiring and recovery.
