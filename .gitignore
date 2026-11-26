@@ -89,6 +89,9 @@ uploads/mezmur_zemarians/*
 
 # --- Patch files / scratch ---
 *.patch
+# Except handoff patches, which are deliberate deliverables
+# (see docs/handoff/README.md) and must survive a fresh clone.
+!docs/handoff/**/*.patch
 
 # Disposable large-APK browser fixtures and generated evidence
 /.cache/
