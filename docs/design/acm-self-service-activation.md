@@ -254,7 +254,7 @@ re-runnable, guarded ALTERs, no `FOREIGN KEY`, no JSON column type.
 |---|---|---|
 | 099 | `acm_self_service_requests.sql` | `acm_activation_requests` (id, uuid, request_ref, dedupe_hash UNIQUE, member_code, full_name_given, phone_last4_given, account_type, status enum, request_count, claimed_by, decided_by, match_basis, person_id, ticket_id, timestamps, indexes) + `acm_request_dedupe` if needed |
 | 100 | `acm_ticket_open_guard.sql` | generated `is_open` column + `UNIQUE (person_id, account_type, is_open)` with a pre-flight duplicate report (never auto-delete — the repo's rule, per migration 018/031) |
-| 101 | `acm_request_events.sql` | event vocabulary for the audit timeline (mirrors `acm_ticket_events`) |
+| 101 | `acm_request_bindings.sql` | `acm_authenticators` (`UNIQUE identifier_hash` across username/member-code namespaces) + `guardian_id` on requests. The event vocabulary lives in `099` with the table it describes. |
 
 ---
 
@@ -280,8 +280,13 @@ re-runnable, guarded ALTERs, no `FOREIGN KEY`, no JSON column type.
 ## 10. What the member app can build against, immediately
 
 `/acm/activate/request` (202), `/acm/activate/verify`, `/acm/activate/credentials`,
-`/acm/devices/register/{begin,complete}`, `/auth/login`, `/users/me`,
-`/members/me`. Everything except the first and last already exists.
+`/acm/devices/register/{begin,complete}`, `/auth/login`, `/members/me`.
+All of these now exist.
+
+`/users/me` already exists and works, but it returns the **platform user**.
+`/members/me` returns the **member** (via `apiSelfMemberId()`), which is what
+the app needs for a student's own record. Use `/members/me`; do not relax
+`GET /members/{id}` to get there (decision D4).
 
 ---
 
