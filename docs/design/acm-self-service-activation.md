@@ -224,7 +224,7 @@ statement per block, no `FOREIGN KEY`, no JSON column type.
 | **R5** | Student redeems a code twice concurrently | Already correct: `lockedCode()` takes `FOR UPDATE`; consume asserts `rowCount()===1`; loser gets the same generic failure. |
 | **R6** | Two `establishCredentials` calls with different idempotency keys | Already correct: grant consume is compare-and-set; second gets `GRANT_CONSUMED`. |
 | **R7** | Two `establishCredentials` with the **same** key (retry after timeout) | Already correct: idempotency lookup precedes consumption; the documented uncertain-response replay works. |
-| **R8** | Device registration replayed | `challenge_id` is single-use; `completeFull` commits the activation transaction. Assumed correct — **verify in `DeviceService`** before building on it. |
+| **R8** | Device registration replayed | `challenge_id` is single-use; `completeFull` commits the activation transaction. **Verified** (§11): challenges and enrollment grants are consumed by compare-and-set and `rowCount() !== 1` takes a deterministic `replayCompleted()` branch. |
 | **R9** | Expiry job vs live ceremony | Already handled: job takes `FOR UPDATE` and re-checks inside the transaction (`acm_pending_expiry.php:157,267`). |
 | **R10** | Request flood (public endpoint) | DB-backed atomic limiter (`SecurityRateLimiter`, `INSERT … ON DUPLICATE KEY UPDATE`) — already race-safe, verified. Buckets: per IP, per `member_code`, and a global ceiling. Plus a cap on open requests per `dedupe_hash`. |
 
