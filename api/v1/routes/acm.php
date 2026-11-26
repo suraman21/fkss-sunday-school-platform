@@ -251,13 +251,20 @@ if ($acmAction === 'activate/verify' && $method === 'POST') {
     if (isApiRateLimited('acm_verify', 30)) {
         err('Too many attempts. Wait a while and try again.', 429, ['code' => 'rate_limited']);
     }
-    $body = acmStrictBody(['selector', 'secret', 'purpose', 'installation_id']);
-    try {
-        $purpose = CodePurpose::from($body['purpose']);
-    } catch (\ValueError $e) {
-        err('The code is invalid or expired.', 400, ['code' => 'code_invalid']);
+    // Two accepted bodies, never mixed:
+    //   { otp, reference, installation_id }             activation (S12)
+    //   { selector, secret, purpose, installation_id }   device_add / reset
+    // acmStrictBody rejects unknown fields but permits both sets at once,
+    // so the ambiguity is refused explicitly below: a body carrying an OTP
+    // AND a selector pair would leave the server choosing which to trust.
+    $body = acmStrictBody(['otp', 'reference', 'ticket_no', 'selector', 'secret', 'purpose', 'installation_id']);
+    $hasOtp = isset($body['otp']) && $body['otp'] !== '';
+    $hasPair = (isset($body['selector']) && $body['selector'] !== '')
+        || (isset($body['secret']) && $body['secret'] !== '');
+    if ($hasOtp && $hasPair) {
+        err('The request is invalid.', 400, ['code' => 'invalid_request']);
     }
-    $installationId = $body['installation_id'];
+    $installationId = (string)($body['installation_id'] ?? '');
     if ($installationId !== '' && !preg_match('/^[A-Za-z0-9._:-]{1,128}$/', $installationId)) {
         err('The code is invalid or expired.', 400, ['code' => 'code_invalid']);
     }
@@ -266,11 +273,41 @@ if ($acmAction === 'activate/verify' && $method === 'POST') {
     // enforcement is on).
     $signal = $ceremony->networkSignal();
     $clientIp = OfficeNetworkSignal::resolveClientIp($_SERVER, $signal->trustedProxies());
+    $meta = new RequestMeta($clientIp, $installationId !== '' ? $installationId : null);
+
     try {
-        $grant = $ceremony->verifyCode(
-            $body['selector'], $body['secret'], $purpose,
-            new RequestMeta($clientIp, $installationId !== '' ? $installationId : null)
-        );
+        if ($hasOtp) {
+            // The six-digit path. The ticket number is the SCOPE of the
+            // comparison, not a secret: it is what stops a guess from being
+            // evaluated against every live code in the school. See
+            // ActivationService::verifyOtp.
+            // `reference` is the member's own request reference; `ticket_no`
+            // stays accepted as an alias for a member handed a ticket number
+            // in the office. verifyOtp() resolves either.
+            $reference = (string)($body['reference'] ?? '');
+            if ($reference === '') {
+                $reference = (string)($body['ticket_no'] ?? '');
+            }
+            $grant = $ceremony->verifyOtp($body['otp'], $reference, $meta);
+        } else {
+            try {
+                $purpose = CodePurpose::from((string)($body['purpose'] ?? ''));
+            } catch (\ValueError $e) {
+                err('The code is invalid or expired.', 400, ['code' => 'code_invalid']);
+            }
+            if ($purpose === CodePurpose::Activation) {
+                // Activation is an OTP now. Accepting the old pair here would
+                // keep two verification paths for one state, and the weaker
+                // one would be the one an attacker picks.
+                err('The code is invalid or expired.', 400, ['code' => 'code_invalid']);
+            }
+            $grant = $ceremony->verifyCode(
+                (string)($body['selector'] ?? ''),
+                (string)($body['secret'] ?? ''),
+                $purpose,
+                $meta
+            );
+        }
     } catch (ActivationException $e) {
         acmWireError($e);
     } catch (InvalidArgumentException $e) {

@@ -54,14 +54,24 @@ use SSMS\Acm\OfficeNetwork\OfficeNetworkSignal;
 use SSMS\Acm\Policy\AcmPolicy;
 use App\Services\PasswordPolicy;
 
+require_once __DIR__ . '/Otp.php';
+
 require_once dirname(__DIR__, 3) . '/admin/backend/services/PasswordPolicy.php';
 
 class ActivationService implements ActivationServiceContract
 {
-    /** Code TTLs in minutes (D3.2). */
-    public const CODE_TTL_MIN = ['activation' => 30, 'device_add' => 1440, 'reset' => 1440];
+    /**
+     * Code TTLs in minutes (D3.2).
+     *
+     * `activation` is 10 because it is a six-digit OTP: NIST SP 800-63B-4
+     * caps a transmitted secret at 10 minutes, and a code an officer read
+     * aloud is exactly that. `device_add` and `reset` keep the longer
+     * windows because they are still selector+secret (~39 bits) and are
+     * used by a member alone, without an officer in the room.
+     */
+    public const CODE_TTL_MIN = ['activation' => Otp::TTL_MIN, 'device_add' => 1440, 'reset' => 1440];
     /** Failures before a code burns (D3.2). */
-    public const CODE_MAX_ATTEMPTS = ['activation' => 5, 'device_add' => 10, 'reset' => 10];
+    public const CODE_MAX_ATTEMPTS = ['activation' => Otp::MAX_ATTEMPTS, 'device_add' => 10, 'reset' => 10];
     /** Grant TTL in minutes (D3.3: 15). */
     public const GRANT_TTL_MIN = 15;
     /** Per-(selector,IP) failures before throttling, inside the lazy window. */
@@ -175,9 +185,23 @@ class ActivationService implements ActivationServiceContract
             $selector = '';
             $secret = '';
             $codeId = 0;
+            // Activation is a six-digit OTP; the other purposes keep the
+            // selector+secret pair. Both live in the same row shape: for an
+            // OTP, `selector` held empty and `secret_hash` is the HMAC the
+            // (ticket-scoped) verifier can check. See Otp for why a 6-digit
+            // code cannot be its own lookup key.
+            $isOtp = $purpose === CodePurpose::Activation;
             for ($attempt = 0; $attempt < 5; $attempt++) {
-                $selector = CodeAlphabet::random(CodeAlphabet::SELECTOR_LEN);
-                $secret = CodeAlphabet::random(CodeAlphabet::SECRET_LEN);
+                $uuid = AcmPersonService::uuid4();
+                if ($isOtp) {
+                    $selector = '';
+                    $secret = Otp::generate();
+                    $storedHash = Otp::hash($secret, $uuid);
+                } else {
+                    $selector = CodeAlphabet::random(CodeAlphabet::SELECTOR_LEN);
+                    $secret = CodeAlphabet::random(CodeAlphabet::SECRET_LEN);
+                    $storedHash = password_hash($secret, PASSWORD_DEFAULT);
+                }
                 try {
                     $ins = $this->pdo->prepare(
                         'INSERT INTO acm_activation_codes'
@@ -188,13 +212,13 @@ class ActivationService implements ActivationServiceContract
                         . '  :max, \'active\', :prev)'
                     );
                     $ins->execute([
-                        ':uuid' => AcmPersonService::uuid4(),
+                        ':uuid' => $uuid,
                         ':t' => (int)$ticketId,
                         ':p' => (int)$ticket['person_id'],
                         ':purpose' => $purposeValue,
                         ':prefix' => CodeAlphabet::prefixFor($purpose),
                         ':sel' => $selector,
-                        ':hash' => password_hash($secret, PASSWORD_DEFAULT),
+                        ':hash' => $storedHash,
                         ':by' => $ctx->userId > 0 ? $ctx->userId : null,
                         ':max' => $maxAttempts,
                         ':prev' => $reissueOf,
@@ -202,6 +226,9 @@ class ActivationService implements ActivationServiceContract
                     $codeId = (int)$this->pdo->lastInsertId();
                     break;
                 } catch (\PDOException $e) {
+                    // 23000 on the selector UNIQUE key: regenerate. An OTP
+                    // row has no selector, so this only fires for the pair
+                    // form — but the loop is shared and harmless either way.
                     if ($e->getCode() !== '23000' || $attempt === 4) {
                         throw $e;
                     }
@@ -312,6 +339,252 @@ class ActivationService implements ActivationServiceContract
             throw $e;
         }
         return new ActivationGrant($grant['token'], $purpose, $grant['expires_at']);
+    }
+
+    // ------------------------------------------------------------
+    // verifyOtp (S12): redeem a 6-digit activation code, ticket-scoped.
+    // ------------------------------------------------------------
+    /**
+     * Verify a six-digit activation code for ONE ticket and mint a grant.
+     *
+     * THE SCOPE IS THE SECURITY. There is no "find the code by its value"
+     * step anywhere in here, because a hash of a 6-digit number is
+     * reversible by enumerating a million values. The caller must name the
+     * ticket, the comparison happens only against that ticket's live
+     * activation code, and the attempt budget is counted per ticket (see
+     * sql/102) so it survives a reissue.
+     *
+     * Both the ticket-wide total AND the per-source count must have room
+     * before a guess is evaluated:
+     *   - ticket total stops many addresses pooling guesses,
+     *   - per-source stops one address burning a victim's budget.
+     *
+     * On ANY failure the caller gets the same generic error, so a wrong
+     * digit, an expired code, a wrong ticket and a burnt ticket are
+     * indistinguishable from outside.
+     */
+    public function verifyOtp(string $otp, string $reference, RequestMeta $meta): ActivationGrant
+    {
+        $otp = Otp::normalize($otp);
+        if (!Otp::isValid($otp)) {
+            throw ActivationException::verifyFailed();
+        }
+        if (!$this->network->allows($meta->clientIp)) {
+            throw ActivationException::networkDenied();
+        }
+        $source = $this->otpSource($meta->clientIp);
+
+        $ticketId = $this->ticketIdByReference($reference);
+        if ($ticketId <= 0) {
+            // Unknown ticket: no row to burn, nothing recorded — recording
+            // would let anyone fill the attempts table with garbage. The
+            // API-level IP gate still applies. Timing is uniform because
+            // this returns before any comparison either way.
+            throw ActivationException::verifyFailed();
+        }
+
+        $this->pdo->beginTransaction();
+        try {
+            // Peek before comparing: a burnt ticket must not evaluate the
+            // guess at all, or the budget is decorative.
+            if ($this->otpBudgetExhausted($ticketId, $source)) {
+                throw ActivationException::rateLimited();
+            }
+
+            $code = $this->lockedOtpCode($ticketId);
+            $ticket = $this->tickets->getForUpdate($ticketId);
+            $ticketOk = $ticket !== null && $ticket['status'] === 'code_issued';
+
+            if ($code === null
+                || $code['status'] !== 'active'
+                || (int)$code['live'] !== 1
+                || !$ticketOk
+                || !Otp::verify($otp, (string)$code['secret_hash'], (string)$code['uuid'])
+            ) {
+                // One accounting path for every failure mode above, so the
+                // budget cannot be dodged by making the code expire instead
+                // of guessing wrong.
+                $this->failOtp($ticketId, $code, $source);
+            }
+
+            // Success: consume by compare-and-set, then mint, one txn.
+            $consume = $this->pdo->prepare(
+                'UPDATE acm_activation_codes SET status = \'consumed\', consumed_at = NOW()'
+                . ' WHERE id = :id AND status = \'active\''
+            );
+            $consume->execute([':id' => (int)$code['id']]);
+            if ($consume->rowCount() !== 1) {
+                // Lost a concurrent redemption: identical generic failure.
+                throw ActivationException::verifyFailed();
+            }
+
+            $grant = $this->mintGrant($code, CodePurpose::Activation->value);
+            $this->clearOtpAttempts($ticketId, $source);
+            $this->tickets->markGrantVerified($ticketId, [
+                'otp' => 'six-digit',
+                'grant_fp' => substr($grant['fingerprint'], 0, 6) . '...',
+            ]);
+            $this->pdo->commit();
+        } catch (ActivationException $e) {
+            // failOtp() commits its own accounting before throwing.
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        } catch (\Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+        return new ActivationGrant($grant['token'], CodePurpose::Activation, $grant['expires_at']);
+    }
+
+    /** The live activation code for a ticket, locked. Null when there is none. */
+    private function lockedOtpCode(int $ticketId): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT id, uuid, ticket_id, person_id, purpose, status, attempts, max_attempts,'
+            . ' (expires_at > NOW()) AS live'
+            . ' FROM acm_activation_codes'
+            . " WHERE ticket_id = :t AND purpose = 'activation' AND status = 'active'"
+            . ' ORDER BY id DESC LIMIT 1 FOR UPDATE'
+        );
+        $stmt->execute([':t' => $ticketId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return is_array($row) ? $row : null;
+    }
+
+    /**
+     * Has either budget run out? Read, never consume: probing must not
+     * spend a guess.
+     */
+    private function otpBudgetExhausted(int $ticketId, string $source): bool
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT COALESCE(SUM(attempts), 0) AS total,'
+            . ' COALESCE(MAX(CASE WHEN source = :src THEN attempts ELSE 0 END), 0) AS mine'
+            . ' FROM acm_otp_attempts'
+            . ' WHERE ticket_id = :t'
+            . ' AND updated_at > DATE_SUB(NOW(), INTERVAL ' . (int)Otp::TTL_MIN . ' MINUTE)'
+        );
+        $stmt->execute([':src' => $source, ':t' => $ticketId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!is_array($row)) {
+            return false;
+        }
+        return (int)$row['total'] >= Otp::MAX_ATTEMPTS
+            || (int)$row['mine'] >= Otp::MAX_ATTEMPTS_PER_SOURCE;
+    }
+
+    /**
+     * Record a wrong guess, burn the code on the last one, and throw the
+     * generic failure. Commits its accounting before throwing so a guess
+     * is never free — the same commit-before-throw discipline as
+     * failRedemption().
+     */
+    private function failOtp(int $ticketId, ?array $code, string $source): never
+    {
+        $up = $this->pdo->prepare(
+            'INSERT INTO acm_otp_attempts (ticket_id, source, attempts) VALUES (:t, :src, 1)'
+            . ' ON DUPLICATE KEY UPDATE attempts = attempts + 1, updated_at = NOW()'
+        );
+        $up->execute([':t' => $ticketId, ':src' => $source]);
+
+        // Burn the code once the ticket total is spent, so the ticket lands
+        // in a state the office can see rather than a silently stuck one.
+        $spent = $this->pdo->prepare(
+            'SELECT COALESCE(SUM(attempts), 0) FROM acm_otp_attempts'
+            . ' WHERE ticket_id = :t'
+            . ' AND updated_at > DATE_SUB(NOW(), INTERVAL ' . (int)Otp::TTL_MIN . ' MINUTE)'
+        );
+        $spent->execute([':t' => $ticketId]);
+        if ((int)$spent->fetchColumn() >= Otp::MAX_ATTEMPTS && $code !== null
+            && $code['status'] === 'active') {
+            $burn = $this->pdo->prepare(
+                'UPDATE acm_activation_codes SET status = \'revoked\''
+                . ' WHERE id = :id AND status = \'active\''
+            );
+            $burn->execute([':id' => (int)$code['id']]);
+            $this->tickets->recordEvent(
+                $ticketId, null, 'code_burned', '',
+                ['purpose' => 'activation', 'attempts' => Otp::MAX_ATTEMPTS]
+            );
+            $this->tickets->markExpired($ticketId, 'code_burned');
+        }
+        $this->pdo->commit();
+        throw ActivationException::verifyFailed();
+    }
+
+    private function clearOtpAttempts(int $ticketId, string $source): void
+    {
+        $stmt = $this->pdo->prepare(
+            'DELETE FROM acm_otp_attempts WHERE ticket_id = :t AND source = :src'
+        );
+        $stmt->execute([':t' => $ticketId, ':src' => $source]);
+    }
+
+    /**
+     * The per-source key: a hash of the address, nothing else.
+     *
+     * No time component, deliberately. The rolling window comes from the
+     * row's `updated_at` (see otpBudgetExhausted), which ages each source
+     * out ten minutes after ITS last attempt. A fixed time bucket would
+     * instead reset every source at once, so a shared school NAT could
+     * collect failures until a boundary and then start over — and it would
+     * need PHP's clock inside a security decision, which this codebase
+     * keeps in SQL.
+     */
+    private function otpSource(?string $ip): string
+    {
+        return substr(hash('sha256', $ip ?? 'unknown'), 0, 64);
+    }
+
+    /**
+     * Resolve the caller's REFERENCE to a ticket.
+     *
+     * The member has to be able to name their own ceremony, and a ticket
+     * number is assigned to the office — the member never sees it. What
+     * they DO have is the request reference they were given when they
+     * submitted (8 Crockford chars, ~40 bits, generated for exactly this
+     * purpose). So both are accepted:
+     *
+     *   - a request reference (`acm_activation_requests.request_ref`),
+     *     which is the normal path for a self-service request;
+     *   - a ticket number (`ACM-YYYYMMDD-NNNN`), for a member who was
+     *     handed one in the office.
+     *
+     * Neither is a secret and neither is usable without the code, so
+     * accepting both does not widen the attack surface: an attacker still
+     * needs the six digits for the same ticket, and the per-ticket budget
+     * (sql/102) applies regardless of how the ticket was named.
+     *
+     * Ten attempts at guessing a reference is pointless — the space is
+     * ~40 bits — but the API-level rate limiter covers it anyway.
+     */
+    private function ticketIdByReference(string $reference): int
+    {
+        $reference = trim($reference);
+        if ($reference === '' || strlen($reference) > 24) {
+            return 0;
+        }
+        // A ticket number, when it looks like one.
+        if (str_starts_with($reference, 'ACM-')) {
+            $stmt = $this->pdo->prepare(
+                'SELECT id FROM acm_activation_tickets WHERE ticket_no = :no LIMIT 1'
+            );
+            $stmt->execute([':no' => $reference]);
+            $id = $stmt->fetchColumn();
+            return $id === false ? 0 : (int)$id;
+        }
+        // Otherwise a request reference, uppercased the way it is served.
+        $stmt = $this->pdo->prepare(
+            'SELECT ticket_id FROM acm_activation_requests'
+            . ' WHERE request_ref = :ref AND ticket_id IS NOT NULL LIMIT 1'
+        );
+        $stmt->execute([':ref' => strtoupper($reference)]);
+        $id = $stmt->fetchColumn();
+        return $id === false ? 0 : (int)$id;
     }
 
     // ------------------------------------------------------------

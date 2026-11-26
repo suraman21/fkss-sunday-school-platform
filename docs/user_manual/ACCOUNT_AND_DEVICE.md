@@ -41,7 +41,7 @@ The client can show an optimistic value before the response. **That is not a ser
 
 1. In **Security**, select **Change password**.
 2. Enter **Current password**, **New password** and **Confirm new password**.
-3. Use a new password different from the current password, at least 12 Unicode characters and no more than 72 UTF-8 bytes. Non-ASCII characters can take several bytes each.
+3. Use a new password different from the current password, at least 6 Unicode characters and no more than 72 UTF-8 bytes. Non-ASCII characters can take several bytes each.
 4. Select **Change Password**. The fields are cleared before the request, so you may need to reenter them after a failure.
 5. After success, sign in again with the new password. If the app shows a recovery screen, follow [same-account recovery](SYNC_AND_RECOVERY.md#4-recover-after-a-session-ends); do not discard unsent work just to reach the login screen.
 

@@ -158,8 +158,13 @@ class DeptTakerService
         if (mb_strlen($fullName) < 2 || mb_strlen($fullName) > 100) {
             return ['ok' => false, 'message' => 'Full name must be 2–100 characters.'];
         }
-        if (strlen($password) < 12) {
-            return ['ok' => false, 'message' => 'Password must be at least 12 characters.'];
+        // Delegates to the shared policy. This used to hardcode 12, which
+        // silently diverged from PasswordPolicy the moment the floor moved:
+        // the department screen would have refused a 6-character password
+        // the API accepts, with a different message.
+        $policyErrors = \App\Services\PasswordPolicy::errors($password);
+        if ($policyErrors !== []) {
+            return ['ok' => false, 'message' => $policyErrors[0]];
         }
 
         $usernameError = self::validateUsername($conn, $username);

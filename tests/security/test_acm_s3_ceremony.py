@@ -82,6 +82,9 @@ def test_code_alphabet_excludes_ambiguous_chars():
     assert len(alphabet) == 30 and len(set(alphabet)) == 30
     for ambiguous in "0O1IL":
         assert ambiguous not in alphabet, ambiguous
+    # The selector+secret pair still governs device_add and reset. The
+    # ACTIVATION purpose moved to a six-digit OTP in S12 -- see
+    # test_acm_otp_activation.py for that half.
     assert "SELECTOR_LEN = 6" in s and "SECRET_LEN = 8" in s
     assert "random_bytes" in s  # rejection sampling over random_bytes
     assert "prefixFor" in s and "=> 'A'" in s and "=> 'D'" in s and "=> 'R'" in s
@@ -171,7 +174,10 @@ def test_verify_throttles_pair_and_ticket_before_burn():
 
 def test_verify_consumes_code_and_mints_grant_in_one_transaction():
     s = read(SVC)
-    body = s.split("public function verifyCode")[1].split("public function establishCredentials")[0]
+    # Bounded by the next method definition, not by with a named one: S12
+    # inserted verifyOtp() ahead of establishCredentials(), and pinning the
+    # old name made this slice swallow the new method whole.
+    body = s.split("public function verifyCode")[1].split("\n    public function ", 1)[0]
     body = body.replace("\\'", "'")
     assert "status = 'consumed', consumed_at = NOW()" in body
     assert "rowCount() !== 1" in body  # race loser fails generic

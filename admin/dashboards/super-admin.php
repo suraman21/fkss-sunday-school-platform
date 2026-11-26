@@ -781,7 +781,7 @@ if (!in_array($activeSection, $saAllowedSections, true)) {
                                 </select>
                             </div>
                             <div class="form-group"><label class="form-label">Password <?= $editUser ? '(leave blank to keep)' : '' ?></label>
-                                <div class="pw-wrap"><input type="password" name="password" class="form-input" minlength="12" maxlength="72" autocomplete="new-password" placeholder="<?= $editUser ? 'New password (optional, 12+ characters)' : 'Set password (12+ characters)' ?>"><button type="button" class="pw-toggle" data-toggle>Show</button></div>
+                                <div class="pw-wrap"><input type="password" name="password" class="form-input" minlength="6" maxlength="72" autocomplete="new-password" placeholder="<?= $editUser ? 'New password (optional, 6+ characters)' : 'Set password (6+ characters)' ?>"><button type="button" class="pw-toggle" data-toggle>Show</button></div>
                             </div>
                             <div class="form-group"><label class="form-label">Confirm Password</label>
                                 <div class="pw-wrap"><input type="password" name="confirm_password" class="form-input" placeholder="Confirm password"><button type="button" class="pw-toggle" data-toggle>Show</button></div>

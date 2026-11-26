@@ -541,15 +541,26 @@ try {
             // secret (pin-enforced, test_no_token_or_password_keys).
             acm_audit($pdo, 'acm.code.issued', [
                 'ticket_no' => (string)($ticket['ticket_no'] ?? ''),
-                'selector' => $issued->selector,
+                // Activation has no public selector any more; recording an
+                // empty string would look like a bug in the audit trail.
+                'selector' => $issued->purpose === CodePurpose::Activation ? 'otp' : $issued->selector,
                 'purpose' => $issued->purpose->value,
                 'expires_at' => $issued->expiresAt,
             ], 'acm_ticket', (int)($ticket['id'] ?? 0));
             // Plaintext travels ONLY in this response: the page shows
             // it once, then masks it (D3.2). Never logged, never stored.
+            //
+            // An ACTIVATION purpose is a six-digit OTP (S12): the officer
+            // reads it out grouped as "123 456". The selector is empty for
+            // an OTP row by construction, so it is reported as null rather
+            // than as an empty string the page would render as a blank.
+            $isOtp = $issued->purpose === CodePurpose::Activation;
             acm_ok(['code' => [
-                'display' => $issued->display(CodeAlphabet::prefixFor($issued->purpose)),
-                'selector' => $issued->selector,
+                'display' => $isOtp
+                    ? \SSMS\Acm\Activation\Otp::display($issued->secret)
+                    : $issued->display(CodeAlphabet::prefixFor($issued->purpose)),
+                'selector' => $isOtp ? null : $issued->selector,
+                'kind' => $isOtp ? 'otp' : 'pair',
                 'expires_at' => $issued->expiresAt,
             ], 'ticket' => $ticket]);
             break;

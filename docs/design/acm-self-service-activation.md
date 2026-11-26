@@ -323,3 +323,114 @@ after the officer has committed.
 
 Tests: `tests/security/test_acm_self_service_activation.py` — 37 pins covering
 the services, the endpoint contract, the console wiring and recovery.
+
+---
+
+## 13. S12: six-digit OTP for activation, and the password floor
+
+Both of these were requests after §12 was built. The second is the reason
+the first is safe; they are one change, not two.
+
+### 13.1 The password floor is now 6
+
+`PasswordPolicy::MIN_CHARACTERS` was 12. It is now 6, everywhere: the
+policy, the two hardcoded copies that had silently diverged from it
+(`DeptTakerService`, the MoSA dashboards), the browser `minlength`
+attributes, `frontend/js/account.js`, and the Flutter mirrors.
+
+**Twelve was compensating for a missing control, and that control now
+exists.** Login was throttled per IP only (`isApiRateLimited('auth_login',
+10)`), which bounds one address and nothing else — an attacker with a pool
+of addresses had unlimited guesses at one account. Length was the only
+thing in the way, so it was raised.
+
+`LoginThrottle` (new) counts failures per *account*:
+
+| Threshold | Value | When checked | Effect |
+|---|---|---|---|
+| `ACCOUNT_SOFT_LIMIT` | 5 | before `password_verify` | refuse without verifying; generic 401 |
+| `ACCOUNT_HARD_LIMIT` | 10 | after a correct password | 429 `account_locked` |
+| `SOURCE_LIMIT` | 30 | per source address, all identifiers | generic 401 |
+
+Two deliberate choices worth not "fixing" later:
+
+- **The bucket is keyed on the identifier the caller typed, hashed — not
+  on the resolved user id.** Keying on the resolved id would let anyone
+  lock a known account outright by submitting its username.
+- **The hard lockout says so.** It proves to the caller that the account
+  is real and the password was right. The alternative is signing in an
+  account under active guessing. Guessing stops at SOFT anyway; the hard
+  threshold exists to explain the situation to a legitimate user.
+- **It never writes `users.is_active`.** A row-level lock would survive a
+  password reset, lock out the office recovery screen, and turn a
+  temporary condition into a support ticket.
+
+`SecurityRateLimiter::peek()` was added for this: deciding *before* doing
+work is impossible with a consume-only counter, and consuming to ask "am I
+blocked?" would lock people out of their own account for logging in
+correctly enough times.
+
+### 13.2 Activation is a six-digit OTP
+
+`otp` replaced selector+secret **for the `activation` purpose only**.
+`device_add` and `reset` keep the pair: they are used by a member alone,
+with no officer in the room to read a code aloud, and their 24-hour
+windows are incompatible with 20 bits.
+
+**The hard part is not generating six digits.** A 6-digit code is ~20
+bits and cannot be its own lookup key: storing `hash(otp)` and matching on
+it is reversible by enumerating 1,000,000 values, so a table dump would
+yield live codes. The old design got scoping for free — the selector was
+an indexed UNIQUE key, so a wrong guess could only burn the one row it
+named.
+
+So verification is **scoped**, and the scope is the guessing surface:
+
+| Control | Value | Why |
+|---|---|---|
+| Scope | one ticket | a guess is never evaluated against every live code |
+| Per-ticket budget | 5 | 5 in 10^6 |
+| Per-source budget | 3 | one attacker cannot burn a victim's budget |
+| TTL | 10 min | NIST ceiling for a transmitted secret |
+| Storage | `HMAC-SHA256(otp, key = uuid of the code row)` | per-row key, so the 10^6 space cannot be precomputed |
+| Consumption | compare-and-set | two concurrent correct guesses cannot both win |
+
+**The budget is keyed on the TICKET, not the code** (`sql/102`), because
+SP 800-63B-4 §3.1.3.2 is explicit that reissuing a secret must not reset
+the failure count. Reissue revokes the code row, so the per-code
+`attempts` column resets by construction; the ticket table is what
+survives it. Do not add `code_id` to that key.
+
+**Why not a library?** The user asked for one if it was stronger. It is
+not, here: every well-maintained PHP OTP package implements RFC 6238 TOTP
+— a *shared seed plus a clock*. That is a different ceremony (no officer
+reads anything out, the secret lives in the app forever), it needs clock
+sync on a shared host, and none of it addresses the actual risk, which is
+online guessing against a short code. The properties that matter are the
+attempt budget, the scoping and single use — all of which are already in
+this codebase and are wired to its own tables. A dependency would have
+added a rotating credential to defend as well.
+
+**Naming the ceremony.** A member never sees a ticket number, so
+`verifyOtp` accepts their **request reference** (the 8 characters they were
+given on submit, ~40 bits) and also a ticket number. Neither is a secret;
+neither is usable without the six digits, and the per-ticket budget
+applies however the ticket was named.
+
+**Wire contract** (`POST /acm/activate/verify`) now accepts either body,
+and refuses a body carrying both:
+
+```
+{ "otp": "123456", "reference": "7H2K9QXM", "installation_id": "…" }
+{ "selector": "…", "secret": "…", "purpose": "device_add|reset", "installation_id": "…" }
+```
+
+An `activation` purpose in the *pair* body is refused outright: one state
+must not keep two verification paths, and the weaker one would be the one
+an attacker chooses.
+
+**Console.** `code_issue` returns `kind: "otp"` and the grouped display
+`123 456`. The issue panel tells the officer to give the member both the
+code and their request reference. The status panel says "per ticket,
+across all issued codes" rather than implying the per-code counter is the
+budget.

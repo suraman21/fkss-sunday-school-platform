@@ -48,6 +48,9 @@ if (!defined('SSMS_ACM_AUTOLOAD')) {
     require_once __DIR__ . '/src/Identity/AcmPersonService.php';
     // S3 activation ceremony.
     require_once __DIR__ . '/src/Activation/CodeAlphabet.php';
+    // S12: six-digit activation codes. The pair above still governs
+    // device_add and reset.
+    require_once __DIR__ . '/src/Activation/Otp.php';
     require_once __DIR__ . '/src/Activation/ActivationException.php';
     require_once __DIR__ . '/src/Activation/IdempotencyStore.php';
     require_once __DIR__ . '/src/Accounts/AccountProvisioner.php';

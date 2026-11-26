@@ -933,7 +933,7 @@
         el.passwordCharacterCount.textContent = characters + (characters === 1 ? ' character' : ' characters');
         el.passwordByteCount.textContent = bytes + ' / 72 bytes';
         el.passwordCharacterCount.classList.toggle('is-valid', characters >= 12);
-        el.passwordCharacterCount.classList.toggle('is-invalid', password.length > 0 && characters < 12);
+        el.passwordCharacterCount.classList.toggle('is-invalid', password.length > 0 && characters < 6);
         el.passwordByteCount.classList.toggle('is-invalid', bytes > 72);
         el.passwordByteCount.classList.toggle('is-valid', bytes > 0 && bytes <= 72);
         return { characters: characters, bytes: bytes };
@@ -943,7 +943,7 @@
         var metrics = { characters: Array.from(password).length, bytes: new TextEncoder().encode(password).length };
         var errors = [];
         if (!password) errors.push('New password is required.');
-        if (password && metrics.characters < 12) errors.push('Password must be at least 12 characters.');
+        if (password && metrics.characters < 12) errors.push('Password must be at least 6 characters.');
         if (metrics.bytes > 72) errors.push('Password is too long (maximum 72 UTF-8 bytes).');
         if (password.indexOf('\u0000') !== -1 || /^\s+$/u.test(password)) errors.push('Password contains invalid content.');
         if (COMMON_PASSWORDS.indexOf(password.toLocaleLowerCase()) !== -1) errors.push('Choose a less common password.');

@@ -189,7 +189,7 @@ if (!function_exists('renderProfileTabSection')) {
                             </div>
                             <i class="fa-solid fa-shield-halved" style="color:#d97706;font-size:1.25rem"></i>
                         </div>
-                        <p style="font-size:.78rem;color:var(--pt-muted);margin:0 0 1rem;line-height:1.4">Use a strong, unique password with at least 12 characters to keep your account safe.</p>
+                        <p style="font-size:.78rem;color:var(--pt-muted);margin:0 0 1rem;line-height:1.4">Use a strong, unique password with at least 6 characters to keep your account safe.</p>
                         <button type="button" id="tabProfileOpenPasswordBtn" class="btn" style="background:var(--pt-card-bg);color:var(--pt-text);border:1px solid var(--pt-border);padding:.5rem 1rem;font-size:.8rem;font-weight:600;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,.05);cursor:pointer">
                             <i class="fa-solid fa-key" style="color:#d97706"></i> Change Password
                         </button>
@@ -230,7 +230,7 @@ if (!function_exists('renderProfileTabSection')) {
                         </div>
                         <div style="margin-bottom:1rem">
                             <label class="wbws-profile-lbl" for="tabPwdNew">New Password <span style="color:#ef4444">*</span></label>
-                            <input type="password" id="tabPwdNew" class="wbws-profile-inp" minlength="12" maxlength="72" required autocomplete="new-password">
+                            <input type="password" id="tabPwdNew" class="wbws-profile-inp" minlength="6" maxlength="72" required autocomplete="new-password">
                             <div style="display:flex;justify-content:space-between;font-size:.68rem;color:var(--pt-muted);margin-top:.25rem">
                                 <span id="tabPwdLen">0 characters</span>
                                 <span id="tabPwdBytes">0 / 72 bytes</span>
@@ -238,7 +238,7 @@ if (!function_exists('renderProfileTabSection')) {
                         </div>
                         <div style="margin-bottom:1.25rem">
                             <label class="wbws-profile-lbl" for="tabPwdConfirm">Confirm New Password <span style="color:#ef4444">*</span></label>
-                            <input type="password" id="tabPwdConfirm" class="wbws-profile-inp" minlength="12" maxlength="72" required autocomplete="new-password">
+                            <input type="password" id="tabPwdConfirm" class="wbws-profile-inp" minlength="6" maxlength="72" required autocomplete="new-password">
                         </div>
                         <div style="display:flex;justify-content:flex-end;gap:.5rem">
                             <button type="button" onclick="document.getElementById('tabProfilePasswordModal').style.display='none'" class="btn" style="background:transparent;color:var(--pt-muted);border:1px solid var(--pt-border);padding:.5rem 1rem;border-radius:8px;font-size:.8rem;cursor:pointer">Cancel</button>
@@ -658,8 +658,8 @@ if (!function_exists('renderProfileTabSection')) {
                     alertEl.style.color = '#ef4444';
                     return;
                 }
-                if (np.length < 12) {
-                    alertEl.textContent = 'Password must be at least 12 characters.';
+                if (np.length < 6) {
+                    alertEl.textContent = 'Password must be at least 6 characters.';
                     alertEl.style.display = 'block';
                     alertEl.style.background = 'rgba(239,68,68,0.12)';
                     alertEl.style.color = '#ef4444';

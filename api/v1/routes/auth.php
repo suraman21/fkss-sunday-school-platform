@@ -62,6 +62,32 @@ if ($action === 'login' && $method === 'POST') {
     if (strlen($password) > 4096) {
         err('Invalid username or password.', 401);
     }
+
+    // ── Per-ACCOUNT throttle ──────────────────────────────────
+    // The IP limiter above bounds one address; it does not bound guesses
+    // against one account from many addresses. This does, and it is why
+    // PasswordPolicy::MIN_CHARACTERS could come down to 6.
+    //
+    // It is consumed BEFORE the password is checked, so probing is not
+    // free. A correct password clears the bucket below, so honest use
+    // never accumulates. See LoginThrottle for why the identifier is the
+    // typed string and not the resolved user id.
+    $throttle = new \App\Services\LoginThrottle(
+        apiSecurityRateLimiter(),
+        $username,
+        (string)($_SERVER['REMOTE_ADDR'] ?? '')
+    );
+    $throttleState = $throttle->attempt();
+    if (!$throttleState['allowed']) {
+        if (!headers_sent()) {
+            header('Retry-After: ' . max(1, (int)$throttleState['retry_after']));
+        }
+        // The same generic 401 as a wrong password while the budget is
+        // merely exhausted: saying "locked" here would confirm the account
+        // exists. The distinct message is reserved for the hard lockout
+        // below, where the password has already been proven correct.
+        err('Invalid username or password.', 401);
+    }
     
     $profileImageColumnExists = \App\Services\MysqliProfileRepository::profileImageColumnAvailable($conn);
     $authVersionExists = \App\Services\MysqliProfileRepository::authorizationVersionColumnAvailable($conn);
@@ -111,6 +137,29 @@ if ($action === 'login' && $method === 'POST') {
         err('Invalid username or password.', 401);
     }
     
+    // HARD LOCKOUT CHECK COMES FIRST, BEFORE CLEARING.
+    // The password just verified, but this account is over the hard line.
+    // Order matters: recordSuccess() deletes the bucket, so checking after
+    // it would always read zero and never lock. The message is deliberately
+    // specific — it tells the caller the address is real and the password
+    // was right — because the only alternative is to sign in an account
+    // under active guessing. See LoginThrottle's header.
+    if ($throttle->hardLocked()) {
+        if (!headers_sent()) {
+            header('Retry-After: ' . \App\Services\LoginThrottle::WINDOW_SECONDS);
+        }
+        err(
+            'This account is temporarily locked after too many failed sign-in attempts. '
+            . 'Try again in about 15 minutes, or contact the school office.',
+            429,
+            ['code' => 'account_locked']
+        );
+    }
+
+    // Under the hard line and the password is correct: clear the bucket so
+    // a lockout cannot outlive a successful authentication.
+    $throttle->recordSuccess();
+
     if ((int)$user['is_active'] !== 1) {
         // An ACM-provisioned member/parent sits at is_active = 0 between
         // establishing credentials and registering a device. Telling that
