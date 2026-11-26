@@ -243,6 +243,22 @@ class IdentifierWiring(unittest.TestCase):
         self.assertIn("err(", cred)
 
 
+
+def case_block(source: str, action: str) -> str:
+    """The body of one `case 'action':` arm in admin/api_acm.php.
+
+    Sliced at the NEXT case label rather than at 'break;': a handler with
+    an inner loop or an inner switch contains its own 'break;', and
+    splitting on that silently truncates the block (which reads as a
+    missing-policy failure rather than a bad test).
+    """
+    start = source.index("case '" + action + "':")
+    nxt = source.find("case '", start + 1)
+    default = source.find("default:", start + 1)
+    ends = [pos for pos in (nxt, default) if pos != -1]
+    return source[start:min(ends) if ends else len(source)]
+
+
 class ConsoleWiring(unittest.TestCase):
     """The screens must exist, be gated, and not invent behaviour."""
 
@@ -259,12 +275,11 @@ class ConsoleWiring(unittest.TestCase):
     def test_every_console_action_checks_policy(self):
         api = read(self.API)
         for action in ("request_queue", "request", "request_claim", "request_approve", "request_reject"):
-            block = api.split(f"case '{action}'")[1].split("break;")[0]
-            self.assertIn("AcmPolicy::can(", block, action)
+            self.assertIn("AcmPolicy::can(", case_block(api, action), action)
 
     def test_approval_records_the_computed_basis(self):
         api = read(self.API)
-        block = api.split("case 'request_approve'")[1].split("break;")[0]
+        block = case_block(api, "request_approve")
         # The basis must be COMPUTED, never taken from the client.
         self.assertIn("matchBasis(", block)
         self.assertNotIn("$_POST['match_basis']", block)
@@ -293,6 +308,46 @@ class NoInventedHelpers(unittest.TestCase):
             source = read(ROOT / "admin" / page)
             for invented in ('class="tbl"', 'class="pill', 'class="pager"', 'class="acm-tab'):
                 self.assertNotIn(invented, source, page)
+
+
+class DeviceRecovery(unittest.TestCase):
+    """S11 §5.2: a lost device must have a sanctioned way back in."""
+
+    API = ROOT / "admin" / "api_acm.php"
+    PAGE = ROOT / "admin" / "acm_device_recovery.php"
+
+    def test_action_exists_and_is_role_gated(self):
+        block = case_block(read(self.API), "device_recover")
+        self.assertIn("AcmPolicy::can(", block)
+        self.assertIn("$method !== 'POST'", block)
+
+    def test_requires_a_reason(self):
+        block = case_block(read(self.API), "device_recover")
+        self.assertIn("mb_strlen($reason) < 3", block)
+
+    def test_only_an_active_account_is_recoverable(self):
+        block = case_block(read(self.API), "device_recover")
+        self.assertIn("'active'", block)
+        # Fail closed rather than let a suspended account through.
+        self.assertIn("no active account of that type", block)
+
+    def test_recovery_does_not_bypass_the_ticket_path(self):
+        """It must create a ticket, not mint a grant or force a status."""
+        block = case_block(read(self.API), "device_recover")
+        self.assertIn("$tickets->create(", block)
+        # No direct status write, no direct grant minting.
+        self.assertNotIn("UPDATE acm_activation_tickets", block)
+        self.assertNotIn("CodePurpose", block)
+        self.assertNotIn("INSERT INTO", block)
+
+    def test_the_page_is_reachable_from_the_nav(self):
+        self.assertIn("acm_device_recovery.php", read(ROOT / "admin" / "acm_layout.php"))
+
+    def test_the_page_promises_only_what_it_does(self):
+        page = read(self.PAGE)
+        self.assertIn("recovery ticket", page.lower())
+        # The old wording claimed the screen issues the code itself.
+        self.assertNotIn("This issues an", page)
 
 class PhpSyntax(unittest.TestCase):
     """No PHP binary here; assert the files at least declare strict types

@@ -951,6 +951,82 @@ try {
             break;
         }
 
+        // ── S11: device recovery for an active account ─────────
+        case 'device_recover': {
+            if ($method !== 'POST') {
+                acm_err('Method not allowed.', 405);
+            }
+            if (!AcmPolicy::can($role, AcmPolicy::RES_CODE, 'issue')) {
+                acm_err('Access denied.', 403);
+            }
+            $personId = (int)($_POST['person_id'] ?? 0);
+            $accountType = (string)($_POST['account_type'] ?? '');
+            $reason = trim((string)($_POST['reason'] ?? ''));
+            if (!in_array($accountType, ['member', 'parent'], true)) {
+                acm_err('Unknown account type.', 400);
+            }
+            if (mb_strlen($reason) < 3 || mb_strlen($reason) > 2000) {
+                acm_err('A reason (3-2000 chars) is required.', 400);
+            }
+            $person = $persons->find($personId);
+            if ($person === null) {
+                acm_err('The selected person was not found.', 404);
+            }
+
+            // Only an ACTIVE account is recoverable. A pending account is
+            // a different problem (reissue the activation code) and a
+            // suspended one must not be given a fresh device.
+            $active = false;
+            foreach ($persons->accounts($personId) as $account) {
+                if ((string)($account['account_type'] ?? '') === $accountType
+                    && (string)($account['status'] ?? '') === 'active'
+                    && (int)($account['is_active'] ?? 0) === 1) {
+                    $active = true;
+                    break;
+                }
+            }
+            if (!$active) {
+                acm_err('That person has no active account of that type.', 409);
+            }
+
+            // A recovery ticket goes through the SAME path as any other:
+            // created at 'submitted', decided by the office, then the
+            // existing screen issues the device_add code. Nothing here
+            // rewrites a ticket status or mints a grant directly.
+            $memberId = isset($person['member_id']) && $person['member_id'] !== null ? (int)$person['member_id'] : 0;
+            $guardianId = isset($person['guardian_id']) && $person['guardian_id'] !== null ? (int)$person['guardian_id'] : 0;
+            if ($accountType === 'member' && $memberId <= 0) {
+                acm_err('This person has no linked member record.', 409);
+            }
+            if ($accountType === 'parent' && $guardianId <= 0) {
+                acm_err('This person has no linked guardian record.', 409);
+            }
+            try {
+                $recovery = $tickets->create([
+                    'person_id'    => $personId,
+                    'account_type' => $accountType,
+                    'member_id'    => $accountType === 'member' ? $memberId : null,
+                    'guardian_id'  => $accountType === 'parent' ? $guardianId : null,
+                    'note'         => 'Device recovery: ' . $reason,
+                ], $actorId);
+            } catch (InvalidArgumentException $e) {
+                acm_err($e->getMessage(), 409);
+            }
+
+            acm_audit($pdo, 'acm.device_recovery.requested', [
+                'person_id'    => $personId,
+                'account_type' => $accountType,
+                'ticket_no'    => (string)($recovery['ticket_no'] ?? ''),
+                'reason'       => $reason,
+            ], 'acm_activation_ticket', (int)$recovery['id']);
+
+            acm_ok([
+                'ticket_id' => (int)$recovery['id'],
+                'ticket_no' => (string)($recovery['ticket_no'] ?? ''),
+            ]);
+            break;
+        }
+
         default:
             acm_err('Unknown action.', 404);
     }

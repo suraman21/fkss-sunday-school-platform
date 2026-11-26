@@ -58,6 +58,9 @@ function acm_chrome_open(string $active, string $title, string $sub, int $openCo
         // S11: member-initiated requests. Separate from 'queue' because
         // these are unverified claims, not office-created tickets.
         'requests' => ['acm_requests.php', 'fa-inbox', 'Activation requests'],
+        // S11: the way back in for a lost or replaced device. Grouped with
+        // the queue because it produces a ticket, not an account.
+        'recovery' => ['acm_device_recovery.php', 'fa-mobile-screen', 'Device recovery'],
         'persons'  => ['acm_person.php', 'fa-users', 'Persons & accounts'],
         'staff_enroll' => ['acm_staff_enroll.php', 'fa-id-badge', 'Staff enrollment'],
         'office'   => ['acm_office.php', 'fa-building', 'Office'],
