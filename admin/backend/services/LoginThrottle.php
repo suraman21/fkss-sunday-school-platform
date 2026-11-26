@@ -22,28 +22,35 @@
  *   temporary condition into a permanent support ticket. State lives in
  *   `security_rate_limits` and expires on its own.
  *
- * TWO THRESHOLDS, AND WHY THE HARD ONE TELLS THE TRUTH
- *   SOFT (ACCOUNT_SOFT_LIMIT) is checked BEFORE the password is verified.
- *   Past it we refuse without performing the expensive `password_verify`.
- *   Guessing stops here; the answer is the same generic 401, so it leaks
- *   nothing.
+ * ONE THRESHOLD, DELIBERATELY
+ *   This class used to have two: refuse at 5 without verifying, and a
+ *   "hard" line at 10 that refused a CORRECT password with a distinct
+ *   message. The second one was incoherent and never ran. The only way
+ *   to reach `password_verify()` was through `attempt()`, which refuses
+ *   at the soft limit — so by the time a password had been verified the
+ *   counter was by construction below the hard line, and `hardLocked()`
+ *   was always false. Testing found it dead; it is not coming back in
+ *   that shape.
  *
- *   HARD (ACCOUNT_HARD_LIMIT) is checked AFTER the password verifies. If
- *   the correct password arrives but the account is over this line, the
- *   attempt is refused with a message that says so. That message does
- *   reveal "this address is real and its password was right" — accepted
- *   deliberately. The alternative is to log the attacker in, which is
- *   worse. Guessing stops at SOFT anyway; what the hard threshold
- *   protects is the legitimate user who keeps retrying after a lockout
- *   and needs to be told why a correct password is still refused.
+ *   There is now one line. At ACCOUNT_SOFT_LIMIT the identifier is
+ *   locked for the rest of the window and the password is NOT verified.
  *
- * KEYING
- *   The bucket is keyed on a hash of the identifier the caller TYPED,
- *   never on a resolved user id. Keying on the resolved id would let
- *   anyone lock a known account outright just by submitting its username
- *   — a denial-of-service amplifier we do not need. Keying on the typed
- *   string means a username bucket and a member-code bucket for the same
- *   account are independent, and each is still bounded.
+ * WHY THE LOCKOUT MESSAGE IS SAFE TO SHOW
+ *   It is tempting to answer a lockout with the same generic 401 as a
+ *   wrong password, to avoid confirming the account exists. That is not
+ *   needed here, because the bucket is keyed on the identifier the caller
+ *   TYPED: anyone can send five failures for an invented username and
+ *   then see the identical lockout message. A real account and a
+ *   nonexistent one are indistinguishable at every step, so the honest
+ *   message leaks nothing, and a locked-out student is told what
+ *   happened instead of being left guessing.
+ *
+ * COUNTER BEHAVIOUR
+ *   Once an identifier is locked, this class STOPS consuming for it. That
+ *   matters: every consume slides the window forward, so continuing to
+ *   count would let an attacker hold a victim's account locked forever
+ *   with one request every few minutes. Stopping means the lock expires
+ *   on its own, from the last real attempt.
  *
  *   A successful login clears the identifier bucket, so a user who
  *   mistyped twice and then got it right is not left nearer a lockout.
@@ -52,14 +59,18 @@ namespace App\Services;
 
 final class LoginThrottle
 {
-    /** Failures in the window after which we stop verifying at all. */
+    /** Evaluated password guesses allowed per window, per identifier. */
     public const ACCOUNT_SOFT_LIMIT = 5;
-    /** Failures after which even a correct password is refused. */
-    public const ACCOUNT_HARD_LIMIT = 10;
-    /** Failures from one source address across all identifiers. */
+    /** Failed logins from one source address, across all identifiers. */
     public const SOURCE_LIMIT = 30;
 
     public const WINDOW_SECONDS = 900;
+
+    /**
+     * Upper bound passed to the limiter so `consume()` keeps counting
+     * instead of freezing. The limiter clamps to 1000.
+     */
+    private const COUNTER_CEILING = 1000;
 
     private SecurityRateLimiter $limiter;
     private string $source;
@@ -75,33 +86,26 @@ final class LoginThrottle
     }
 
     /**
-     * Spend one guess. Call BEFORE verifying; returns false when the
-     * caller should refuse without checking the password.
+     * Decide whether this attempt may be verified.
      *
-     * Consuming here (rather than counting only failures) is what makes
-     * the budget a real budget: an attacker cannot probe for free. A
-     * correct login clears the bucket immediately after, so honest use
-     * never accumulates.
-     *
-     * @return array{allowed:bool,retry_after:int}
+     * @return array{allowed:bool,locked:bool,retry_after:int}
      */
     public function attempt(): array
     {
         $state = $this->limiter->peek('login_account', $this->bucketKey);
-        if ($state['attempts'] >= self::ACCOUNT_HARD_LIMIT) {
-            // Hard lockout: refuse without spending another attempt, and say
-            // nothing about the password. Long window, because the short one
-            // is what they already burned through.
-            return ['allowed' => false, 'retry_after' => max(60, $state['retry_after'])];
-        }
         if ($state['attempts'] >= self::ACCOUNT_SOFT_LIMIT) {
-            return ['allowed' => false, 'retry_after' => max(1, $state['retry_after'])];
+            // Already locked. Do NOT consume: the window must be allowed to
+            // expire rather than slide forward under continued pressure.
+            return [
+                'allowed' => false,
+                'locked' => true,
+                'retry_after' => max(1, $state['retry_after']),
+            ];
         }
 
-        // Source budget: catching a spray across many identifiers, so it is
-        // consumed only once the per-identifier budget has room. Order
-        // matters — checking source first would let one busy network lock
-        // out every account behind it.
+        // Source budget: catches a spray across many identifiers from one
+        // address. Consumed only after the per-identifier budget has room,
+        // so one busy network cannot lock out every account behind it.
         $source = $this->limiter->consume(
             'login_source',
             $this->source,
@@ -109,31 +113,21 @@ final class LoginThrottle
             self::WINDOW_SECONDS
         );
         if (!$source['allowed']) {
-            return ['allowed' => false, 'retry_after' => (int)$source['retry_after']];
+            return [
+                'allowed' => false,
+                'locked' => false,
+                'retry_after' => max(1, (int)$source['retry_after']),
+            ];
         }
 
-        $consume = $this->limiter->consume(
+        $this->limiter->consume(
             'login_account',
             $this->bucketKey,
-            self::ACCOUNT_HARD_LIMIT,
+            self::COUNTER_CEILING,
             self::WINDOW_SECONDS
         );
-        // consume() reports allowed when the post-increment count is within
-        // the limit, so a refusal here means this attempt crossed the line.
-        return [
-            'allowed' => (bool)$consume['allowed'],
-            'retry_after' => (int)($consume['retry_after'] ?? 0),
-        ];
-    }
 
-    /**
-     * Has the account crossed the hard line? Call AFTER a password
-     * verified, to decide between signing in and refusing.
-     */
-    public function hardLocked(): bool
-    {
-        $state = $this->limiter->peek('login_account', $this->bucketKey);
-        return $state['attempts'] > self::ACCOUNT_HARD_LIMIT;
+        return ['allowed' => true, 'locked' => false, 'retry_after' => 0];
     }
 
     /** A correct password clears the identifier bucket. */

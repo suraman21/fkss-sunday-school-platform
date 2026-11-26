@@ -292,7 +292,9 @@ acm_chrome_open('queue', (string)($ticket['ticket_no'] ?? 'Ticket'), 'Activation
     </dl>
     <?php elseif ($lastCode !== null): ?>
     <dl class="acm-kv">
-        <dt>Last code</dt><dd><?= e((string)($lastCode['selector'] ?? '')) ?> · <?= e(str_replace('_', ' ', (string)($lastCode['status'] ?? ''))) ?></dd>
+        <?php /* An OTP row has no selector, so rendering one as '' would
+                 show a leading separator with nothing before it. */ ?>
+        <dt>Last code</dt><dd><?php if (trim((string)($lastCode['selector'] ?? '')) !== ''): ?><?= e((string)$lastCode['selector']) ?> · <?php endif; ?><?= e(str_replace('_', ' ', (string)($lastCode['status'] ?? ''))) ?><?= (string)($lastCode['purpose'] ?? '') === 'activation' ? ' · 6-digit OTP' : '' ?></dd>
         <dt>Attempts used</dt><dd><?= (int)($lastCode['attempts'] ?? 0) ?> of <?= (int)($lastCode['max_attempts'] ?? 0) ?></dd>
     </dl>
     <?php else: ?>

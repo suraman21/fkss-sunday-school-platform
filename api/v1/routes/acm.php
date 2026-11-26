@@ -312,6 +312,18 @@ if ($acmAction === 'activate/verify' && $method === 'POST') {
         acmWireError($e);
     } catch (InvalidArgumentException $e) {
         err('The request is invalid.', 400, ['code' => 'invalid_request']);
+    } catch (Throwable $e) {
+        // This handler is PUBLIC — no `apiRequireAuth()` precedes it — so
+        // it is the one place on the ACM surface where an unexpected
+        // failure must not be allowed to escape. Without this, a missing
+        // table, a deadlock or a lock timeout reaches PHP's default
+        // handler and the phone gets a 500 with a stack trace: SQL text,
+        // file paths, and a completely undocumented response shape.
+        //
+        // Fixed string, no exception text, matching the rule the other
+        // mobile-reachable routes already follow.
+        error_log('acm_verify_failed');
+        err('The code could not be checked right now. Try again.', 503, ['code' => 'temporarily_unavailable']);
     }
     ok([
         'grant' => $grant->token,

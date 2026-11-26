@@ -122,14 +122,25 @@ class VerificationIsScoped(unittest.TestCase):
         self.assertLess(fail.index("commit()"), fail.index("throw ActivationException"))
 
     def test_every_failure_is_indistinguishable(self):
-        """Wrong digit, expired, burnt, wrong ticket: one error."""
-        # Four exits: unknown ticket, rate-limited budget, the combined
-        # failure check, and a lost compare-and-set race. All identical.
+        """Wrong digit, expired, burnt, wrong ticket, spent budget: one error."""
+        # Five exits, all identical: unknown ticket, exhausted budget, the
+        # combined failure check, and a lost compare-and-set race.
+        #
+        # The exhausted-budget exit used to be rateLimited(), which made the
+        # endpoint an existence oracle -- an invented reference answered
+        # code_invalid while a real one with a spent budget answered
+        # rate_limited. It now raises the same verifyFailed() as everything
+        # else, so this count went from four to five on purpose.
         self.assertEqual(
             self.body.count("ActivationException::verifyFailed()"),
-            4,
+            5,
             "every exit from verifyOtp must raise the same generic failure",
         )
+        # The pair path legitimately uses rateLimited() (it has its own
+        # per-selector failure table); only the OTP budget guard must stay
+        # generic. That scope is asserted precisely in
+        # test_acm_otp_read_contract.py::test_every_failure_path_is_generic,
+        # because a blunt substring check here would also catch the pair.
         # The expiry/status/wrong-value cases all funnel into failOtp().
         combined = self.body.split("if ($code === null")[1].split("}\n")[0]
         self.assertIn("failOtp(", combined)

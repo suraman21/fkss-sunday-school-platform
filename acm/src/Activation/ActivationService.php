@@ -182,19 +182,29 @@ class ActivationService implements ActivationServiceContract
             // unconsumed grant for this ticket + operation dies too.
             $this->tickets->revokeCeremonyGrants((int)$ticketId, $purposeValue, 'reissue');
 
-            $selector = '';
+            // NULL, not '', from the start: see the branch below. The
+            // initialiser has to agree with it, or a future edit that reads
+            // $selector before the loop reintroduces the empty-string row.
+            $selector = null;
             $secret = '';
             $codeId = 0;
             // Activation is a six-digit OTP; the other purposes keep the
             // selector+secret pair. Both live in the same row shape: for an
-            // OTP, `selector` held empty and `secret_hash` is the HMAC the
+            // OTP `selector` is NULL and `secret_hash` is the HMAC the
             // (ticket-scoped) verifier can check. See Otp for why a 6-digit
             // code cannot be its own lookup key.
             $isOtp = $purpose === CodePurpose::Activation;
             for ($attempt = 0; $attempt < 5; $attempt++) {
                 $uuid = AcmPersonService::uuid4();
                 if ($isOtp) {
-                    $selector = '';
+                    // NULL, not ''. sql/103 makes the column nullable
+                    // precisely so this is expressible: `selector` is
+                    // NOT NULL UNIQUE, so writing '' meant the SECOND OTP
+                    // row in the whole database hit SQLSTATE 23000 and
+                    // every later issuance failed. MySQL's UNIQUE permits
+                    // many NULLs and only one ''. Activation has no
+                    // selector -- say so.
+                    $selector = null;
                     $secret = Otp::generate();
                     $storedHash = Otp::hash($secret, $uuid);
                 } else {
@@ -226,9 +236,18 @@ class ActivationService implements ActivationServiceContract
                     $codeId = (int)$this->pdo->lastInsertId();
                     break;
                 } catch (\PDOException $e) {
-                    // 23000 on the selector UNIQUE key: regenerate. An OTP
-                    // row has no selector, so this only fires for the pair
-                    // form — but the loop is shared and harmless either way.
+                    // 23000 on the selector UNIQUE key: regenerate and try
+                    // again. This is a real possibility only for the pair
+                    // form, where the selector is random with a ~10^9 space.
+                    //
+                    // For an OTP row the selector is NULL and UNIQUE
+                    // excludes NULLs, so this retry cannot mask a genuine
+                    // collision -- but do NOT let it silently swallow a
+                    // permanent failure either, which is exactly what an
+                    // earlier version of this comment claimed was
+                    // "harmless". It was not: with selector = '' every
+                    // attempt collided and the loop burned all five before
+                    // throwing a misleading "Code issuance failed."
                     if ($e->getCode() !== '23000' || $attempt === 4) {
                         throw $e;
                     }
@@ -387,8 +406,20 @@ class ActivationService implements ActivationServiceContract
         try {
             // Peek before comparing: a burnt ticket must not evaluate the
             // guess at all, or the budget is decorative.
+            //
+            // A spent budget answers the SAME generic failure as an unknown
+            // reference, and that is deliberate. This used to throw
+            // rateLimited() here, which made the endpoint an existence
+            // oracle: a made-up reference returned code_invalid, while a
+            // real one that had spent its budget returned rate_limited. Two
+            // requests were enough to learn whether a reference exists —
+            // the exact thing the generic error is supposed to prevent.
+            //
+            // Nothing is lost by answering generically: the caller already
+            // cannot get in, and a person holding a genuinely burnt code
+            // learns it from the office, not from a distinct status.
             if ($this->otpBudgetExhausted($ticketId, $source)) {
-                throw ActivationException::rateLimited();
+                throw ActivationException::verifyFailed();
             }
 
             $code = $this->lockedOtpCode($ticketId);
@@ -444,7 +475,14 @@ class ActivationService implements ActivationServiceContract
     private function lockedOtpCode(int $ticketId): ?array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, uuid, ticket_id, person_id, purpose, status, attempts, max_attempts,'
+            // secret_hash is REQUIRED here: verify() compares against it a
+            // few lines below. It was missing from this list, so every
+            // correct OTP compared against null, failed as "invalid or
+            // expired", and was charged to the attempt budget like a wrong
+            // guess. Five correct entries revoked the code and burnt the
+            // ticket. The column list and its consumer have to move
+            // together; keep them adjacent.
+            'SELECT id, uuid, ticket_id, person_id, purpose, status, attempts, max_attempts, secret_hash,'
             . ' (expires_at > NOW()) AS live'
             . ' FROM acm_activation_codes'
             . " WHERE ticket_id = :t AND purpose = 'activation' AND status = 'active'"

@@ -82,11 +82,23 @@ if ($action === 'login' && $method === 'POST') {
         if (!headers_sent()) {
             header('Retry-After: ' . max(1, (int)$throttleState['retry_after']));
         }
-        // The same generic 401 as a wrong password while the budget is
-        // merely exhausted: saying "locked" here would confirm the account
-        // exists. The distinct message is reserved for the hard lockout
-        // below, where the password has already been proven correct.
-        err('Invalid username or password.', 401);
+        $minutes = max(1, (int)ceil(((int)$throttleState['retry_after']) / 60));
+        if (!empty($throttleState['locked'])) {
+            // Telling the truth here is safe: the bucket is keyed on the
+            // identifier as TYPED, so an invented username produces the
+            // same message. Nothing is confirmed about whether the account
+            // exists, and a locked-out student is told why.
+            err(
+                'Too many failed sign-in attempts for this account. Try again in '
+                . $minutes . ' minute' . ($minutes === 1 ? '' : 's')
+                . ', or contact the school office.',
+                429,
+                ['code' => 'account_locked', 'retry_after' => max(1, (int)$throttleState['retry_after'])]
+            );
+        }
+        // Source budget exhausted: a different condition, and one that must
+        // not tell the caller anything about the account it was aimed at.
+        err('Too many login attempts. Please wait a minute.', 429, ['code' => 'rate_limited']);
     }
     
     $profileImageColumnExists = \App\Services\MysqliProfileRepository::profileImageColumnAvailable($conn);
@@ -137,27 +149,14 @@ if ($action === 'login' && $method === 'POST') {
         err('Invalid username or password.', 401);
     }
     
-    // HARD LOCKOUT CHECK COMES FIRST, BEFORE CLEARING.
-    // The password just verified, but this account is over the hard line.
-    // Order matters: recordSuccess() deletes the bucket, so checking after
-    // it would always read zero and never lock. The message is deliberately
-    // specific — it tells the caller the address is real and the password
-    // was right — because the only alternative is to sign in an account
-    // under active guessing. See LoginThrottle's header.
-    if ($throttle->hardLocked()) {
-        if (!headers_sent()) {
-            header('Retry-After: ' . \App\Services\LoginThrottle::WINDOW_SECONDS);
-        }
-        err(
-            'This account is temporarily locked after too many failed sign-in attempts. '
-            . 'Try again in about 15 minutes, or contact the school office.',
-            429,
-            ['code' => 'account_locked']
-        );
-    }
-
-    // Under the hard line and the password is correct: clear the bucket so
-    // a lockout cannot outlive a successful authentication.
+    // Reaching here means the password verified, which means attempt()
+    // allowed this try, which means the identifier was not locked. Clear
+    // the bucket so a lockout cannot outlive a successful authentication.
+    //
+    // There used to be a second "hard lockout" check on this line, reading
+    // a counter that could never exceed the soft limit, so it never fired.
+    // See LoginThrottle's header: one threshold, and the lockout above is
+    // the only place that refuses.
     $throttle->recordSuccess();
 
     if ((int)$user['is_active'] !== 1) {
