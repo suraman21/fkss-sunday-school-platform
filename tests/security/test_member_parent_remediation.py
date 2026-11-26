@@ -178,5 +178,61 @@ class RepairRoleWhitelistTests(unittest.TestCase):
         self.assertNotIn("parent", roles)
 
 
+class PendingActivationMessageTests(unittest.TestCase):
+    """An ACM-provisioned account awaiting device setup must not be told to
+    "contact an administrator" — nobody at the office can activate it.
+    Static: the helper is read-only and its deny-safe path is asserted."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.auth_route = read(ROOT / "api" / "v1" / "routes" / "auth.php")
+        cls.acl = read(ROOT / "api" / "v1" / "core" / "acl.php")
+
+    def test_helper_exists(self):
+        self.assertIn("function apiAccountPendingActivation($conn, int $userId): bool", self.acl)
+
+    def test_helper_reads_only_boolean_state(self):
+        """It must not leak a username, account id or ACM detail into a
+        pre-auth response — only a boolean drives the message choice."""
+        body = self.acl[self.acl.index("function apiAccountPendingActivation"):]
+        body = body[:body.index("\n}\n")]
+        self.assertIn("SELECT 1 FROM acm_person_accounts", body)
+        self.assertIn("status = 'pending'", body)
+        # No selection of identifying columns.
+        for column in ("username", "user_id,", "person_id,", "guardian_id,", "member_id,"):
+            self.assertNotIn(column, body.replace("user_id = ?", ""),
+                             f"helper must not select {column}")
+
+    def test_helper_fails_closed(self):
+        """The try/catch wraps the prepare, so a missing acm_person_accounts
+        table (pre-ACM database) degrades to the generic message rather than
+        a 500 on login."""
+        body = self.acl[self.acl.index("function apiAccountPendingActivation"):]
+        body = body[:body.index("\n}\n") + 3]
+        self.assertIn("try {", body)
+        self.assertIn("catch (\\mysqli_sql_exception $e)", body)
+        self.assertIn("return false;", body)
+        # The catch must precede the prepare it guards.
+        self.assertLess(body.index("try {"), body.index("$conn->prepare"))
+        self.assertLess(body.index("$conn->prepare"), body.index("catch ("))
+
+    def test_login_distinguishes_pending_from_disabled(self):
+        self.assertIn("apiAccountPendingActivation($conn, (int)$user['id'])", self.auth_route)
+        self.assertIn("activation_pending", self.auth_route)
+        # The generic message must survive as the fallback.
+        self.assertIn("'Your account is inactive. Contact an administrator.'", self.auth_route)
+
+    def test_pending_check_runs_after_password_verification(self):
+        """The pending lookup must not be reachable without valid
+        credentials, or it becomes an account-existence oracle."""
+        self.assertLess(self.auth_route.index("password_verify($password"),
+                        self.auth_route.index("apiAccountPendingActivation($conn,"))
+
+    def test_pending_branch_stays_a_403(self):
+        seg = self.auth_route[self.auth_route.index("apiAccountPendingActivation($conn,"):]
+        seg = seg[:seg.index("activation_pending") + 60]
+        self.assertIn("403", seg)
+
+
 if __name__ == "__main__":
     unittest.main()

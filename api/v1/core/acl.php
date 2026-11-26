@@ -196,6 +196,49 @@ function apiParentGuardianId($conn, array $auth): int
 }
 
 /**
+ * True when this user is in the middle of the ACM activation ceremony:
+ * provisioned, credentials set, but the account is not yet `is_active`
+ * because no device has been registered.
+ *
+ * Why this exists: between `establishCredentials` and device registration
+ * a member/parent account has `users.is_active = 0`, exactly like a
+ * deliberately disabled account. Login therefore answered "Your account
+ * is inactive. Contact an administrator." — correct security, wrong
+ * guidance. The holder had done nothing wrong and the office has nothing
+ * to fix; they need to finish the ceremony on their device.
+ *
+ * Read-only and status-only: it returns a boolean, never a username, an
+ * account id, or any ACM detail. That keeps the login response free of
+ * role/account enumeration while still letting the app show the right
+ * next step.
+ *
+ * Deny-safe: any missing table, missing row, or SQL error returns false,
+ * so a pre-ACM database degrades to the existing generic message.
+ */
+function apiAccountPendingActivation($conn, int $userId): bool
+{
+    if ($userId <= 0) {
+        return false;
+    }
+    try {
+        $stmt = $conn->prepare(
+            "SELECT 1 FROM acm_person_accounts"
+            . " WHERE user_id = ? AND status = 'pending' LIMIT 1"
+        );
+    } catch (\mysqli_sql_exception $e) {
+        return false;
+    }
+    if (!$stmt) {
+        return false;
+    }
+    $stmt->bind_param('i', $userId);
+    $stmt->execute();
+    $pending = $stmt->get_result()->num_rows > 0;
+    $stmt->close();
+    return $pending;
+}
+
+/**
  * True when the caller's guardian has a VERIFIED link to this member
  * (G2 office stamp). Mirrors apiTeacherCanSeeMember's scoping pattern.
  */
