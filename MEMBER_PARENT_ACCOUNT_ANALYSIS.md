@@ -473,7 +473,7 @@ Design details worth noting because they will constrain the app:
 - **Suspend revokes sessions before touching state** (`AccountProvisioner.php:203-207`). Comment: a crash leaves sessions dead + account active — self-healing. Correct ordering; the inverse would strand live sessions.
 - **Reactivate does not re-issue a login.** Sessions were killed at suspend; the user must log in fresh. A parent app must handle "you were suspended and restored" as a full re-auth, not a resumed session.
 - **Deactivate is terminal.** `reactivate()` refuses a revoked link (`isSuspendedState` returns false for `revoked`). Re-entry is a *fresh activation ticket*. `user-toggle.php:99-113` enforces the same rule from the other direction: it refuses any 0→1 flip when the ACM link is `revoked`.
-- **Hard delete is blocked.** `admin/backend/user-delete.php:114-131` refuses to delete any user with an `acm_person_accounts` row at all, with a message directing the officer to the ACM console. Consequence: **a politely-declined applicant leaves a permanent `users` row** (never provisioned, or provisioned-then-deactivated). No purge path exists.
+- **Hard delete is blocked.** `admin/backend/user-delete.php:114-131` refuses to delete any user with an `acm_person_accounts` row at all, with a message directing the officer to the ACM console. Consequence: **a politely-declined applicant leaves a permanent `users` row** (never provisioned, or provisioned-then-deactivated). No purge path exists — by design: hard delete would shred devices, sessions and ceremony history. As of 2026-11-26 `admin/backend/acm_pending_expiry.php` deactivates *abandoned pending* accounts automatically (§9.7), but a provisioned-then-`revoked` account still has no purge path and that remains open.
 - **Suspension is a direct console action, not a ceremony** (`sql/089` header). Good call for latency; means there is no second-approver step on suspension.
 
 ---
@@ -592,8 +592,27 @@ I would not start the Members app before this is decided. Every screen depends o
 ### 9.6 [MEDIUM] No bulk onboarding path for existing members
 §2.1. 5,000 manual console ceremonies is not a launch plan. No importer, no backfill, no CSV path exists.
 
-### 9.7 [MEDIUM] A provisioned account that is never activated is a permanent orphan
-`is_active = 0` + link `pending` + `user-delete.php` refuses deletion (§7). Cancelling the ticket (`ticket_cancel`, `api_acm.php:564`) is the correct path — but there is no automatic expiry of pending links, and I found no cleanup job.
+### 9.7 [CLOSED 2026-11-26 — and it was hiding a worse defect] An unactivated account was a permanent orphan, and could be switched on past the ceremony
+
+**The orphan.** `is_active = 0` + link `pending` + `user-delete.php` refuses any hard delete on an ACM-linked user (§7), so an abandoned or declined activation left a `users` row forever. Cancelling the ticket (`ticket_cancel`, `api_acm.php:564`) was the only path out, and nothing expired a pending link.
+
+**The worse defect, found while writing the cleanup.** A pending account is `is_active = 0`, which reads identically to a deliberately disabled account at the login gate. Both staff surfaces that can flip that bit guarded **only** against `revoked`:
+
+- `admin/backend/user-toggle.php:103-113` — the 0→1 branch
+- `admin/backend/user-save.php:277-290` — the edit path, same 0→1 condition
+
+**A `pending` account could therefore be switched on directly from user administration, skipping the device ceremony entirely** — the exact thing §8.3 says cannot be done. The account would then log in with no bound device keypair. This is a more serious finding than the orphan, and it was not in the original §7 or §9.7 write-ups because I read those guards as "protects against revoke" rather than asking what else reaches them.
+
+**FIXED:**
+1. Both surfaces now refuse `pending` with a message pointing at activation, and both read the link status into a variable (they previously consumed the row with a bare `fetchColumn()`, so the second read was empty).
+2. New `admin/backend/acm_pending_expiry.php` — CLI, cron-shaped like `mobile_telemetry_retention.php`. It **deactivates** rather than deletes (`is_active=0`, link →`revoked`, history row), which is the terminal state `isSuspendedState()` refuses to revive, so re-entry is a fresh ticket and the audit trail survives. Dry run by default; `--apply` is one transaction with `SELECT … FOR UPDATE`; touches only `status='pending'` on inactive users; skips any account a human is still working on (a device row of any status, a consumed grant, or a password change since provisioning).
+3. `sql/098_acm_pending_expiry_events.sql` appends `'expired'` to the `acm_account_suspensions` action ENUM (guarded, re-runnable, 090 pattern). Reusing `'deactivated'` would make an automatic timeout indistinguishable from a deliberate `super_admin` action.
+
+**The race this job had to survive:** `DeviceService::completeFull()` commits the activation transaction (`is_active=1` + link `pending`→`active`) and only *afterwards* calls `markActivated()` for the ticket state; the link flip is deliberately lenient (0 rows → `error_log`, never throws). `userIdFor()` resolves these roles via `status IN ('pending','active')`. So a link can legitimately go active between the candidate query and the update. The job re-checks `users.is_active` **inside** the transaction and skips such accounts, reporting them as `skipped_still_active`.
+
+Guarded by `tests/security/test_acm_pending_expiry.py` (25 tests). Two of them fail if the `pending` guard is removed — verified by deleting it.
+
+**Operational note:** this is a deployment-owned cron job. Until it is scheduled, nothing expires — the orphan behaviour returns, though the back-door fix does not depend on the job.
 
 ### 9.8 [CLOSED 2026-11-26 — diagnosis corrected] `task_assigned` notifications were written addressed to nobody
 §5.3(d). **The original write-up had this backwards, and the correction matters.**
