@@ -2,6 +2,7 @@
 /**
  * School API v1 — Members
  * GET    /members                 — paginated list (Info/Admin: +phones; Education: name/code only)
+ * GET    /members/me             — the CALLER'S OWN record (member accounts; self only, no id)
  * GET    /members/{id}            — one member (field set depends on role; parents: own verified-linked children only)
  * POST   /members                 — register (Info / School Admin / Super Admin)
  * PUT    /members/{id}            — update (same roles)
@@ -92,6 +93,61 @@ if ($method === 'GET' && $id === null) {
     $stmt->close();
 
     paginated($members, $total, $page, $limit);
+}
+
+// ============================================================
+// GET /members/me — the caller's own record
+// ------------------------------------------------------------
+// A member account may read ITSELF. Before this route the `member`
+// role was in no allow-list, so GET /members/{id} answered 403 for
+// every id, including the caller's own, which made the member app
+// impossible to build.
+//
+// WHY A SELF ROUTE AND NOT A RELAXED /members/{id}
+//   An id-taking route that also admits the member role invites an
+//   IDOR: the next person to edit the branch has to remember the
+//   ownership check. Here the id is DERIVED from the session and never
+//   accepted from the request, so there is nothing to point at someone
+//   else. apiSelfMemberId() returns 0 on every failure mode, and 0 is
+//   a 403, so the deny path is the default.
+//
+// FIELD SET: the same "safe row" parents receive. No phone numbers, no
+// address, no guardian contact details.
+// ============================================================
+if ($method === 'GET' && is_string($id) && strtolower($id) === 'me' && $sub === null) {
+    if (isApiRateLimited('members_me', 60)) {
+        err('Too many requests. Please wait a moment.', 429);
+    }
+    $selfMemberId = apiSelfMemberId($conn, $auth);
+    if ($selfMemberId <= 0) {
+        err('You can only open your own member record.', 403);
+    }
+
+    $statement = $conn->prepare(
+        "SELECT id, member_code, student_name, father_name, grandfather_name, full_name_am,"
+        . " gender, age_group, status, member_type, current_section, education_level,"
+        . " student_photo_path"
+        . " FROM members WHERE id = ? LIMIT 1"
+    );
+    if (!$statement) {
+        err('The member record could not be loaded.', 503);
+    }
+    $statement->bind_param('i', $selfMemberId);
+    $statement->execute();
+    $row = $statement->get_result()->fetch_assoc();
+    $statement->close();
+    if (!$row) {
+        // The link points at a record that no longer exists: fail
+        // closed rather than resurrecting a stale row.
+        err('Your member record could not be found. Contact the accounts office.', 404);
+    }
+
+    // Same safe-row shaper parents receive (apiMemberSafeRow is the
+    // established one: name, code, class — never phones or address).
+    $row['photo_url'] = apiPhotoUrl($row['student_photo_path'] ?? null);
+    unset($row['student_photo_path']);
+
+    ok(['member' => apiMemberSafeRow($row)]);
 }
 
 // ============================================================

@@ -196,6 +196,55 @@ function apiParentGuardianId($conn, array $auth): int
 }
 
 /**
+ * A member account's OWN member record. 0 for non-members, for
+ * accounts whose ACM link is not active, and on pre-079 databases.
+ *
+ * WHY THIS EXISTS
+ *   The member role was previously in no allow-list at all, so a
+ *   student could not read their own record: `GET /members/{id}`
+ *   answers 403 for every id, including their own. That made the
+ *   member web app impossible to build on top of.
+ *
+ *   This resolves the link; it does NOT authorize by id. Route
+ *   handlers compare the resolved id against the requested one, so a
+ *   member can only ever reach themselves. Do not let a caller use
+ *   this to answer "can this user see member X" — that question stays
+ *   the job of the staff/parent predicates.
+ *
+ * DENY BY DEFAULT, never an error to the client: a missing migration,
+ * an inactive link, or a NULL member_id all return 0, exactly like
+ * apiParentGuardianId().
+ */
+function apiSelfMemberId($conn, array $auth): int
+{
+    if (!apiRoleIs($auth, ['member'])) {
+        return 0;
+    }
+    $uid = (int)($auth['uid'] ?? 0);
+    if ($uid <= 0) {
+        return 0;
+    }
+    try {
+        $stmt = $conn->prepare(
+            "SELECT p.member_id FROM acm_person_accounts pa"
+            . " JOIN acm_persons p ON p.id = pa.person_id"
+            . " WHERE pa.user_id = ? AND pa.account_type = 'member'"
+            . " AND pa.status = 'active' AND p.member_id IS NOT NULL LIMIT 1"
+        );
+    } catch (\mysqli_sql_exception $e) {
+        return 0;
+    }
+    if (!$stmt) {
+        return 0;
+    }
+    $stmt->bind_param('i', $uid);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return $row ? (int)$row['member_id'] : 0;
+}
+
+/**
  * True when this user is in the middle of the ACM activation ceremony:
  * provisioned, credentials set, but the account is not yet `is_active`
  * because no device has been registered.

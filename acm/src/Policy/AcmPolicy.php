@@ -30,6 +30,7 @@ class AcmPolicy
     public const RES_ATTEST   = 'attest';
     public const RES_CODE     = 'code';
     public const RES_DEVICE   = 'device';
+    public const RES_REQUEST  = 'request';
 
     /**
      * role => resource => actions. accounts_office holds the union of
@@ -55,6 +56,12 @@ class AcmPolicy
             // S4: console device list + revoke (officer-only;
             // self-service revoke is mobile-session-authed).
             'device'   => ['manage'],
+            // S11: the self-service activation request queue. Members
+            // submit these UNAUTHENTICATED (no policy applies); the
+            // office reviews, claims and decides them here. Approving
+            // is what binds a claim to a person, so it stays in the
+            // office seat and is never granted to reviewers/approvers.
+            'request'  => ['view', 'claim', 'note', 'approve', 'reject'],
             'office'   => [],
             'approver' => [],
             'reviewer' => [],

@@ -23,6 +23,7 @@
  * list + self-revoke.
  */
 
+use InvalidArgumentException;
 use SSMS\Acm\Accounts\AcmTicketService;
 use SSMS\Acm\Activation\ActivationException;
 use SSMS\Acm\Activation\ActivationService;
@@ -34,6 +35,7 @@ use SSMS\Acm\Device\DeviceService;
 use SSMS\Acm\Enrollment\StaffEnrollmentRequestService;
 use SSMS\Acm\Identity\AcmPersonService;
 use SSMS\Acm\OfficeNetwork\OfficeNetworkSignal;
+use Throwable;
 
 require_once __DIR__ . '/../../../acm/autoload.php';
 require_once __DIR__ . '/../../../admin/backend/services/PasswordPolicy.php';
@@ -174,6 +176,72 @@ $devices = new DeviceService($pdo, new AcmTicketService($pdo, $acmPersons), $acm
 // the S3 two-level actions above keep matching on id/sub.
 $acmParts = array_slice($ROUTE['parts'] ?? [], 1);
 $acmPath = implode('/', $acmParts);
+
+// ============================================================
+// POST /acm/activate/request  —  THE ONLY PUBLIC ACM ENDPOINT
+// ------------------------------------------------------------
+// A student asks for their account to be activated. No token: by
+// definition an unactivated account has no credentials yet.
+//
+// THE RESPONSE CONTRACT (see design §3.1; do not "improve" this):
+//   Success, duplicate, unknown member code, wrong name, wrong
+//   phone — ALL return 202 with an identical body. Anything else
+//   would confirm or deny that a member code is real, turning this
+//   into a member-directory scraper. The only other outcome is 422
+//   for a malformed body (a client bug, not a probe) and 429 for
+//   rate limiting, which is keyed on what was TYPED, not what was
+//   found.
+// ============================================================
+if ($acmPath === 'activate/request' && $method === 'POST') {
+    $reqBody = acmStrictBody(['member_code', 'full_name', 'phone', 'account_type'], 2048);
+
+    // Three independent buckets, all DB-backed and atomic. Subject for
+    // the per-code bucket is a HASH so raw member codes never reach
+    // the limiter table.
+    $reqCodeNorm = \SSMS\Acm\Requests\AcmActivationRequestService::normalizeMemberCode(
+        (string)($reqBody['member_code'] ?? '')
+    );
+    apiEnforceRateLimits([
+        ['action' => 'acm_request_ip', 'subject' => (string)($_SERVER['REMOTE_ADDR'] ?? 'unknown'), 'limit' => 10, 'window' => 3600],
+        ['action' => 'acm_request_code', 'subject' => 'code:' . hash('sha256', $reqCodeNorm), 'limit' => 3, 'window' => 3600],
+        ['action' => 'acm_request_global', 'subject' => 'all', 'limit' => 200, 'window' => 3600],
+    ]);
+
+    $requestService = new \SSMS\Acm\Requests\AcmActivationRequestService($pdo);
+
+    try {
+        $reqResult = $requestService->submit([
+            'member_code'  => $reqBody['member_code'] ?? '',
+            'full_name'    => $reqBody['full_name'] ?? '',
+            'phone'        => $reqBody['phone'] ?? null,
+            'account_type' => $reqBody['account_type'] ?? 'member',
+        ], (string)($_SERVER['REMOTE_ADDR'] ?? ''));
+    } catch (InvalidArgumentException $e) {
+        // Field validation only. The message names the FIELD, never
+        // whether the person exists -- but the route owns the wire
+        // contract here (S3 rule: no exception message reaches err()),
+        // so each cause maps to a fixed string.
+        // One fixed message. The exception's own text is never read
+        // here: this route is pinned by test_acm_s3_ceremony, which
+        // forbids exception text reaching err() from a mobile-reachable
+        // file, and the client shows its own field hints anyway.
+        err('Check the details you entered and try again.', 422, ['code' => 'invalid_request']);
+    } catch (Throwable $e) {
+        // Fail closed and generically. NO error_log text here: this file
+        // is pinned by tests/security/test_acm_s3_ceremony.py, which
+        // forbids variables inside error_log() on a mobile-reachable
+        // route. Logging a Throwable message on an unauthenticated
+        // endpoint would also risk leaking SQL or paths.
+        error_log('acm_request_failed');
+        err('Your request could not be recorded. Please try again.', 503, ['code' => 'temporarily_unavailable']);
+    }
+
+    // Identical whether the row was created or a duplicate collapsed.
+    ok([
+        'request_ref' => $reqResult['request_ref'],
+        'message'     => 'Your request has been received. The accounts office will review it and give you a code.',
+    ], 202);
+}
 
 // ============================================================
 // POST /acm/activate/verify
