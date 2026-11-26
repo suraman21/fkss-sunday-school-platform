@@ -165,3 +165,30 @@ def test_reader_of_a_null_selector_is_guarded():
         "an activation row has no selector; the console says so instead of "
         "leaving a blank in the 'last code' line"
     )
+
+
+def test_reissue_resets_the_budget_only_from_a_dead_code():
+    """The two reissue cases must stay distinguishable.
+
+    Asking for another code while one is still live used to be the way to
+    get unlimited guesses, so the budget survives that. But a code that
+    has already BURNT has spent the budget by definition, and reissuing
+    from it has to start clean -- otherwise the office hands out a fresh
+    code and the member is still refused for ten minutes, told the new
+    code is "invalid or expired".
+
+    The discriminator is whether there was a live code to replace: when
+    there was, `$reissueOf` is set.
+    """
+    src = strip_php_comments(SERVICE.read_text(encoding="utf-8"))
+    issue = src.split("public function issueCode(")[1].split("\n    private function ", 1)[0]
+    assert "clearOtpAttemptsForTicket" in issue, (
+        "a reissue from a burnt ticket must clear the spent budget, or the "
+        "recovery path cannot complete"
+    )
+    guard = issue.split("clearOtpAttemptsForTicket")[0]
+    assert "$reissueOf === null" in guard, (
+        "the reset must be conditional on there being NO live code to "
+        "replace; resets on every reissue are unlimited guessing"
+    )
+    assert "CodePurpose::Activation" in guard, "pair purposes keep their own budget"

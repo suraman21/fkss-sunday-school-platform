@@ -182,6 +182,40 @@ class ActivationService implements ActivationServiceContract
             // unconsumed grant for this ticket + operation dies too.
             $this->tickets->revokeCeremonyGrants((int)$ticketId, $purposeValue, 'reissue');
 
+            // An activation OTP reissue starts a clean attempt budget.
+            //
+            // The budget is deliberately per TICKET (sql/102), so a member
+            // cannot reset it by asking for another code -- that is what
+            // stops "reissue until the lock clears" from becoming the way
+            // to get unlimited guesses. But the office only reissues after
+            // a code has been burnt, and a burnt code has, by definition,
+            // spent the budget: the ticket expires, the office issues a
+            // fresh code, and the member still cannot use it for ten
+            // minutes, told "The code is invalid or expired" about a code
+            // that was correct and seconds old. The recovery path led
+            // straight back into the failure it exists to undo.
+            //
+            // The two cases are distinguishable, and that is the point: a
+            // member asking for a reissue of a code that has NOT burnt
+            // keeps their count (that is still reissue-until-lock), while a
+            // code the OFFICE issued from a burnt/expired ticket is a fresh
+            // start. Only the latter resets, and only for activation.
+            //
+            // Note this clears the per-TICKET rows for the ticket, not just
+            // this source: the person typing the new code may well be on a
+            // different phone or network than the one that burnt the old
+            // one, and the budget that matters is the ticket's.
+            // The reset applies ONLY when there was no live code to replace:
+            // $reissueOf is null exactly then, because the previous code has
+            // already been burnt or expired away and the office is handing
+            // out a fresh start. When a live code IS being replaced, the
+            // member is asking for another code, and the budget must carry
+            // over -- otherwise "keep asking until the lock clears" becomes
+            // unlimited guessing.
+            if ($purpose === CodePurpose::Activation && $reissueOf === null) {
+                $this->clearOtpAttemptsForTicket((int)$ticketId);
+            }
+
             // NULL, not '', from the start: see the branch below. The
             // initialiser has to agree with it, or a future edit that reads
             // $selector before the loop reintroduces the empty-string row.
@@ -560,6 +594,21 @@ class ActivationService implements ActivationServiceContract
             'DELETE FROM acm_otp_attempts WHERE ticket_id = :t AND source = :src'
         );
         $stmt->execute([':t' => $ticketId, ':src' => $source]);
+    }
+
+    /**
+     * Drop every source's spent budget for a ticket.
+     *
+     * Used only when the OFFICE reissues an activation code, i.e. when a
+     * fresh code is being handed out from a ticket whose previous code was
+     * burnt or replaced. Without it, a burnt code keeps the ticket locked
+     * for the rest of the window and the reissued code fails as "invalid
+     * or expired" the moment it is read out.
+     */
+    private function clearOtpAttemptsForTicket(int $ticketId): void
+    {
+        $stmt = $this->pdo->prepare('DELETE FROM acm_otp_attempts WHERE ticket_id = :t');
+        $stmt->execute([':t' => $ticketId]);
     }
 
     /**
