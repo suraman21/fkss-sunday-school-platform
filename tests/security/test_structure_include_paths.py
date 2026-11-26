@@ -70,11 +70,6 @@ DYNAMIC_ALLOWLIST = {
     "frontend/layouts/base.php": 1,
     "frontend/pages/dashboard.php": 1,
     "index.php": 1,
-    # 2026-11-26: the members portal loads a page template whose name comes
-    # from the finite route table (Router::PAGES), never from the request.
-    # dirname(__DIR__, 2) anchors the repo path, so a folder move breaks
-    # loudly at the is_file() probe in Template::render(), not silently.
-    "members/src/View/Template.php": 1,
 }
 
 
