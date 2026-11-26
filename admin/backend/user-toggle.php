@@ -104,8 +104,17 @@ if ($newStatus === 1) {
     try {
         $acmGuard = $pdo->prepare('SELECT status FROM acm_person_accounts WHERE user_id = ? LIMIT 1');
         $acmGuard->execute([$userId]);
-        if ($acmGuard->fetchColumn() === 'revoked') {
+        $acmLinkStatus = $acmGuard->fetchColumn();
+        if ($acmLinkStatus === 'revoked') {
             echo json_encode(['status' => 'error', 'message' => 'This account was deactivated and cannot be re-enabled; start a fresh activation.']);
+            exit;
+        }
+        // A `pending` link has never completed the device ceremony. Flipping
+        // the bit here would hand out a working account WITHOUT the device
+        // keypair the ceremony exists to bind, so it must go through
+        // activation instead. (2026-11-26: this path previously allowed it.)
+        if ($acmLinkStatus === 'pending') {
+            echo json_encode(['status' => 'error', 'message' => 'This account has not finished device activation; complete activation instead of enabling it here.']);
             exit;
         }
     } catch (PDOException $e) {

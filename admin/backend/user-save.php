@@ -278,8 +278,16 @@ try {
             try {
                 $acmGuard = $pdo->prepare('SELECT status FROM acm_person_accounts WHERE user_id = :uid LIMIT 1');
                 $acmGuard->execute([':uid' => $userId]);
-                if ($acmGuard->fetchColumn() === 'revoked') {
+                $acmLinkStatus = $acmGuard->fetchColumn();
+                if ($acmLinkStatus === 'revoked') {
                     respond('error', 'This account was deactivated and cannot be re-enabled; start a fresh activation.');
+                }
+                // A `pending` link has never finished device activation.
+                // Enabling it from the edit form would bypass the ceremony
+                // and hand out an account with no bound device keypair
+                // (2026-11-26: this path previously allowed it).
+                if ($acmLinkStatus === 'pending') {
+                    respond('error', 'This account has not finished device activation; complete activation instead of enabling it here.');
                 }
             } catch (PDOException $e) {
                 // 42S02/42S22: pre-ACM deployment — proceed.
