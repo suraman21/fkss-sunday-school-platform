@@ -123,17 +123,20 @@ class VerificationIsScoped(unittest.TestCase):
 
     def test_every_failure_is_indistinguishable(self):
         """Wrong digit, expired, burnt, wrong ticket, spent budget: one error."""
-        # Five exits, all identical: unknown ticket, exhausted budget, the
-        # combined failure check, and a lost compare-and-set race.
+        # Four exits in verifyOtp itself, all identical: a malformed code,
+        # an unknown ticket, an exhausted budget, and a lost
+        # compare-and-set race. The FIFTH identical exit is inside
+        # failOtp(), which every mismatch funnels into and which raises the
+        # same code -- asserted in test_failures_commit_before_throwing.
         #
         # The exhausted-budget exit used to be rateLimited(), which made the
-        # endpoint an existence oracle -- an invented reference answered
+        # endpoint an existence oracle: an invented reference answered
         # code_invalid while a real one with a spent budget answered
-        # rate_limited. It now raises the same verifyFailed() as everything
-        # else, so this count went from four to five on purpose.
+        # rate_limited. Two requests were enough to learn which references
+        # exist.
         self.assertEqual(
             self.body.count("ActivationException::verifyFailed()"),
-            5,
+            4,
             "every exit from verifyOtp must raise the same generic failure",
         )
         # The pair path legitimately uses rateLimited() (it has its own

@@ -550,6 +550,26 @@ class ActivationService implements ActivationServiceContract
     }
 
     /**
+     * Attempts already spent against this ticket, inside the window.
+     *
+     * For the console ONLY. The per-row `attempts` column on a code row is
+     * not the OTP budget -- failOtp() never touches it -- so a page that
+     * prints "attempts used" straight from the row tells an officer that a
+     * burnt ticket used 0 of 5. The real count lives in acm_otp_attempts,
+     * summed across every source, because the budget is per ticket.
+     */
+    public function otpAttemptsUsed(int $ticketId): int
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT COALESCE(SUM(attempts), 0) FROM acm_otp_attempts'
+            . ' WHERE ticket_id = :t'
+            . ' AND updated_at > DATE_SUB(NOW(), INTERVAL ' . (int)Otp::TTL_MIN . ' MINUTE)'
+        );
+        $stmt->execute([':t' => $ticketId]);
+        return (int)$stmt->fetchColumn();
+    }
+
+    /**
      * Record a wrong guess, burn the code on the last one, and throw the
      * generic failure. Commits its accounting before throwing so a guess
      * is never free — the same commit-before-throw discipline as
@@ -1365,6 +1385,10 @@ class ActivationService implements ActivationServiceContract
             'last' => is_array($lastRow) ? $lastRow : null,
             'velocity_1h' => $this->ticketVelocity($ticketId),
             'velocity_limit' => self::TICKET_VELOCITY_LIMIT,
+            // The real OTP budget, which is not the code row's `attempts`.
+            'otp_used' => $this->otpAttemptsUsed($ticketId),
+            'otp_limit' => Otp::MAX_ATTEMPTS,
+            'otp_source_limit' => Otp::MAX_ATTEMPTS_PER_SOURCE,
         ];
     }
 

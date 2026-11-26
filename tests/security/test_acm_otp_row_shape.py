@@ -192,3 +192,26 @@ def test_reissue_resets_the_budget_only_from_a_dead_code():
         "replace; resets on every reissue are unlimited guessing"
     )
     assert "CodePurpose::Activation" in guard, "pair purposes keep their own budget"
+
+
+def test_console_reports_the_real_otp_budget():
+    """The code row's `attempts` is not the OTP budget.
+
+    failOtp() records failures in acm_otp_attempts and never touches the
+    code row's `attempts` column, so the console's "attempts used" read
+    straight from the row showed "0 of 5" on a ticket that had just been
+    BURNT. An officer looking at that concludes the member never tried.
+    codeStatus() must report the sum that the verifier actually enforces.
+    """
+    src = strip_php_comments(SERVICE.read_text(encoding="utf-8"))
+    assert "function otpAttemptsUsed(" in src, (
+        "codeStatus() needs the real per-ticket budget, not the row's counter"
+    )
+    used = src.split("function otpAttemptsUsed(")[1].split("\n    private function ", 1)[0]
+    assert "acm_otp_attempts" in used
+    assert "SUM(attempts)" in used.replace("COALESCE(SUM(attempts), 0)", "SUM(attempts)")
+    status = src.split("function codeStatus(")[1].split("\n    private function ", 1)[0]
+    assert "otp_used" in status and "otp_limit" in status
+
+    page = text("admin/acm_ticket.php")
+    assert "otp_used" in page, "the console must read the reported budget"
