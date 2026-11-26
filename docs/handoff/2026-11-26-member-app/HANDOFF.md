@@ -23,6 +23,22 @@ true`, yet `git push` returns `403` and the branch-creation API returns
 the session's own repository, not a permissions problem in your GitHub account.
 No credential fixes it; only a session that belongs to the app repo does.
 
+### Measured, not guessed
+
+Four probes were run on 2026-11-26, so nobody repeats them:
+
+| Probe | Result |
+|---|---|
+| `git push` to `ssms-member-app` | `403 Permission denied to suraman21` |
+| `POST /git/refs` on `ssms-member-app` | `403 Resource not accessible by integration` |
+| `POST /user/repos` (**create a new repo**) | `403 Resource not accessible by integration` |
+| `POST /git/refs` on the **platform** repo | ✅ succeeds (probe ref created, then deleted) |
+
+**A brand-new repo would not help.** The session cannot create one, and a repo
+created from the GitHub web UI by hand would be the same problem as
+`ssms-member-app`: outside the session's write scope. The only writable
+repository is the platform one this session is attached to.
+
 ## 2. Apply the prepared work
 
 The complete commit is `structure-and-archive-prototype.patch` in this folder.
