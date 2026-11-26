@@ -242,6 +242,58 @@ class IdentifierWiring(unittest.TestCase):
         self.assertIn("409", cred)
         self.assertIn("err(", cred)
 
+
+class ConsoleWiring(unittest.TestCase):
+    """The screens must exist, be gated, and not invent behaviour."""
+
+    REQUESTS_PAGE = ROOT / "admin" / "acm_requests.php"
+    REQUEST_PAGE = ROOT / "admin" / "acm_request.php"
+    API = ROOT / "admin" / "api_acm.php"
+    LAYOUT = ROOT / "admin" / "acm_layout.php"
+
+    def test_pages_are_role_gated(self):
+        for page in (self.REQUESTS_PAGE, self.REQUEST_PAGE):
+            source = read(page)
+            self.assertIn("consoleRoles()", source, page.name)
+
+    def test_every_console_action_checks_policy(self):
+        api = read(self.API)
+        for action in ("request_queue", "request", "request_claim", "request_approve", "request_reject"):
+            block = api.split(f"case '{action}'")[1].split("break;")[0]
+            self.assertIn("AcmPolicy::can(", block, action)
+
+    def test_approval_records_the_computed_basis(self):
+        api = read(self.API)
+        block = api.split("case 'request_approve'")[1].split("break;")[0]
+        # The basis must be COMPUTED, never taken from the client.
+        self.assertIn("matchBasis(", block)
+        self.assertNotIn("$_POST['match_basis']", block)
+
+    def test_manual_match_is_flagged_in_the_ui(self):
+        page = read(self.REQUEST_PAGE)
+        self.assertIn("manual", page)
+        # And a missing link is shown, not silently approved.
+        self.assertIn("link it first", page)
+
+    def test_navigation_entry_exists(self):
+        self.assertIn("acm_requests.php", read(self.LAYOUT))
+
+
+class NoInventedHelpers(unittest.TestCase):
+    """The console pages must use the real chrome, not imagined helpers."""
+
+    def test_pages_use_the_established_layout_helpers(self):
+        for page in ("acm_requests.php", "acm_request.php"):
+            source = read(ROOT / "admin" / page)
+            self.assertIn("acm_chrome_open(", source, page)
+            self.assertIn("acm_chrome_close(", source, page)
+
+    def test_no_invented_css_class_prefixes(self):
+        for page in ("acm_requests.php", "acm_request.php"):
+            source = read(ROOT / "admin" / page)
+            for invented in ('class="tbl"', 'class="pill', 'class="pager"', 'class="acm-tab'):
+                self.assertNotIn(invented, source, page)
+
 class PhpSyntax(unittest.TestCase):
     """No PHP binary here; assert the files at least declare strict types
     and contain no obvious unclosed construct."""

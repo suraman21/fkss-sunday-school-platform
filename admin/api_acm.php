@@ -52,6 +52,8 @@ use SSMS\Acm\Device\DeviceCrypto;
 use SSMS\Acm\Device\DeviceService;
 use SSMS\Acm\Enrollment\StaffEnrollmentRequestService;
 use SSMS\Acm\Identity\AcmPersonService;
+use SSMS\Acm\Requests\AcmActivationRequestService;
+use SSMS\Acm\Requests\AcmRequestDecisionService;
 use SSMS\Acm\Office\AcmOfficeService;
 use SSMS\Acm\OfficeNetwork\OfficeNetworkSignal;
 use SSMS\Acm\Policy\AcmPolicy;
@@ -827,6 +829,125 @@ try {
                 'user_id' => (int)$row['user_id'],
             ], 'acm_staff_enrollment_request', (int)$row['id']);
             acm_ok(['request' => $row]);
+            break;
+        }
+
+        // ── S11: self-service activation requests ──────────────
+        case 'request_queue': {
+            if (!AcmPolicy::can($role, AcmPolicy::RES_REQUEST, 'view')) {
+                acm_err('Access denied.', 403);
+            }
+            $requestService = new AcmActivationRequestService($pdo);
+            $status = in_array((string)($_GET['status'] ?? ''), ['pending_review','approved','rejected','expired','canceled'], true)
+                ? (string)$_GET['status'] : 'pending_review';
+            acm_ok([
+                'requests' => $requestService->queue(
+                    $actorId,
+                    $status,
+                    max(1, min((int)($_GET['limit'] ?? 25), 100)),
+                    max(0, (int)($_GET['offset'] ?? 0))
+                ),
+                'status' => $status,
+            ]);
+            break;
+        }
+
+        case 'request': {
+            if (!AcmPolicy::can($role, AcmPolicy::RES_REQUEST, 'view')) {
+                acm_err('Access denied.', 403);
+            }
+            $requestService = new AcmActivationRequestService($pdo);
+            $row = $requestService->get((int)($_GET['id'] ?? 0));
+            if ($row === null) {
+                acm_err('Request not found.', 404);
+            }
+            // The timeline, read directly: acm_request_events is
+            // append-only, so this is the audit history of the request.
+            $eventStmt = $pdo->prepare(
+                'SELECT event, actor_id, note, meta, created_at'
+                . ' FROM acm_request_events WHERE request_id = :rid ORDER BY id ASC LIMIT 200'
+            );
+            $eventStmt->execute([':rid' => (int)$row['id']]);
+            $requestEvents = $eventStmt->fetchAll(PDO::FETCH_ASSOC);
+
+            // Candidates are SUGGESTIONS for the officer, never an
+            // automatic match: the approval binds to whichever person
+            // the officer picks, and match_basis records how it was
+            // justified.
+            acm_ok([
+                'request' => $row,
+                'candidates' => $requestService->candidates($row),
+                'events' => is_array($requestEvents) ? $requestEvents : [],
+            ]);
+            break;
+        }
+
+        case 'request_claim': {
+            if (!AcmPolicy::can($role, AcmPolicy::RES_REQUEST, 'claim')) {
+                acm_err('Access denied.', 403);
+            }
+            $requestService = new AcmActivationRequestService($pdo);
+            $id = (int)($_POST['id'] ?? 0);
+            if (!$requestService->claim($id, $actorId)) {
+                acm_err('That request is no longer available to claim.', 409);
+            }
+            acm_audit($pdo, 'acm.request.claimed', ['request_id' => $id], 'acm_activation_request', $id);
+            acm_ok(['claimed' => true]);
+            break;
+        }
+
+        case 'request_reject': {
+            if (!AcmPolicy::can($role, AcmPolicy::RES_REQUEST, 'reject')) {
+                acm_err('Access denied.', 403);
+            }
+            $requestService = new AcmActivationRequestService($pdo);
+            $id = (int)($_POST['id'] ?? 0);
+            try {
+                if (!$requestService->reject($id, $actorId, (string)($_POST['reason'] ?? ''))) {
+                    acm_err('That request was already decided.', 409);
+                }
+            } catch (InvalidArgumentException $e) {
+                acm_err($e->getMessage(), 422);
+            }
+            acm_audit($pdo, 'acm.request.rejected', ['request_id' => $id], 'acm_activation_request', $id);
+            acm_ok(['rejected' => true]);
+            break;
+        }
+
+        case 'request_approve': {
+            if (!AcmPolicy::can($role, AcmPolicy::RES_REQUEST, 'approve')) {
+                acm_err('Access denied.', 403);
+            }
+            $requestService = new AcmActivationRequestService($pdo);
+            $decisionService = new AcmRequestDecisionService($pdo, $tickets, $persons);
+
+            $id = (int)($_POST['id'] ?? 0);
+            $personId = (int)($_POST['person_id'] ?? 0);
+            $memberId = isset($_POST['member_id']) && $_POST['member_id'] !== '' ? (int)$_POST['member_id'] : null;
+            $guardianId = isset($_POST['guardian_id']) && $_POST['guardian_id'] !== '' ? (int)$_POST['guardian_id'] : null;
+
+            $requestRow = $requestService->get($id);
+            if ($requestRow === null) {
+                acm_err('Request not found.', 404);
+            }
+            $personRow = $persons->find($personId);
+            if ($personRow === null) {
+                acm_err('The selected person was not found.', 404);
+            }
+            // match_basis is COMPUTED from what the officer chose, so the
+            // audit trail records whether the code and the name agreed.
+            $basis = AcmActivationRequestService::matchBasis($requestRow, $personRow);
+            try {
+                $result = $decisionService->approve($id, $actorId, $personId, $memberId, $guardianId, $basis);
+            } catch (InvalidArgumentException $e) {
+                acm_err($e->getMessage(), 422);
+            }
+            acm_audit($pdo, 'acm.request.approved', [
+                'request_id' => $id,
+                'ticket_no' => (string)$result['ticket_no'],
+                'match_basis' => $basis,
+            ], 'acm_activation_ticket', (int)$result['ticket_id']);
+            acm_ok(['ticket' => $result, 'match_basis' => $basis]);
             break;
         }
 
