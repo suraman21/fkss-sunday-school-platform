@@ -14,6 +14,11 @@ $auth = apiRequireAuth();
 $id = $ROUTE['id'];
 $sub = $ROUTE['sub'];
 
+// Staff-only: a member or parent token must not enumerate classes or
+// read any class's roster. Allow-list gate — fails closed for any
+// future non-staff role (see apiRolesStaff() in api/v1/core/acl.php).
+apiRequireStaffRole($auth);
+
 if (apiRoleIs($auth, ['finance_dept', 'material_dept'])) {
     err('Classes are not available for this role. Use the website.', 403);
 }

@@ -38,6 +38,15 @@
  */
 
 $auth = apiRequireAuth();
+
+// Staff-only: every notification/messaging action is scoped to a staff
+// role via NotificationCenterService's ROLE_LABELS/ANNOUNCE_SEND/
+// MESSAGE_PARTNERS matrices, all of which contain zero member or parent
+// entries. Without this gate those roles fall through the
+// "target_roles IS NULL AND target_user_id IS NULL" broadcast branch.
+// Allow-list gate — fails closed for any future non-staff role.
+apiRequireStaffRole($auth);
+
 $userId = (int)$auth['uid'];
 $role = apiRoleOf($auth);
 

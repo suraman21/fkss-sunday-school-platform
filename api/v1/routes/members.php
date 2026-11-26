@@ -158,7 +158,15 @@ if ($method === 'GET' && is_int($id) && $sub === 'attendance') {
     $canPii = apiCanViewMemberPii($auth);
     $canEdu = apiRoleIs($auth, apiRolesEducation());
     $canTeacher = apiIsClassRestricted($auth);
-    if (!$canPii && !$canEdu && !($canTeacher && apiTeacherCanSeeMember($conn, $auth, $id, $yearId))) {
+    // A parent may read the attendance of their own VERIFIED children —
+    // the same resolver the member-record branch above uses. Without
+    // this clause a parent could open /members/{id} but not that
+    // member's attendance, which is the one screen a parent app shows
+    // first. apiParentCanSeeMember is deny-by-default.
+    $canParent = apiRoleIs($auth, ['parent']);
+    if (!$canPii && !$canEdu
+        && !($canTeacher && apiTeacherCanSeeMember($conn, $auth, $id, $yearId))
+        && !($canParent && apiParentCanSeeMember($conn, $auth, $id))) {
         err('You cannot view this attendance history.', 403);
     }
 

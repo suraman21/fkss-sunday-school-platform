@@ -16,6 +16,49 @@ function apiRoleIs(array $auth, $roles): bool
     return in_array(apiRoleOf($auth), (array)$roles, true);
 }
 
+/**
+ * Every role a `users.role` row may hold. Staff only: this is the
+ * staff-side catalogue, matching $validRoles in
+ * admin/backend/user-save.php (the creation whitelist).
+ *
+ * member and parent are deliberately ABSENT. Those two roles are
+ * provisioned only by approved ACM activation tickets — never by
+ * staff user creation — so they are out of scope for staff school
+ * data. Where a route must serve staff but not members/parents, gate
+ * it with apiRequireStaffRole() below rather than hand-writing a role
+ * list: a hardcoded list inside one route is how a future role gets a
+ * silent 403 nobody notices.
+ */
+function apiRolesStaff(): array
+{
+    return [
+        'super_admin', 'school_admin', 'info_dept', 'hr_dept',
+        'photo_importer', 'photo_dept', 'edu_dept', 'finance_dept',
+        'material_dept', 'mezmur_dept', 'teacher', 'attendance_taker',
+        'content_editor', 'mezmur_attendance_taker',
+        'hr_attendance_taker', 'accounts_office',
+    ];
+}
+
+/**
+ * Deny-by-default gate for endpoints that are staff-only by nature
+ * (school-wide dashboards, class rosters, staff communications).
+ *
+ * Deliberately an ALLOW-list, not a deny-list. A deny-list naming the
+ * two roles we know about today would silently admit every future
+ * non-staff role; an allow-list fails closed for anything new.
+ *
+ * Audit note (2026-11-26): /classes, /dashboard/* and /notifications/*
+ * previously had no staff gate at all, so a provisioned member or
+ * parent token reached school-wide data. Those three now call this.
+ */
+function apiRequireStaffRole(array $auth): void
+{
+    if (!apiRoleIs($auth, apiRolesStaff())) {
+        err('This endpoint is not available for this role.', 403);
+    }
+}
+
 /** Info / school / super admin — the only roles that may see phones and addresses. */
 function apiRolesPii(): array
 {
@@ -150,6 +193,49 @@ function apiParentGuardianId($conn, array $auth): int
     $row = $stmt->get_result()->fetch_assoc();
     $stmt->close();
     return $row ? (int)$row['guardian_id'] : 0;
+}
+
+/**
+ * True when this user is in the middle of the ACM activation ceremony:
+ * provisioned, credentials set, but the account is not yet `is_active`
+ * because no device has been registered.
+ *
+ * Why this exists: between `establishCredentials` and device registration
+ * a member/parent account has `users.is_active = 0`, exactly like a
+ * deliberately disabled account. Login therefore answered "Your account
+ * is inactive. Contact an administrator." — correct security, wrong
+ * guidance. The holder had done nothing wrong and the office has nothing
+ * to fix; they need to finish the ceremony on their device.
+ *
+ * Read-only and status-only: it returns a boolean, never a username, an
+ * account id, or any ACM detail. That keeps the login response free of
+ * role/account enumeration while still letting the app show the right
+ * next step.
+ *
+ * Deny-safe: any missing table, missing row, or SQL error returns false,
+ * so a pre-ACM database degrades to the existing generic message.
+ */
+function apiAccountPendingActivation($conn, int $userId): bool
+{
+    if ($userId <= 0) {
+        return false;
+    }
+    try {
+        $stmt = $conn->prepare(
+            "SELECT 1 FROM acm_person_accounts"
+            . " WHERE user_id = ? AND status = 'pending' LIMIT 1"
+        );
+    } catch (\mysqli_sql_exception $e) {
+        return false;
+    }
+    if (!$stmt) {
+        return false;
+    }
+    $stmt->bind_param('i', $userId);
+    $stmt->execute();
+    $pending = $stmt->get_result()->num_rows > 0;
+    $stmt->close();
+    return $pending;
 }
 
 /**

@@ -88,6 +88,33 @@ function sendNotification($conn, $type, $title, $message, $options = []) {
         $targetRolesStr = is_array($targetRoles) ? implode(',', $targetRoles) : $targetRoles;
         
         $targetUserId = isset($options['target_user_id']) ? (int)$options['target_user_id'] : null;
+
+        // ── Broadcast guard ───────────────────────────────────────────
+        // NotificationCenterService::feed() treats a row with
+        // `target_roles IS NULL AND target_user_id IS NULL` as a BROADCAST:
+        // it is delivered to every account in the system. An empty target
+        // list is truthy-as-'', and '' is NOT NULL, so it matches nobody —
+        // the notification is silently dropped.
+        //
+        // Those two outcomes are opposite and neither is what a caller
+        // means by "no target". An addressed notification that reaches
+        // nobody is a lost task; one addressed to nobody is a school-wide
+        // broadcast. `task_assigned` has an empty entry in
+        // $NOTIFICATION_MATRIX ('Specific to target'), and
+        // createDepartmentTask() passes `[]` when a task has no department
+        // — exactly the shape that produced the lost notification. So:
+        // refuse to write a row that is addressed to no one, and make the
+        // reason visible instead of silent.
+        $hasRoleTarget = is_array($targetRoles)
+            ? $targetRoles !== []
+            : ($targetRoles !== null && $targetRoles !== '');
+        if (!$hasRoleTarget && $targetUserId === null) {
+            error_log(
+                'sendNotification refused: type=' . $type . ' has no target role and no target user.'
+                . ' An untargeted notification is either dropped or broadcast school-wide.'
+            );
+            return false;
+        }
         
         $stmt = $conn->prepare("
             INSERT INTO notifications 
@@ -329,12 +356,22 @@ function createDepartmentTask($conn, $title, $options = []) {
         if ($stmt->execute()) {
             $taskId = $conn->insert_id;
             
-            sendNotification($conn, 'task_assigned', "New Task: $title", $description ?: $title, [
-                'priority' => $priority,
-                'target_roles' => $toDept ? [$toDept] : [],
-                'target_user_id' => $toUserId,
-                'data' => ['task_id' => $taskId, 'related_member_id' => $relatedMemberId]
-            ]);
+            // Only notify when the task is actually addressed to someone.
+            // A task with neither a department nor a user is storable (the
+            // row above already landed) but has no recipient; notifying
+            // anyway wrote a notification addressed to nobody, which
+            // NotificationCenterService::feed() either dropped or
+            // broadcast. The guard in sendNotification() now refuses that
+            // shape — this check avoids the pointless attempt and the log
+            // line it would produce.
+            if ($toDept || $toUserId) {
+                sendNotification($conn, 'task_assigned', "New Task: $title", $description ?: $title, [
+                    'priority' => $priority,
+                    'target_roles' => $toDept ? [$toDept] : [],
+                    'target_user_id' => $toUserId,
+                    'data' => ['task_id' => $taskId, 'related_member_id' => $relatedMemberId]
+                ]);
+            }
             
             return $taskId;
         }

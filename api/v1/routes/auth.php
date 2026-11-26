@@ -78,6 +78,19 @@ if ($action === 'login' && $method === 'POST') {
     }
     
     if ((int)$user['is_active'] !== 1) {
+        // An ACM-provisioned member/parent sits at is_active = 0 between
+        // establishing credentials and registering a device. Telling that
+        // holder to "contact an administrator" is correct security but
+        // wrong guidance: the office has nothing to fix and the account
+        // cannot be activated for them (the ceremony needs their own
+        // device). Give them the actual next step instead.
+        if (apiAccountPendingActivation($conn, (int)$user['id'])) {
+            err(
+                'Your account is waiting for device setup. Finish activation on your device to sign in.',
+                403,
+                ['code' => 'activation_pending']
+            );
+        }
         err('Your account is inactive. Contact an administrator.', 403);
     }
 
