@@ -8,10 +8,13 @@ use RuntimeException;
 /**
  * An error that carries an HTTP status and a message safe to show a user.
  *
- * Anything thrown that is NOT this class is treated as an internal error:
- * logged, and answered with a generic 500. That split is the whole point —
- * it makes "did I mean to show this text to a member?" a decision rather
+ * Why this exists in the skeleton: it is the type every layer will throw
+ * across a boundary. Anything that is NOT this class is an internal failure
+ * — logged, and answered with a generic message. Keeping the two apart is
+ * what makes "did I mean to show this text to a member?" a decision rather
  * than an accident.
+ *
+ * Statuses used so far: 404 (no such page), 500 (unexpected).
  */
 final class HttpException extends RuntimeException
 {
@@ -35,15 +38,5 @@ final class HttpException extends RuntimeException
     public function publicPayload(): array
     {
         return $this->publicPayload;
-    }
-
-    public static function notFound(string $message = 'Page not found.'): self
-    {
-        return new self(404, $message);
-    }
-
-    public static function forbidden(string $message = 'You do not have access to this page.'): self
-    {
-        return new self(403, $message);
     }
 }

@@ -1,239 +1,141 @@
-# Members portal (`members/`)
+# Members web app — folder structure
 
-The web application for **members and parents** — the student-facing side of the
-platform. This document describes the folder structure and the rules that keep
-it safe. It deliberately describes **structure only**: there is no database
-access, no session creation and no password handling here yet.
-
-For the finished prototype this app is based on (13 pages, theme CSS, quiz
-engine), see [`docs/prototypes/member-app-2026-11-26/`](../docs/prototypes/member-app-2026-11-26/ARCHIVE.md)
-and its `ARCHIVE.md`, which records what may be carried forward and what must
-not.
+The PHP folder structure for the members/parents web app. **Structure only.**
+There is no behaviour here: no routing, no database, no session, no page, no
+styling. Creating the files is the next job, and it starts when it is approved.
 
 ---
 
-## 1. Layout
+## 1. This app is separate, and that changes the structure
+
+| | |
+|---|---|
+| **Repository** | Its own repository, not this one (the files will move there) |
+| **Deployment** | Its own subdomain in production |
+| **Integration** | Through the **API**, not shared files, folders or PHP includes |
+
+That last row is the one that shapes everything below, because the obvious
+layout for a PHP app in *this* repository is the wrong one here:
+
+- **No clean-URL registry.** `admin/backend/services/BrowserPageRoutes.php`
+  exists to give this repository's pages friendly URLs through
+  `browser_page.php`. This app is not served by that dispatcher and must not
+  be added to it.
+- **No `.htaccess` additions** in the parent repository. This app's web server
+  configuration belongs to its own subdomain.
+- **No `require` reaching into the platform.** No `config.php`, no
+  `admin/backend/*`, no `api/v1/*` route file. Every interaction with the
+  platform is an HTTP call to `/api/v1` under the parent repository's rules.
+- **Entry files at the top of the app folder**, not in a `public/` subfolder.
+  When this app is deployed, its own folder is the document root, so the same
+  layout works in both places with no path rewriting.
+
+The only shared thing is the data contract: the JSON the API returns.
+
+---
+
+## 2. Layout
 
 ```
-members/                     web entry directory — the only part browsers reach
-├── index.php                /members           front controller + home page
-├── home.php                 /members/home      home page under its explicit name
-├── login.php                /members/login     sign-in (form shell only)
-├── .htaccess                Options + DirectoryIndex only; no rewrites (§5)
-├── src/                     application code — NEVER served (denied in root .htaccess)
-│   ├── Auth/
-│   │   ├── Session.php      read-only snapshot of the platform session
-│   │   └── RoleGate.php     the only authorisation decision in this app
-│   ├── Http/
-│   │   ├── Route.php        value object: one page + the roles allowed on it
-│   │   ├── Router.php       the page table (finite, no request-derived paths)
-│   │   └── Response.php     sends HTML with the headers every page needs
-│   ├── Repository/          database access — empty until a feature needs it
-│   ├── Service/             business rules — empty until a feature needs it
-│   ├── Support/
-│   │   ├── bootstrap.php    the explicit autoload map (no Composer)
-│   │   ├── Bootstrap.php    runs one page: gate, render, error handling
-│   │   └── HttpException.php an error that is safe to show a person
-│   └── View/
-│       └── Template.php     the only way a page becomes HTML (page → layout)
-├── templates/               presentation — NEVER served
-│   ├── layouts/base.php     the <html> shell
-│   └── pages/               home, sign-in, error
-└── assets/                  served
-    ├── css/base.css
-    ├── js/
+members/
+├── src/                        application code — never served by the web
+│   ├── Auth/                   who is using the app, and what they may do
+│   ├── Http/                   request handling: routing, responses
+│   ├── Repository/             data access — the only layer that calls the API
+│   ├── Service/                business rules
+│   ├── Support/                bootstrap.php, HttpException.php
+│   └── View/                   turning prepared data into HTML
+├── templates/
+│   ├── layouts/                the page shell(s)
+│   └── pages/                  one template per page
+└── assets/
+    ├── css/                    styles
+    ├── js/                     scripts, if any
     └── favicon/
 ```
 
-Why the entry files sit at the top of `members/` and not in a `public/`
-subfolder: see §5, constraint 1. It is not a style preference.
+Nine folders, three files:
 
----
+| File | Why it exists in a skeleton |
+|---|---|
+| `src/Support/bootstrap.php` | The hand-written autoload map. The host has no Composer (ADR-0001), so every class is listed by hand. Creating a class means adding a line; that rule has to be written down before the first class exists, or it gets skipped. |
+| `src/Support/HttpException.php` | The one error type that crosses layer boundaries. A deliberate split from internal failures: this one is safe to show a person, everything else is not. Every layer will throw it, so it comes first. |
+| `README.md` | This file. |
 
-## 2. Blockers — product decisions, not code
-
-Nothing in this section can be resolved by writing code carefully. Each needs a
-decision from the product owner, and each is the reason a page is a placeholder.
-
-### 2.1 There is no way to sign in yet
-
-The only path that sets `users.is_active = 1` for a member or parent account is
-the ACM device ceremony — `acm/src/Device/DeviceService.php::completeFull`,
-option A: in-app keystore plus DPoP. Until that ceremony completes, the account
-exists but cannot authenticate.
-
-So a browser login form has nothing to succeed against. Either:
-
-- the ceremony is implemented for the browser (WebCrypto + DPoP), or
-- a different activation path is approved for browser users.
-
-`members/login.php` therefore renders the form **inert**: the fields and the
-submit button are `disabled`. Nobody can type a password into a page that would
-refuse it for a reason it cannot explain.
-
-Related: `MEMBER_PARENT_ACCOUNT_ANALYSIS.md` §8.3.
-
-### 2.2 There is no member-side authorisation model
-
-`member` appears in no allow-list anywhere in the platform. What a member may
-read about themselves — which fields of their own record, which lessons, whose
-attendance — is undefined. `parent` is defined only as "may see a linked
-member", in `api/v1/core/acl.php::apiParentCanSeeMember()`.
-
-`RoleGate` answers "may this role open this page". It cannot answer "may this
-person see this row". That second question needs a written rule before the
-first real page is built.
-
-Related: `MEMBER_PARENT_ACCOUNT_ANALYSIS.md` §9.2/§9.3.
+Everything else is a `.gitkeep`.
 
 ---
 
 ## 3. Layering
 
-One direction only:
+One direction, no exceptions:
 
 ```
-entry file (index.php)
-   → Support\Bootstrap::run(slug)
-      → Http\Router::route()          which page is this?
-      → Auth\RoleGate::assertAllowed() may this role open it?
-      → View\Template::page()          render it
-         → templates/layouts + pages
-   → Http\Response                   send it
+Http  →  Service  →  Repository  →  API
 ```
 
-Rules that follow from that, and are worth enforcing in review:
-
-| Rule | Why |
-|---|---|
-| `templates/` receives **prepared data only** | A template that cannot reach `$_SESSION` or a service cannot leak one. `Template::render()` passes `$e` and `$data`, nothing else. |
-| A page file draws the page **it was written for** | The slug is a constant in the entry file. No `$_GET`, no `$_POST`, no `SCRIPT_NAME` parsing selects the page, so no request input can choose a template. |
-| Exactly one place reaches the platform | `src/Support/bootstrap.php`. When `config.php` is wired in, it is wired there and nowhere else. |
-| `admin/access_control.php` is **not** loaded | Its `ROLE_MAP` contains neither `member` nor `parent`, so it refuses exactly the people this app serves. |
-| No JSON API here | The machine-readable surface for members belongs in `/api/v1`, where the token layer and the ACL helpers already exist and are tested. |
-
-`src/Repository/` and `src/Service/` are empty on purpose. They are named now so
-that the first data-backed feature has an obvious, agreed place to go instead of
-landing in a page file.
-
----
-
-## 4. How to add a page
-
-Adding one page touches four files and nothing else:
-
-1. **`members/<name>.php`** — the entry file. Copy `home.php`, change the slug
-   in `Bootstrap::create()->run('/<name>')`.
-2. **`members/src/Http/Router.php`** — one row in `PAGES`:
-   `'/<name>' => ['<view>', '<Title>', self::MEMBER_ROLES, true]`.
-3. **`members/templates/pages/<view>.php`** — the markup. No queries.
-4. **`admin/backend/services/BrowserPageRoutes.php`** — one row in `PAGES`:
-   `'/<name>' => '/<name>.php'`. See §5.
-
-Then update `tests/security/test_members_portal.py` if the new page changes what
-it pins.
-
-Do **not** add a nested page (`/members/lessons/notes`). See §5, constraint 2.
-
----
-
-## 5. Three constraints that shape this folder
-
-All three come from code that already exists and is already tested. They are
-listed here because each one silently rejects the "obvious" layout.
-
-### 1. The handler's parent directory must equal the clean URL's parent directory
-
-`BrowserPageRoutes` preserves containing directories so that relative browser and
-PHP targets resolve identically for the clean URL and the legacy script. The
-rule is asserted twice — `tests/fixtures/browser_page_routes.fixture`
-(`same(dirname($legacy), dirname($clean))`) and
-`tests/security/test_browser_page_routes.py`.
-
-Consequences:
-
-- `/members/login` can only be served by a file **directly in `members/`**.
-  A `members/public/login.php` would violate the rule, so there is no `public/`
-  subfolder. This is the reason the entry files sit at the top of the folder.
-- `/members` is not in the registry. It is the `members/` directory itself, which
-  the web server answers with its `DirectoryIndex`. Registering it would mean
-  mapping a URL to `/members/index.php`, whose parent is `/members`, not `/`.
-
-### 2. A clean URL is one segment below its base
-
-Same rule, read the other way: `/members/<one-segment>` is the only shape the
-registry can express. Deeper pages need either their own one-segment name
-(`/members/lessons`, `/members/progress`) or a change to the registry rule —
-which would be a repository-wide change, not a portal change.
-
-### 3. No `RewriteEngine` inside `members/.htaccess`
-
-A per-directory `RewriteEngine On` without `RewriteOptions Inherit` drops every
-parent rule — including the root block on `.md`, `.sql`, `.sh`, `.py`, `.lock`
-and `.yaml`. `tests/security/test_structure_boundaries.py` fails on that pattern
-by name.
-
-So: **all routing for `/members/*` lives in the root `.htaccess`**, and
-`members/.htaccess` carries `Options` only. The root `.htaccess` also denies
-`members/src/` and `members/templates/`, which is the right place for it because
-that block is already covered by tests.
-
-Root `.htaccess` rules that involve this app:
-
-- the dispatch condition and rule now accept `members` and `members/<slug>`;
-- `^members/(src|templates)(/|$)` is denied before any of it.
-
----
-
-## 6. Serving it
-
-There are two ways a request reaches a page, and they must behave the same:
-
-| URL | Path | Entry file |
+| Folder | Holds | Must not |
 |---|---|---|
-| `/members` | DirectoryIndex of `members/` (`members/.htaccess` names it) | `members/index.php` |
-| `/members/home` | root `.htaccess` → `browser_page.php` → registry | `members/home.php` |
-| `/members/login` | root `.htaccess` → `browser_page.php` → registry | `members/login.php` |
+| `src/Http/` | Request parsing, routing table, response output | contain a SQL string, an API URL, or a business rule |
+| `src/Service/` | Business rules: what a member may see, how a grade is averaged | call the API directly, or touch `$_GET`/`$_POST` |
+| `src/Repository/` | The only place that knows the API's URLs, payloads and error shapes | make a decision |
+| `src/View/` | Rendering prepared data | reach for the session, the repository or the API |
+| `src/Auth/` | Session/token handling and the role check | contain page markup |
+| `src/Support/` | Wiring and shared types | contain features |
 
-Both entry styles call the same `Bootstrap`, so a page cannot behave differently
-because of how it was reached. Direct requests to a page file
-(`/members/login.php`) are harmless — a page file has no request-selected state —
-but they are not the supported URL and nothing links to them.
-
-Deployment: the repository root is the web root and files are uploaded over SFTP
-(RFC 0001 §2). `members/` is an ordinary folder in that tree; no server
-configuration change is required.
+`src/View/` and `templates/` are split for the same reason: a template that
+receives only an array of prepared values cannot quietly query something, so a
+leak becomes visible in a diff instead of hidden in a view.
 
 ---
 
-## 7. Verification
+## 4. What integration through the API means in practice
 
-Two things are checked, and they check different things:
+The API is the platform's existing one (`/api/v1` in the parent repository),
+not a second, parallel API built for this app. Concretely:
 
-| Check | File | What it proves |
+- **Authentication is the API's.** Token handling, refresh and revocation are
+  its concern. This app stores a token and presents it; it does not check a
+  password itself.
+- **Authorization for a row is the API's.** Whether a parent may see a
+  particular child is `apiParentCanSeeMember()`'s decision, already built and
+  tested. This app may ask, and will be told no.
+- **Errors come back as the API's envelope.** `src/Repository/` translates it;
+  no other layer needs to know its shape.
+
+Two open questions that belong to whoever owns the API, not to this structure:
+
+1. **How a member signs in.** In the platform, a member or parent has
+   `users.is_active = 0` until the ACM device ceremony completes
+   (`acm/src/Device/DeviceService.php::completeFull`). A browser needs that
+   ceremony in WebCrypto, or a different activation path.
+2. **What a member may read about themselves.** `member` currently appears in
+   no allow-list on the platform side; that list has to exist before the first
+   real page can be built.
+
+---
+
+## 5. Naming
+
+| Kind | Convention | Example |
 |---|---|---|
-| Structure, statically | `tests/security/test_members_portal.py` | The route table is one segment deep, every page has an entry file and a template, the gate is an allow-list, entry files read no request input, the folder has no rewrite rules and the root denies `src/` and `templates/`. Runs everywhere. |
-| Behaviour, for real | `tests/fixtures/members_portal.fixture` | The portal actually runs: each role's outcome, the escaped output, `/members` and `/members/home` drawing the same page, an unknown slug becoming a page and not a stack trace. Run by the Python test when `php` is on the path (as it is in CI), skipped locally when it is not. |
+| Class file | `PascalCase.php`, one class, name matches | `src/Http/Router.php` |
+| Folder | `PascalCase` under `src/`, lowercase under `templates/` and `assets/` | `src/Repository/`, `templates/pages/` |
+| Template | `kebab-case.php` | `templates/pages/sign-in.php` |
+| Namespace | `MembersPortal\` + folder path | `MembersPortal\Http\Router` |
 
-The fixture is a bare PHP file rather than a PHPUnit test because the
-repository has no test framework for PHP and no Composer to add one. It prints
-a single JSON line and exits non-zero on failure, in the same style as
-`tests/fixtures/browser_page_routes.fixture`.
+The namespace is `MembersPortal` rather than `Members` on purpose: `Members`
+is too close to `member.php` and to the API's own member routes, and a
+collision there would be read as belonging to the platform.
 
-Run both:
+---
 
-```bash
-php tests/fixtures/members_portal.fixture .      # 39 behavioural checks
-python3 -m pytest tests/security/test_members_portal.py -q
-```
+## 6. Adding a page (when that starts)
 
-## 8. What is deliberately absent
+1. A route in `src/Http/Router.php`.
+2. A service method in `src/Service/` for any rule it needs.
+3. A repository method in `src/Repository/` if it needs data.
+4. A template in `templates/pages/`.
 
-| Absent | Why |
-|---|---|
-| Database access | No feature needs it yet. `config.php` is not wired in yet either (see `src/Support/bootstrap.php`). |
-| Session creation / login | §2.1 |
-| CSRF tokens | Needed the moment a form posts. There is no posting form yet — the sign-in form is inert. |
-| A JS framework, a build step | Nothing here needs one, and the host has no Node toolchain. |
-| Composer | Not available on the host (ADR-0001). `src/Support/bootstrap.php` lists classes by hand. |
-| The prototype's theme CSS | It is in the archive. Adopting it is a design decision with its own review, not part of the structure. |
+No step reads a file path from the request, and no step reaches into the
+parent repository.
