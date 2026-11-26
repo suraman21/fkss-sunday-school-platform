@@ -38,8 +38,24 @@ if (!in_array($role, AcmPolicy::consoleRoles(), true)) {
 }
 
 $id = (int)($_GET['id'] ?? 0);
-$requests = new AcmActivationRequestService($pdo);
-$request = $id > 0 ? $requests->get($id) : null;
+$request = null;
+$loadError = '';
+try {
+    $requests = new AcmActivationRequestService($pdo);
+    $request = $id > 0 ? $requests->get($id) : null;
+} catch (\Throwable $e) {
+    // Most likely migration 099 has not been applied yet. Say so instead of
+    // showing a stack trace or a blank page.
+    error_log('acm_request_load_failed');
+    $loadError = 'The request could not be loaded. Apply migration 099 if this is a new deployment.';
+}
+if ($loadError !== '') {
+    http_response_code(503);
+    acm_chrome_open('requests', 'Request unavailable', '', 0);
+    echo '<div class="acm-alert err">' . e($loadError) . '</div>';
+    acm_chrome_close();
+    exit;
+}
 if ($request === null) {
     http_response_code(404);
     acm_chrome_open('requests', 'Request not found', '', 0);

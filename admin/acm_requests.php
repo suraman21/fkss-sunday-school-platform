@@ -53,12 +53,20 @@ $offset = max(0, (int)($_GET['offset'] ?? 0));
 $limit = 25;
 
 $rows = [];
+$pendingCount = 0;
 $pageError = '';
 try {
     $requests = new AcmActivationRequestService($pdo);
     $rows = $requests->queue($actorId, $fStatus, $limit, $offset);
+    // The chrome badge means "work waiting", not "rows on this page".
+    // Asking for the pending count keeps it correct on every tab.
+    if ($fStatus === 'pending_review') {
+        $pendingCount = count($rows) + $offset;
+    } else {
+        $pendingCount = count($requests->queue($actorId, 'pending_review', 100, 0));
+    }
 } catch (\Throwable $e) {
-    error_log('acm_requests_queue_failed: ' . $e->getMessage());
+    error_log('acm_requests_queue_failed');
     $pageError = 'The request queue could not be loaded.';
 }
 
@@ -72,7 +80,7 @@ $statusLabel = [
     'canceled' => 'Canceled',
 ];
 
-acm_chrome_open('requests', 'Activation requests', 'Self-service requests from members and parents', count($rows));
+acm_chrome_open('requests', 'Activation requests', 'Self-service requests from members and parents', $pendingCount);
 ?>
 
 <h1 class="pg">Activation requests</h1>

@@ -61,8 +61,17 @@ if (!AcmPolicy::can($role, AcmPolicy::RES_CODE, 'issue')) {
     exit;
 }
 
-$persons = new AcmPersonService($pdo);
-$tickets = new AcmTicketService($pdo, $persons);
+try {
+    $persons = new AcmPersonService($pdo);
+    $tickets = new AcmTicketService($pdo, $persons);
+} catch (\Throwable $e) {
+    error_log('acm_device_recovery_boot_failed');
+    http_response_code(503);
+    acm_chrome_open('queue', 'Device recovery unavailable', '', 0);
+    echo '<div class="acm-alert err">Recovery is unavailable right now. Check the ACM migrations.</div>';
+    acm_chrome_close();
+    exit;
+}
 
 // How many accounts one search returns. Bounded: this is an operator
 // tool, not a directory browser.
