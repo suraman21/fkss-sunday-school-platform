@@ -16,6 +16,49 @@ function apiRoleIs(array $auth, $roles): bool
     return in_array(apiRoleOf($auth), (array)$roles, true);
 }
 
+/**
+ * Every role a `users.role` row may hold. Staff only: this is the
+ * staff-side catalogue, matching $validRoles in
+ * admin/backend/user-save.php (the creation whitelist).
+ *
+ * member and parent are deliberately ABSENT. Those two roles are
+ * provisioned only by approved ACM activation tickets — never by
+ * staff user creation — so they are out of scope for staff school
+ * data. Where a route must serve staff but not members/parents, gate
+ * it with apiRequireStaffRole() below rather than hand-writing a role
+ * list: a hardcoded list inside one route is how a future role gets a
+ * silent 403 nobody notices.
+ */
+function apiRolesStaff(): array
+{
+    return [
+        'super_admin', 'school_admin', 'info_dept', 'hr_dept',
+        'photo_importer', 'photo_dept', 'edu_dept', 'finance_dept',
+        'material_dept', 'mezmur_dept', 'teacher', 'attendance_taker',
+        'content_editor', 'mezmur_attendance_taker',
+        'hr_attendance_taker', 'accounts_office',
+    ];
+}
+
+/**
+ * Deny-by-default gate for endpoints that are staff-only by nature
+ * (school-wide dashboards, class rosters, staff communications).
+ *
+ * Deliberately an ALLOW-list, not a deny-list. A deny-list naming the
+ * two roles we know about today would silently admit every future
+ * non-staff role; an allow-list fails closed for anything new.
+ *
+ * Audit note (2026-11-26): /classes, /dashboard/* and /notifications/*
+ * previously had no staff gate at all, so a provisioned member or
+ * parent token reached school-wide data. Those three now call this.
+ */
+function apiRequireStaffRole(array $auth): void
+{
+    if (!apiRoleIs($auth, apiRolesStaff())) {
+        err('This endpoint is not available for this role.', 403);
+    }
+}
+
 /** Info / school / super admin — the only roles that may see phones and addresses. */
 function apiRolesPii(): array
 {

@@ -8,6 +8,14 @@
  */
 
 $auth = apiRequireAuth();
+
+// Staff-only: /dashboard/stats returns school-wide member counts, a
+// gender split, staff count and today's attendance; /dashboard/recent
+// returns the global activity_logs feed. Neither is scoped to the
+// caller, so a member or parent token must not reach them. Allow-list
+// gate — fails closed for any future non-staff role.
+apiRequireStaffRole($auth);
+
 $action = $ROUTE['id'] ?? '';
 
 // ============================================================
