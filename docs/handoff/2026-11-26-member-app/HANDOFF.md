@@ -112,8 +112,12 @@ git apply --3way --directory=. structure-and-archive-prototype.patch
 
 ## 4. Read next, in the app repo
 
-`docs/00-START-HERE.md` is the short version and is also copied into this folder
-for convenience. In full:
+`docs/00-START-HERE.md` is the short version, and it now exists in the app repo
+(PR #1 there). It is deliberately **not** copied into this folder: its relative
+links point at the other handbook pages, which live only in the app repo, and a
+copy here would break the platform's `tests/security/test_docs_links.py`.
+
+In full, in the app repo:
 
 | # | File | Why |
 |---|---|---|
