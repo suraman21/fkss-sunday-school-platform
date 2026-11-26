@@ -291,15 +291,28 @@ if ($acmAction === 'activate/credentials' && $method === 'POST') {
         err('Too many attempts. Wait a while and try again.', 429, ['code' => 'rate_limited']);
     }
     // One password value over HTTPS (D3.4) — confirmation is app-UI-only.
-    $body = acmStrictBody(['grant', 'password', 'idempotency_key'], 4096);
+    // `username` is OPTIONAL (design D3): when supplied it becomes a
+    // login identifier for this account; when absent the member code
+    // already bound at approval is the identifier instead.
+    $body = acmStrictBody(['grant', 'password', 'idempotency_key', 'username'], 4096);
     try {
         $account = $ceremony->establishCredentials(
-            $body['grant'], $body['password'], $body['idempotency_key']
+            $body['grant'], $body['password'], $body['idempotency_key'],
+            isset($body['username']) && $body['username'] !== '' ? (string)$body['username'] : null
         );
     } catch (ActivationException $e) {
         acmWireError($e, $body['password']);
     } catch (InvalidArgumentException $e) {
-        err('The request is invalid.', 400, ['code' => 'invalid_request']);
+        // D3: a username the member chose may already be taken. That is
+        // a USER-FIXABLE condition, not a server fault, so it must not
+        // surface as a 500 -- the member simply picks another. The
+        // message is a fixed string: no exception text escapes here
+        // (pinned by test_acm_s3_ceremony).
+        err(
+            'That username is already in use. Choose another, or retry without a username to use your member ID number instead.',
+            409,
+            ['code' => 'username_unavailable']
+        );
     }
     $credentialsResponse = [
         'message' => 'Account created. Complete device registration to sign in.',

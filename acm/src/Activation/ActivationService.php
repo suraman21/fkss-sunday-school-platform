@@ -320,7 +320,8 @@ class ActivationService implements ActivationServiceContract
     public function establishCredentials(
         string $grantToken,
         string $password,
-        string $idempotencyKey
+        string $idempotencyKey,
+        ?string $chosenUsername = null
     ): AccountRef {
         if (!preg_match('/^[A-Za-z0-9_-]{20,128}$/', $grantToken)) {
             throw new ActivationException(
@@ -454,6 +455,33 @@ class ActivationService implements ActivationServiceContract
                 $ticket, $person, password_hash($password, PASSWORD_DEFAULT), 0
             );
             $username = $this->provisioner->usernameForUser($userId);
+
+            // D3: register the login identifiers in the SAME
+            // transaction as provisioning. A collision here (someone
+            // else already answers to this username or member code)
+            // rolls the whole account creation back, so an activation
+            // can never half-succeed and strand a user with an account
+            // they cannot sign in to.
+            //
+            // When the member chose no username, the member code
+            // becomes the identifier: that is the "ID number logs me
+            // in" behaviour they asked for.
+            $directory = new \SSMS\Acm\Requests\AuthenticatorDirectory($this->pdo);
+            if ($chosenUsername !== null && $chosenUsername !== '') {
+                $directory->registerUsername($userId, $chosenUsername);
+                // Keep users.username authoritative for this account so
+                // two sources of truth cannot disagree later.
+                $setName = $this->pdo->prepare(
+                    'UPDATE users SET username = :u WHERE id = :id'
+                );
+                $setName->execute([
+                    ':u'  => substr($chosenUsername, 0, 40),
+                    ':id' => $userId,
+                ]);
+                $username = (string)$chosenUsername;
+            } else {
+                $directory->registerMemberCode($userId, (string)$ticket['member_code']);
+            }
             if ($username === null) {
                 throw new RuntimeException('Account was created but could not be reloaded.');
             }

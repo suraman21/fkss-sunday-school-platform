@@ -198,6 +198,50 @@ class MigrationDiscipline(unittest.TestCase):
             self.assertIn("IDEMPOTENT", head, name)
 
 
+
+class IdentifierWiring(unittest.TestCase):
+    """D3 — the identifier bindings must actually be USED, not just stored.
+
+    The first version of this feature shipped the directory and never
+    called it, so a member code could not log anyone in. These tests
+    exist to make that specific regression impossible.
+    """
+
+    AUTH_ROUTE = ROOT / "api" / "v1" / "routes" / "auth.php"
+    SERVICE = ROOT / "acm" / "src" / "Activation" / "ActivationService.php"
+
+    def test_login_falls_back_to_the_directory(self):
+        route = read(self.AUTH_ROUTE)
+        self.assertIn("AuthenticatorDirectory", route)
+        self.assertIn("resolveUserId(", route)
+
+    def test_login_does_uniform_work_when_identifier_is_unknown(self):
+        """A missing identifier must not answer faster than a wrong
+        password, or the endpoint becomes a member-code oracle."""
+        route = read(self.AUTH_ROUTE)
+        self.assertIn("password_verify($password, '$2y$", route)
+
+    def test_credentials_registers_an_identifier_in_the_same_txn(self):
+        source = read(self.SERVICE)
+        block = source.split("public function establishCredentials")[1].split("public function completeRecovery")[0]
+        self.assertIn("registerUsername(", block)
+        self.assertIn("registerMemberCode(", block)
+        # It must be inside the existing transaction, not after commit.
+        txn_at = block.index("beginTransaction()")
+        bind_at = block.index("registerUsername(")
+        commit_at = block.index("$this->pdo->commit();", bind_at)
+        self.assertLess(txn_at, bind_at)
+        self.assertLess(bind_at, commit_at)
+
+    def test_taken_username_is_user_fixable_not_a_server_fault(self):
+        route = read(ACM_ROUTE)
+        cred = route.split("if ($acmAction === 'activate/credentials'")[1]
+        self.assertIn("username_unavailable", cred)
+        # The status is on its own line in the call, so assert the pair
+        # rather than a formatting-specific literal.
+        self.assertIn("409", cred)
+        self.assertIn("err(", cred)
+
 class PhpSyntax(unittest.TestCase):
     """No PHP binary here; assert the files at least declare strict types
     and contain no obvious unclosed construct."""

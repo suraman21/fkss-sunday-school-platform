@@ -70,9 +70,43 @@ if ($action === 'login' && $method === 'POST') {
     if (!$stmt) err('Database error', 500);
     $stmt->bind_param('ss', $username, $username);
     $stmt->execute();
+
+    // ── D3: a member code is also a login identifier ──────────
+    // If the username/email lookup misses, ask the authenticator
+    // directory whether this string is a bound member code. The
+    // directory's UNIQUE key spans usernames AND member codes, so a
+    // collision between the two namespaces is impossible by
+    // construction; this branch therefore only ever runs when the
+    // username lookup found nothing.
+    //
+    // TIMING: when the fallback also misses, we still run one
+    // password_verify against a fixed dummy hash. Without it, "no such
+    // identifier" would return measurably faster than "wrong password"
+    // and the endpoint would become a member-code oracle even though
+    // both answer with the same 401.
     $user = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    
+    if (!$user && $username !== '') {
+        $directory = new \SSMS\Acm\Requests\AuthenticatorDirectory($pdo);
+        $resolvedId = $directory->resolveUserId($username);
+        if ($resolvedId !== null && $resolvedId > 0) {
+            // Re-run the same projection, this time by primary key.
+            $byId = $conn->prepare(
+                'SELECT id, username, email, full_name, role, password_hash, is_active,'
+                . ' authorization_version FROM users WHERE id = ? LIMIT 1'
+            );
+            if (!$byId) err('Database error', 500);
+            $byId->bind_param('i', $resolvedId);
+            $byId->execute();
+            $user = $byId->get_result()->fetch_assoc();
+            $byId->close();
+        }
+    }
+    if (!$user) {
+        // Uniform work whether the identifier exists or not.
+        password_verify($password, '$2y$12$usesomesillystringfore7hnbRJHxXVLeakoG8K30oukPsA.ztMG');
+    }
+
     if (!$user || !password_verify($password, $user['password_hash'])) {
         err('Invalid username or password.', 401);
     }

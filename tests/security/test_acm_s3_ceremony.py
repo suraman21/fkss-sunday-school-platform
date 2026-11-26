@@ -227,7 +227,21 @@ def test_password_uses_policy_single_field_and_repo_hash():
     assert "WEAK_PASSWORD" in s
     assert "password_hash($password, PASSWORD_DEFAULT)" in s
     m = read(MOBILE)
-    assert "acmStrictBody(['grant', 'password', 'idempotency_key']" in m
+    # The INTENT of this pin: the password arrives in ONE field and there
+    # is no confirmation field on the wire (app-UI-only). The exact array
+    # is not the contract -- S11 added the optional 'username' (design
+    # D3), which does not weaken the one-password rule -- so assert the
+    # members rather than the literal.
+    # Anchor on the credentials handler: the first acmStrictBody call in
+    # the file belongs to the public request endpoint (S11), not this one.
+    # Anchor on the HANDLER, not the docblock at the top of the file
+    # (which also names activate/credentials).
+    cred = m.split("if ($acmAction === 'activate/credentials'")[1]
+    body = re.search(r"acmStrictBody\(\[([^\]]*)\]", cred)
+    assert body is not None
+    fields = body.group(1)
+    for required in ("'grant'", "'password'", "'idempotency_key'"):
+        assert required in fields, required
     assert "'confirm'" not in m  # confirmation is app-UI-only
 
 
