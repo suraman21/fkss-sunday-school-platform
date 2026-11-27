@@ -223,13 +223,25 @@ final class CredentialFakeStmt
         $this->affected = 1;
 
         if (str_contains($sql, 'FROM acm_activation_grants')) {
+            // Every column the real query selects, because the service reads
+            // them all: `code_id` and `person_id` feed the chained device
+            // grant. Omitting one raises "Undefined array key" -- a WARNING,
+            // and CI runs PHPUnit with failOnWarning, so a fake that is merely
+            // ``close enough`` fails the whole suite. A fake must answer with
+            // the shape of the row the query would return.
             $this->rows = [[
-                'id' => 5, 'ticket_id' => 900, 'operation' => 'activation',
+                'id' => 5,
+                'code_id' => 12,
+                'ticket_id' => 900,
+                'person_id' => 2,
+                'operation' => 'activation',
                 'grant_hash' => password_hash(
                     CredentialFakePdo::GRANT_FOR_FAKE,
                     PASSWORD_DEFAULT
                 ),
-                'consumed_at' => null, 'revoked_at' => null, 'live' => 1,
+                'consumed_at' => null,
+                'revoked_at' => null,
+                'live' => 1,
             ]];
             return true;
         }
