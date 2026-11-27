@@ -171,14 +171,19 @@ try {
 
     // ---------------------------------------------- 2. the fix works
     echo "\n== 2. the numbered shape, on this engine ==\n";
+    // Same four columns AcmTicketService::queue() actually searches --
+    // including full_name_en. An earlier version of this probe dropped that
+    // column and searched "Nahom" against the Amharic name, the phone and the
+    // ticket number, then reported "matched 0 rows" as a fix failure. The
+    // engine was right; the assertion was wrong.
     $new = 'SELECT COUNT(*) FROM _pdoprobe_tickets t JOIN _pdoprobe_persons p ON p.id = t.person_id'
         . " WHERE (t.ticket_no LIKE :q1 ESCAPE '\\\\' OR p.full_name_am LIKE :q2 ESCAPE '\\\\'"
-        . " OR p.phone LIKE :q3 ESCAPE '\\\\')";
+        . " OR p.full_name_en LIKE :q3 ESCAPE '\\\\' OR p.phone LIKE :q4 ESCAPE '\\\\')";
     $ok = true;
     $err = '';
     try {
         $stmt = $pdo->prepare($new);
-        $stmt->execute([':q1' => '%Nahom%', ':q2' => '%Nahom%', ':q3' => '%Nahom%']);
+        $stmt->execute([':q1' => '%Nahom%', ':q2' => '%Nahom%', ':q3' => '%Nahom%', ':q4' => '%Nahom%']);
         $n = (int)$stmt->fetchColumn();
         $ok = ($n === 1);
         $err = "matched {$n} rows";
