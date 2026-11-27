@@ -384,3 +384,58 @@ class TestContrast:
                 "a filled semantic hover must use --v2-on-ok / --v2-on-bad, "
                 "not a hard-coded white"
             )
+
+
+class TestScriptOrder:
+    """Page scripts must not run before the shared helpers exist.
+
+    The console's helpers (acmApi, acmToast, acmCsrf) are emitted by
+    acm_chrome_close(), which runs at the END of each page. A page that
+    calls one of them at top level -- `load();` at the bottom of its own
+    IIFE -- executes BEFORE the definition has been parsed, so the call
+    throws ReferenceError and the page never fetches its data.
+
+    That is not theoretical: acm_office.php and acm_audit.php both did
+    exactly this. Their tables sat on "Loading…" forever in a real
+    browser, and no test noticed because the tests read source text
+    rather than executing it. This guard is static, so it catches the
+    shape; the browser check below is what actually proves behaviour.
+    """
+
+    PAGES = ["acm_office.php", "acm_audit.php", "acm_person.php",
+             "acm_queue.php", "acm_requests.php", "acm_request.php",
+             "acm_staff_enroll.php", "acm_device_recovery.php"]
+
+    def test_no_top_level_helper_call_before_chrome_close(self):
+        """A helper called at the IIFE's top level runs before the definition.
+
+        Indentation alone cannot decide this: a call inside a function body
+        is deferred and safe. So walk the page script tracking brace depth,
+        and only flag a call made at depth 1 (inside the page IIFE but not
+        inside any function within it) -- that is the shape that throws.
+        """
+        for name in self.PAGES:
+            src = read(ADMIN / name)
+            close_at = src.index("acm_chrome_close()")
+            page_script = src[:close_at]
+
+            # Only look inside <script> blocks; markup mentions are harmless.
+            for block in re.findall(r"<script[^>]*>([\s\S]*?)</script>", page_script):
+                body = re.sub(r"/\*[\s\S]*?\*/", "", block)
+                body = re.sub(r"(?m)//.*$", "", body)
+                depth = 0
+                for line in body.split("\n"):
+                    stripped = line.strip()
+                    if depth == 1 and stripped and not stripped.startswith("*"):
+                        for helper in ("acmApi(", "acmToast(", "acmCsrf("):
+                            if stripped.startswith(helper):
+                                raise AssertionError(
+                                    f"{name}: {helper} called at the top level of "
+                                    f"the page script, before acm_chrome_close() "
+                                    f"defines it. In a browser this throws "
+                                    f"ReferenceError and the page never loads its "
+                                    f"data. Line: {stripped!r}"
+                                )
+                    # function(){} bodies close on the same line often enough
+                    # that counting raw braces is the reliable measure here.
+                    depth += stripped.count("{") - stripped.count("}")

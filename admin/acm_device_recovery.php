@@ -106,128 +106,261 @@ function acm_recoverable_accounts(AcmPersonService $persons, int $personId): arr
 }
 
 acm_head('Device recovery');
-acm_chrome_open('queue', 'Device recovery', 'Replace a lost or replaced device', 0);
+acm_chrome_open(
+    'recovery',
+    'Device recovery',
+    'Replace a lost or replaced phone for an account that is already active',
+    0
+);
 ?>
-<div class="acm-btn-row" style="margin-bottom:1rem">
-    <a class="btn bo" href="/admin/acm_queue.php"><i class="fa-solid fa-arrow-left"></i> Activation queue</a>
+
+<div class="v2-toolbar" style="margin-bottom:var(--v2-s4)">
+    <a class="btn bo" href="/admin/acm_queue.php">
+        <i class="fa-solid fa-arrow-left"></i> Activation queue
+    </a>
+    <span style="flex:1"></span>
+    <span class="bg bg-info" title="What this screen can and cannot do">
+        <i class="fa-solid fa-shield-halved"></i> cannot create an account, change a password, or issue an activation code
+    </span>
 </div>
 
-<?php /* The page heading and the one-line explanation are already in the
-         chrome header (acm_chrome_open takes both). Repeating them here
-         printed "Device recovery" twice on every visit. */ ?>
-<p class="sub">
-    For a member who has lost or replaced their phone. This opens a recovery
-    ticket for an account that is already active. Approve that ticket, then
-    issue it an <strong>add-a-device</strong> code &mdash; the code is what the
-    member redeems on their new phone. This screen cannot create an account,
-    change a password, or send an activation code.
-</p>
-
-<div class="acm-alert">
-    <i class="fa-solid fa-shield-halved"></i>
-    Verify the person's identity before continuing. Whoever redeems the code
-    binds a device to this account, and that device can then sign in.
-</div>
-
-<form method="get" class="acm-filterbar" style="margin:1rem 0">
-    <input class="inp" type="text" name="q" value="<?= e($q) ?>"
-           placeholder="Search the person by name, phone or ID document&hellip;">
-    <button class="btn bo" type="submit"><i class="fa-solid fa-magnifying-glass"></i> Search</button>
+<form method="get" class="v2-search" role="search" style="max-width:640px;margin-bottom:var(--v2-s3)">
+    <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+    <input type="search" name="q" value="<?= e($q) ?>"
+           placeholder="Search the person by name, phone, or ID document…"
+           aria-label="Search people">
+    <button class="btn bp" type="submit">Search</button>
+    <?php if ($q !== ''): ?>
+        <a class="btn bo" href="/admin/acm_device_recovery.php">Clear</a>
+    <?php endif; ?>
 </form>
 
 <?php if ($searchError !== ''): ?>
-    <div class="acm-alert err"><?= e($searchError) ?></div>
+    <div class="acm-alert err">
+        <i class="fa-solid fa-triangle-exclamation"></i> <?= e($searchError) ?>
+    </div>
 <?php endif; ?>
 
-<?php if ($q !== '' && $matches === []): ?>
-    <div class="acm-empty"><i class="fa-solid fa-user-slash"></i><p>No person matched that search.</p></div>
+<?php if ($q === ''): ?>
+    <div class="cd">
+        <div class="ct"><i class="fa-solid fa-mobile-screen"></i> Finding the right person</div>
+        <div class="sub" style="line-height:1.65">
+            <p style="margin-top:0">
+                Device recovery is for a member whose account is <strong>already
+                active</strong> and who has lost or replaced their phone.
+            </p>
+            <p>
+                Opening a recovery ticket creates an auditable record. Approve it,
+                then issue it an <strong>add-a-device code</strong> &mdash; that code is
+                what the member redeems on the new phone.
+            </p>
+            <p style="margin-bottom:0;color:var(--v2-warn)">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                Verify the person's identity before continuing. Whoever redeems the
+                code binds a device to this account, and that device can then sign in.
+            </p>
+        </div>
+    </div>
+<?php elseif ($matches === []): ?>
+    <div class="v2-state">
+        <i class="fa-solid fa-user-slash"></i>
+        <div class="v2-state-title">No person matched “<?= e($q) ?>”</div>
+        <p>
+            The search covers name, phone and ID document. If the member is certain
+            of their details, the office register may need correcting first — a
+            recovery ticket binds a device to an account that already exists.
+        </p>
+        <div class="v2-state-actions">
+            <a class="btn bo" href="/admin/acm_person.php">Persons &amp; accounts</a>
+        </div>
+    </div>
 <?php endif; ?>
 
 <?php foreach ($matches as $person): ?>
     <?php $accounts = acm_recoverable_accounts($persons, (int)$person['id']); ?>
-    <div class="cd">
-        <div class="ct">
-            #<?= (int)$person['id'] ?> &middot;
-            <span class="amharic"><?= e((string)($person['full_name_am'] ?? '')) ?></span>
+    <div class="v2-card" style="margin-bottom:var(--v2-s3)">
+        <div class="v2-card-head <?= $accounts === [] ? 'is-warn' : 'is-ok' ?>">
+            <i class="fa-solid <?= $accounts === [] ? 'fa-circle-minus' : 'fa-circle-check' ?>"
+               style="color:var(--<?= $accounts === [] ? 'v2-warn' : 'v2-ok' ?>)"></i>
+            <strong class="amharic" style="color:var(--v2-ink);font-size:var(--v2-t-small)">
+                <?= e((string)($person['full_name_am'] ?? '')) ?>
+            </strong>
             <?php if (!empty($person['full_name_en'])): ?>
-                &middot; <?= e((string)$person['full_name_en']) ?>
+                <span style="color:var(--v2-ink-3);font-size:var(--v2-t-small)">
+                    <?= e((string)$person['full_name_en']) ?>
+                </span>
             <?php endif; ?>
+            <span style="margin-left:auto;font-size:var(--v2-t-micro);color:var(--v2-ink-3)">
+                Person #<?= (int)$person['id'] ?>
+                · <?= count($accounts) ?> active account<?= count($accounts) === 1 ? '' : 's' ?>
+            </span>
         </div>
 
-        <?php if ($accounts === []): ?>
-            <p class="dim">
-                No active account on this person. If activation was never finished,
-                reissue the activation code from the ticket instead.
-            </p>
-        <?php else: ?>
-            <table>
-                <thead>
-                    <tr><th>Account</th><th>Username</th><th>Linked</th><th>Last sign-in</th><th></th></tr>
-                </thead>
-                <tbody>
-                <?php foreach ($accounts as $account): ?>
-                    <tr>
-                        <td><?= e((string)$account['account_type']) ?></td>
-                        <td><code><?= e((string)$account['username']) ?></code></td>
-                        <td class="dim"><?= e((string)$account['linked_at']) ?></td>
-                        <td class="dim"><?= $account['last_login'] !== null ? e((string)$account['last_login']) : 'never' ?></td>
-                        <td>
-                            <button class="btn bo acm-recover"
-                                    data-person="<?= (int)$person['id'] ?>"
-                                    data-type="<?= e((string)$account['account_type']) ?>"
-                                    data-username="<?= e((string)$account['username']) ?>">
-                                <i class="fa-solid fa-mobile-screen"></i> Open recovery ticket
-                            </button>
-                        </td>
-                    </tr>
-                <?php endforeach; ?>
-                </tbody>
-            </table>
-        <?php endif; ?>
+        <div class="v2-card-body">
+            <?php if ($accounts === []): ?>
+                <?php /* The old copy said "no active account" and stopped. The
+                         officer needs to know which of the three other things
+                         to do instead, because each has a different screen. */ ?>
+                <div class="v2-rail-hint" style="margin:0">
+                    This person has no <strong>active</strong> account, so there is no
+                    device to replace. Different problem, different fix:
+                </div>
+                <dl class="v2-facts" style="margin-top:var(--v2-s3)">
+                    <div class="v2-fact">
+                        <dt>Activation never finished</dt>
+                        <dd style="font-size:var(--v2-t-small)">Reissue the activation code
+                            from their ticket in the <a href="/admin/acm_queue.php"
+                            style="color:var(--v2-accent)">queue</a>.</dd>
+                    </div>
+                    <div class="v2-fact">
+                        <dt>Account suspended</dt>
+                        <dd style="font-size:var(--v2-t-small)">Reactivate it on
+                            <a href="/admin/acm_person.php?id=<?= (int)$person['id'] ?>"
+                            style="color:var(--v2-accent)">their person record</a> first.</dd>
+                    </div>
+                    <div class="v2-fact">
+                        <dt>Never activated</dt>
+                        <dd style="font-size:var(--v2-t-small)">They need an activation
+                            request, not a recovery.</dd>
+                    </div>
+                </dl>
+            <?php else: ?>
+                <div class="v2-list">
+                    <?php foreach ($accounts as $account): ?>
+                        <?php $lastSeen = $account['last_login'] ?? null; ?>
+                        <div class="v2-row" style="grid-template-columns:auto minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) auto">
+                            <span class="bg bg-p"><?= e((string)$account['account_type']) ?></span>
+                            <div style="min-width:0">
+                                <div class="v2-code" style="font-size:var(--v2-t-small)">
+                                    <?= e((string)$account['username']) ?>
+                                </div>
+                                <div class="v2-row-meta">
+                                    linked <?= e((string)($account['linked_at'] ?? '—')) ?>
+                                </div>
+                            </div>
+                            <div class="v2-row-cell v2-col-hide">
+                                <span style="font-size:var(--v2-t-micro);color:var(--v2-ink-3)">Last sign-in</span>
+                                <span style="display:block;font-size:var(--v2-t-small)">
+                                    <?= $lastSeen !== null ? e((string)$lastSeen) : 'never' ?>
+                                </span>
+                            </div>
+                            <div class="v2-row-cell v2-col-hide">
+                                <span class="bg bg-ok">active</span>
+                            </div>
+                            <div>
+                                <button class="btn bp bs acm-recover"
+                                        data-person="<?= (int)$person['id'] ?>"
+                                        data-type="<?= e((string)$account['account_type']) ?>"
+                                        data-username="<?= e((string)$account['username']) ?>"
+                                        data-name="<?= e((string)($person['full_name_am'] ?? '')) ?>">
+                                    <i class="fa-solid fa-mobile-screen"></i> Recover
+                                </button>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+        </div>
     </div>
 <?php endforeach; ?>
 
-<div id="acmRecoverOnce" class="acm-alert warn" style="display:none;margin-top:1rem"></div>
+<!-- The reason is collected in a real dialog instead of window.prompt():
+     the audit trail needs a considered sentence, and prompt() cannot show
+     who the recovery is for or be styled, translated or keyboard-managed. -->
+<div id="acmRecoverDialog" hidden
+     style="position:fixed;inset:0;z-index:300;display:grid;place-items:center;
+            background:rgba(16,19,26,.45);padding:var(--v2-s4)">
+    <div class="v2-card" role="dialog" aria-modal="true" aria-labelledby="acmRecoverTitle"
+         style="max-width:520px;width:100%">
+        <div class="v2-card-head is-warn">
+            <i class="fa-solid fa-mobile-screen" style="color:var(--v2-warn)"></i>
+            <strong id="acmRecoverTitle" style="color:var(--v2-ink);font-size:var(--v2-t-small)">
+                Open a recovery ticket
+            </strong>
+        </div>
+        <div class="v2-card-body">
+            <p class="v2-rail-hint" style="margin-top:0">
+                For <strong class="amharic" id="acmRecoverWho">—</strong>.
+                This creates an auditable ticket; it does not yet change the device.
+            </p>
+            <label class="v2-claim-label" for="acmRecoverReason" style="margin-bottom:var(--v2-s1)">
+                Reason (recorded permanently)
+            </label>
+            <textarea class="inp" id="acmRecoverReason" rows="3" maxlength="2000"
+                      style="width:100%;resize:vertical"
+                      placeholder="e.g. Phone lost on 25 Nov; member present with their student ID."></textarea>
+            <div class="acm-alert err" id="acmRecoverErr" style="display:none;margin-top:var(--v2-s2)"></div>
+            <div class="v2-rail-actions" style="flex-direction:row;gap:var(--v2-s2);margin-top:var(--v2-s3)">
+                <button class="btn bp" id="acmRecoverGo" type="button">
+                    <i class="fa-solid fa-check"></i> Open the ticket
+                </button>
+                <button class="btn bo" id="acmRecoverCancel" type="button">Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <script>
 (function () {
-    function csrf() {
-        var m = document.querySelector('meta[name="csrf-token"]');
-        return m ? m.getAttribute('content') : '';
+    var dlg = document.getElementById('acmRecoverDialog');
+    var reason = document.getElementById('acmRecoverReason');
+    var err = document.getElementById('acmRecoverErr');
+    var go = document.getElementById('acmRecoverGo');
+    var who = document.getElementById('acmRecoverWho');
+    var whoName = document.getElementById('acmRecoverWhoName');
+    var current = null;
+    var lastFocus = null;
+
+    function open(btn) {
+        current = {
+            person: btn.getAttribute('data-person'),
+            type: btn.getAttribute('data-type'),
+            username: btn.getAttribute('data-username')
+        };
+        if (who) { who.textContent = btn.getAttribute('data-name') || current.username; }
+        if (err) { err.style.display = 'none'; }
+        if (reason) { reason.value = ''; }
+        lastFocus = btn;
+        dlg.hidden = false;
+        if (reason) { reason.focus(); }
     }
-    var box = document.getElementById('acmRecoverOnce');
+    function close() {
+        dlg.hidden = true;
+        current = null;
+        if (lastFocus) { lastFocus.focus(); }
+    }
 
     document.querySelectorAll('.acm-recover').forEach(function (btn) {
-        btn.addEventListener('click', async function () {
-            var reason = prompt(
-                'Reason for device recovery (required, min 3 characters).\n'
-                + 'This is recorded in the audit trail.'
-            );
-            if (reason === null) { return; }
-            if (reason.trim().length < 3) { alert('Write a reason (min 3 characters).'); return; }
+        btn.addEventListener('click', function () { open(btn); });
+    });
+    document.getElementById('acmRecoverCancel').addEventListener('click', close);
+    dlg.addEventListener('click', function (e) { if (e.target === dlg) { close(); } });
+    document.addEventListener('keydown', function (e) {
+        if (!dlg.hidden && e.key === 'Escape') { close(); }
+    });
 
-            var fd = new FormData();
-            fd.append('action', 'device_recover');
-            fd.append('csrf_token', csrf());
-            fd.append('person_id', btn.getAttribute('data-person'));
-            fd.append('account_type', btn.getAttribute('data-type'));
-            fd.append('reason', reason);
-
-            btn.disabled = true;
-            try {
-                var r = await fetch('/admin/api_acm.php', { method: 'POST', body: fd, credentials: 'same-origin' });
-                var d = await r.json().catch(function () { return { status: 'error', message: 'Bad response' }; });
-                if (d.status !== 'success') { throw new Error(d.message || 'Request failed'); }
-                box.style.display = 'block';
-                box.innerHTML = 'Recovery ticket <strong>' + d.ticket_no + '</strong> created. '
-                    + 'Approve it, then issue it an add-a-device code and read the code '
-                    + 'to the member. '
-                    + '<a href="/admin/acm_ticket.php?id=' + d.ticket_id + '">Open ticket</a>';
-            } catch (e) {
-                alert(e.message);
-                btn.disabled = false;
-            }
-        });
+    go.addEventListener('click', async function () {
+        if (!current) { return; }
+        var text = reason ? reason.value.trim() : '';
+        if (text.length < 3) {
+            if (err) { err.textContent = 'Write a reason of at least 3 characters.'; err.style.display = ''; }
+            if (reason) { reason.focus(); }
+            return;
+        }
+        go.disabled = true;
+        try {
+            // The shared helper: it owns the CSRF token and the error shape.
+            var d = await acmApi('device_recover', {
+                person_id: current.person,
+                account_type: current.type,
+                reason: text
+            }, 'POST');
+            close();
+            window.location.href = '/admin/acm_ticket.php?id=' + (d.ticket_id || '');
+        } catch (e) {
+            if (err) { err.textContent = e.message; err.style.display = ''; }
+            go.disabled = false;
+        }
     });
 })();
 </script>

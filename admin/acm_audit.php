@@ -43,10 +43,14 @@ acm_chrome_open('audit', 'Monthly audit', 'Office accountability, attested', $op
 ?>
 <div class="cd">
     <div class="ct"><i class="fa-solid fa-file-shield"></i> Report <span class="bg bg-n" id="repMonth"><?= e($month) ?></span></div>
-    <form id="monthForm" class="acm-form" onsubmit="return false">
-        <div><label class="flbl" for="f_month">Month</label><input class="inp" id="f_month" type="month" value="<?= e($month) ?>"></div>
-        <div><label class="flbl">&nbsp;</label><button class="btn bo" id="loadBtn"><i class="fa-solid fa-rotate"></i> Load report</button></div>
-    </form>
+    <div class="v2-toolbar" style="margin-bottom:var(--v2-s3)">
+        <label class="v2-sr" for="f_month">Report month</label>
+        <input class="inp" id="f_month" type="month" value="<?= e($month) ?>">
+        <button class="btn bp" id="loadBtn" type="button">
+            <i class="fa-solid fa-rotate"></i> Load report
+        </button>
+        <span id="repState" style="font-size:var(--v2-t-micro);color:var(--v2-ink-4)"></span>
+    </div>
     <dl class="acm-kv" style="margin-top:.6rem">
         <dt>Period</dt><dd id="repPeriod">…</dd>
         <dt>Generated</dt><dd id="repGen">…</dd>
@@ -107,13 +111,35 @@ acm_chrome_open('audit', 'Monthly audit', 'Office accountability, attested', $op
 (function () {
     var month = <?= json_encode($month) ?>;
     var fingerprint = '';
+    function r0Generated(d) { return (d && d.report && d.report.generated_at) ? d.report.generated_at : ''; }
     function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+
+    // Every table below starts as "Loading…". If the request fails those
+    // placeholders stayed on screen forever, which reads as a slow server
+    // rather than a failed one — and this is the page an officer signs off
+    // the month on. On failure the same cells now say what happened.
+    function failed(err) {
+        var msg = (err && err.message) ? err.message : 'The report could not be loaded.';
+        ['selfRows', 'auditRows', 'modeRows', 'attRows'].forEach(function (id) {
+            var el = document.getElementById(id);
+            if (el) { el.innerHTML = '<tr><td colspan="4">' + esc(msg) + '</td></tr>'; }
+        });
+        var st = document.getElementById('repState');
+        if (st) { st.textContent = 'Not loaded'; }
+        var period = document.getElementById('repPeriod');
+        if (period) { period.textContent = 'unavailable'; }
+        acmToast(msg, false);
+    }
 
     async function load() {
         var d;
+        var st0 = document.getElementById('repState');
+        if (st0) { st0.textContent = 'Loading…'; }
         try {
             d = await acmApi('office_audit', { month: month });
-        } catch (err) { acmToast(err.message, false); return; }
+        } catch (err) { failed(err); return; }
+        var st1 = document.getElementById('repState');
+        if (st1) { st1.textContent = 'Loaded ' + (r0Generated(d) || ''); }
         var r = d.report || {};
         fingerprint = r.report_hash || '';
         document.getElementById('repMonth').textContent = r.month || month;
@@ -130,16 +156,16 @@ acm_chrome_open('audit', 'Monthly audit', 'Office accountability, attested', $op
             ? '<div class="acm-alert warn">Report hit the 5000-row cap and was truncated. Narrow follow-up queries with the office before attesting.</div>' : '';
         document.getElementById('selfRows').innerHTML = (r.self_approved || []).map(function (t) {
             return '<tr><td>' + esc(t.ticket_no) + '</td><td>' + esc(t.account_type) + '</td><td>' + esc(t.decider_name || '') + '</td><td>' + esc(t.decided_at || '') + '</td></tr>';
-        }).join('') || '<tr><td colspan="4">None.</td></tr>';
+        }).join('') || '<tr><td colspan="4">No self-approved decisions this month.</td></tr>';
         document.getElementById('auditRows').innerHTML = (r.audit_events || []).slice(0, 200).map(function (e) {
             return '<tr><td>' + esc(e.created_at) + '</td><td>' + esc(e.username || '') + '</td><td>' + esc(e.action) + '</td><td style="font-size:.72rem">' + esc(e.details || '') + '</td></tr>';
-        }).join('') || '<tr><td colspan="4">No office activity.</td></tr>';
+        }).join('') || '<tr><td colspan="4">No office activity recorded this month.</td></tr>';
         document.getElementById('modeRows').innerHTML = (r.mode_changes || []).map(function (h) {
             return '<tr><td>' + esc(h.mode) + '</td><td>' + esc(h.effective_date) + '</td><td>' + esc(h.changed_name || '') + '</td><td>' + esc(h.changed_at) + '</td></tr>';
-        }).join('') || '<tr><td colspan="4">None.</td></tr>';
+        }).join('') || '<tr><td colspan="4">No self-approved decisions this month.</td></tr>';
         document.getElementById('attRows').innerHTML = (r.attestations || []).map(function (a) {
             return '<tr><td>' + esc(a.kind) + '</td><td>' + esc(a.attester_name || '') + '</td><td>' + esc(a.attested_at) + '</td><td>' + esc(a.note) + '</td></tr>';
-        }).join('') || '<tr><td colspan="4">Unattested.</td></tr>';
+        }).join('') || '<tr><td colspan="4">This month has not been attested.</td></tr>';
     }
 
     async function gate() {

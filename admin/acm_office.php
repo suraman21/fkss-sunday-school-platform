@@ -39,6 +39,7 @@ acm_chrome_open('office', 'Office governance', 'Modes, approvers and reviewers',
 ?>
 <div class="cd">
     <div class="ct"><i class="fa-solid fa-building"></i> Office mode <span class="bg bg-n" id="modeChip">…</span></div>
+    <div class="sub" id="modeMeaning" style="margin-bottom:var(--v2-s3)"></div>
     <dl class="acm-kv">
         <dt>Active officers</dt><dd id="officerCount">…</dd>
         <dt>You are</dt><dd id="myDesignations">…</dd>
@@ -156,17 +157,49 @@ acm_chrome_open('office', 'Office governance', 'Modes, approvers and reviewers',
 
     function desigRows(tbodyId, rows, kind) {
         var tb = document.getElementById(tbodyId);
-        if (!rows.length) { tb.innerHTML = '<tr><td colspan="4">None designated.</td></tr>'; return; }
+        if (!rows.length) {
+            tb.innerHTML = '<tr><td colspan="4">'
+                + (String(kind).indexOf('approver') === 0
+                    ? 'No approver is designated. In solo mode nobody can decide until one is.'
+                    : 'No independent reviewer is designated, so months cannot be attested.')
+                + '</td></tr>';
+            return;
+        }
         tb.innerHTML = rows.map(function (r) {
             var rev = isSuper ? '<td><button class="btn bd bs" data-revoke="' + kind + '" data-uid="' + r.user_id + '">Revoke</button></td>' : '';
             return '<tr><td>' + esc(r.username) + '</td><td>' + esc(r.effective_from) + '</td><td>' + esc(r.designate_reason || '') + '</td>' + rev + '</tr>';
         }).join('');
     }
 
+    // Same class of bug as the audit page: the tables start as "Loading…"
+    // and stayed that way after a failure, so a broken read looked like a
+    // slow one on the page that governs who may approve.
+    function failed(err) {
+        var msg = (err && err.message) ? err.message : 'Could not load the office settings.';
+        ['modeHistory', 'approverRows', 'reviewerRows'].forEach(function (id) {
+            var el = document.getElementById(id);
+            if (el) {
+                var n = el.closest('table') ? el.closest('table').querySelectorAll('thead th').length : 4;
+                el.innerHTML = '<tr><td colspan="' + (n || 4) + '">' + esc(msg) + '</td></tr>';
+            }
+        });
+        ['modeChip', 'officerCount', 'myDesignations'].forEach(function (id) {
+            var el = document.getElementById(id);
+            if (el) { el.textContent = 'unavailable'; }
+        });
+        acmToast(msg, false);
+    }
+
     async function load() {
         try {
             var m = await acmApi('office_mode_get', {});
             document.getElementById('modeChip').textContent = m.mode + ' mode';
+            var meaning = document.getElementById('modeMeaning');
+            if (meaning) {
+                meaning.textContent = m.mode === 'solo'
+                    ? 'Solo mode: only designated approvers can decide tickets, and a self-approval needs a written reason and is flagged in the monthly audit.'
+                    : 'Separated mode (maker–checker): the officer who submits a ticket cannot decide it. At least two active officers are needed.';
+            }
             document.getElementById('officerCount').textContent = m.active_officers;
             var tags = [];
             if (m.is_designee) tags.push('designated approver');
@@ -178,15 +211,21 @@ acm_chrome_open('office', 'Office governance', 'Modes, approvers and reviewers',
             }).join('') || '<tr><td colspan="5">No switches recorded.</td></tr>';
             var sm = document.getElementById('m_mode');
             if (sm) sm.value = m.mode;
-        } catch (err) { acmToast(err.message, false); }
+        } catch (err) { failed(err); }
         try {
             var a = await acmApi('approvers_list', {});
             desigRows('approverRows', a.approvers || [], 'approvers');
-        } catch (err) { acmToast(err.message, false); }
+        } catch (err) {
+            document.getElementById('approverRows').innerHTML =
+                '<tr><td colspan="4">' + esc(err.message || 'Could not load approvers.') + '</td></tr>';
+        }
         try {
             var r = await acmApi('reviewers_list', {});
             desigRows('reviewerRows', r.reviewers || [], 'reviewers');
-        } catch (err) { acmToast(err.message, false); }
+        } catch (err) {
+            document.getElementById('reviewerRows').innerHTML =
+                '<tr><td colspan="4">' + esc(err.message || 'Could not load reviewers.') + '</td></tr>';
+        }
     }
 
     wireSearch('a_search', 'a_user');
