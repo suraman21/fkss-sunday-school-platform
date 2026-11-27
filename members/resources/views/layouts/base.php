@@ -35,6 +35,7 @@ $nav = [
 $assetVersion = (string)(@filemtime(MEMBERS_ROOT . '/public/assets/js/app.js') ?: 1);
 $learningVersion = (string)(@filemtime(MEMBERS_ROOT . '/public/assets/js/learning.js') ?: 1);
 $myVersion = (string)(@filemtime(MEMBERS_ROOT . '/public/assets/js/my.js') ?: 1);
+$activateVersion = (string)(@filemtime(MEMBERS_ROOT . '/public/assets/js/activate.js') ?: 1);
 ?>
 <!DOCTYPE html>
 <html lang="<?= $isAm ? 'am' : 'en' ?>">
@@ -64,11 +65,15 @@ $myVersion = (string)(@filemtime(MEMBERS_ROOT . '/public/assets/js/my.js') ?: 1)
 </header>
 <?php endif; ?>
 
+<?php if ($chrome): ?>
+<?= $content ?>
+<?php else: ?>
 <div class="fk-church" aria-hidden="true"></div>
 
 <main class="fk-page" id="main">
 <?= $content ?>
 </main>
+<?php endif; ?>
 
 <?php if (!$chrome): ?>
 <nav class="fk-bottom-nav" aria-label="<?= $isAm ? 'ዋና ገጾች' : 'Main pages' ?>">
@@ -99,6 +104,9 @@ $myVersion = (string)(@filemtime(MEMBERS_ROOT . '/public/assets/js/my.js') ?: 1)
 <?php endif; ?>
 <?php if (!empty($myPage)): ?>
 <script src="/members/public/assets/js/my.js?v=<?= e($myVersion) ?>" defer></script>
+<?php endif; ?>
+<?php if (!empty($activatePage)): ?>
+<script src="/members/public/assets/js/activate.js?v=<?= e($activateVersion) ?>" defer></script>
 <?php endif; ?>
 </body>
 </html>

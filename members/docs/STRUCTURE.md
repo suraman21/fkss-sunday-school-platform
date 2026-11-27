@@ -138,6 +138,7 @@ else to `public/index.php`.
 | `/members/home` | Dashboard |
 | `/members/lessons` | Lesson path |
 | `/members/profile`, `/attendance`, `/grades` | The member's own record |
+| `/members/activate` | Activate an account (request → code → password) |
 
 Every internal link and asset path is written `/members/...`, so that mount is
 the supported one; serving the app from a document root instead would break them.
@@ -150,6 +151,30 @@ page. `Request::stripMountPrefix()` now tries `/members/public`, `/members` and
 `/index.php` forms, each only on a `/` boundary, so `/membership` is never
 mistaken for `/members`. `members/tests/Unit/RequestPathTest.php` pins thirteen
 shapes; eight of them fail against the old code.
+
+---
+
+### Screens and their design source
+
+**The design is the prototype's, cloned — not reimagined.** The welcome and
+login screens are built from `frontend/login.html` and the "WELCOME + LOGIN"
+block of `frontend/css/fk-theme.css` (604-720): gold patterned page, one framed
+ivory card with the emblem medallion straddling its top edge, display-face
+brand, gold rule under the subheading, wine pill button.
+
+An earlier build put a white card on an ivory page. It used the right palette,
+so it passed every check, and the owner rejected it: *"the design have to be
+cloned exactly no redesign or other design to extend it"*. `tests/security/
+test_members_design_parity.py` now pins 22 exact CSS values against the
+prototype — 14 of its 19 tests fail if the white card comes back.
+
+**Activation** (`/members/activate`) had no UI before this, which was reported as
+"there is no way to activate an account". The feature itself already existed:
+`/api/v1/acm` implements the whole ceremony. The page adds the doorway —
+request (ID + first name) → verify (six-digit code) → credentials (password) —
+and then says plainly that a device must still be registered, because
+`establishCredentials` leaves the account at `account_pending_device` and login
+refuses it until WebCrypto device proof happens in the app.
 
 ---
 

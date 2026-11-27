@@ -36,6 +36,13 @@ $router->get('/login', static function (): Response {
     return Response::html((new View())->render('pages/login'));
 }, $security);
 
+// Activation. The ceremony lives on /api/v1/acm (request -> verify ->
+// credentials -> device); this is the page that reaches it, so a member with no
+// credentials is not stuck with "contact the office" and nothing else.
+$router->get('/activate', static function (): Response {
+    return Response::html((new View())->render('pages/activate'));
+}, $security);
+
 // ---------------------------------------------------------------------------
 // Signed-in shell pages.
 //

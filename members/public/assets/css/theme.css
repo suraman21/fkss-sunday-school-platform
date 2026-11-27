@@ -369,34 +369,235 @@ img { max-width: 100%; height: auto; }
 }
 @media (min-width: 768px) { .fk-church { bottom: 0; height: 210px; opacity: .09; } }
 
-/* ---------- welcome / login screen ---------- */
-.fk-welcome {
+/* =====================================================================
+   WELCOME + LOGIN — CLONED FROM THE PROTOTYPE
+   ---------------------------------------------------------------------
+   Source: docs/prototypes/member-app-2026-11-26/frontend/css/fk-theme.css
+   lines 604-720 ("WELCOME + LOGIN (gold glow background, framed ivory card)").
+
+   This REPLACES an earlier generic ".fk-welcome" block that centred a white
+   card on an ivory background. It was not the prototype's design and the owner
+   rejected it. Every value below is copied from the prototype: the SVG
+   cross-pattern tile, the four-stop gold gradient, the triple-ring gold frame,
+   the 68px emblem medallion, the display-font headings with the gold rule, and
+   the wine pill button.
+
+   Class names differ (.fk-auth-* instead of .login-*) because these are OUR
+   templates, but the GEOMETRY and COLOUR are the prototype's, not a
+   reinterpretation. If the prototype changes, change this block to match.
+   ===================================================================== */
+
+/* --- the gold page: patterned tile over a four-stop gradient --------- */
+.fk-auth-page {
+    margin: 0;
     min-height: 100vh;
     min-height: 100dvh;
+    font-family: var(--fk-font);
+    color: var(--fk-ink);
+    text-align: center;
     display: flex;
     flex-direction: column;
+    background:
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='72' height='72' viewBox='0 0 72 72'%3E%3Cg fill='none' stroke='%23FFF3D6' stroke-opacity='.22' stroke-width='1.6'%3E%3Cpath d='M36 8v56M8 36h56'/%3E%3Cpath d='M36 20l16 16-16 16-16-16z'/%3E%3Ccircle cx='36' cy='36' r='4'/%3E%3C/g%3E%3C/svg%3E"),
+        radial-gradient(ellipse 90% 55% at 50% 6%, #FFE79A 0%, rgba(255, 231, 154, 0) 70%),
+        linear-gradient(180deg, #F7BE45 0%, #E9A02F 38%, #C27126 72%, #8E3A18 100%);
+    background-attachment: fixed;
+    padding-bottom: calc(24px + env(safe-area-inset-bottom));
+}
+
+/* --- simple header: language pill, top right ------------------------- */
+.fk-simple-header {
+    position: relative;
+    min-height: 56px;
+    padding: max(8px, env(safe-area-inset-top)) 14px 0;
+    box-sizing: border-box;
+}
+.fk-lang-pill {
+    position: absolute;
+    top: max(10px, env(safe-area-inset-top));
+    right: 14px;
+    min-height: 42px;
+    padding: 0 16px;
+    display: inline-flex;
     align-items: center;
-    justify-content: center;
-    gap: 18px;
-    padding: 24px 18px;
-    text-align: center;
-}
-.fk-welcome .fk-logo {
-    width: 96px;
-    height: 96px;
-    display: grid;
-    place-items: center;
-    border-radius: 50%;
-    background: linear-gradient(145deg, var(--fk-gold-bright), var(--fk-gold));
-    border: 3px solid var(--fk-wine);
-    color: var(--fk-wine);
-    font-family: var(--fk-font-display);
-    font-size: 34px;
+    gap: 6px;
+    font-family: var(--fk-font);
+    font-size: 15px;
     font-weight: 700;
-    box-shadow: var(--fk-shadow-lift);
+    color: var(--fk-wine);
+    background: rgba(255, 247, 227, .92);
+    border: 2px solid var(--fk-gold-deep);
+    border-radius: 999px;
+    cursor: pointer;
+    box-shadow: 0 3px 10px rgba(75, 20, 10, .25);
 }
-.fk-welcome h1 { font-size: clamp(28px, 7vw, 40px); margin: 0; }
-.fk-welcome p { margin: 0; color: var(--fk-muted); font-size: 17px; max-width: 34ch; }
+.fk-lang-menu {
+    display: none;
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    min-width: 150px;
+    padding: 6px;
+    background: #FFFDF6;
+    border: 2px solid var(--fk-gold-deep);
+    border-radius: 14px;
+    box-shadow: 0 8px 24px rgba(75, 20, 10, .35);
+    z-index: 1000;
+}
+.fk-lang-menu[data-open="1"] { display: block; }
+.fk-lang-menu button {
+    display: block;
+    width: 100%;
+    min-height: 44px;
+    padding: 10px 14px;
+    font-family: var(--fk-font);
+    font-size: 15px;
+    text-align: left;
+    color: var(--fk-ink);
+    background: transparent;
+    border: 0;
+    border-radius: 10px;
+    cursor: pointer;
+}
+.fk-lang-menu button:hover,
+.fk-lang-menu button[aria-current="true"] { background: var(--fk-ivory-2); }
+
+/* --- the framed ivory card, centred ---------------------------------- */
+.fk-auth-main {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 52px 16px 0;
+    box-sizing: border-box;
+}
+.fk-auth-card {
+    position: relative;
+    width: 100%;
+    max-width: 460px;
+    padding: 56px 24px 30px;
+    text-align: center;
+    background: linear-gradient(180deg, #FFFBEF 0%, var(--fk-cream) 100%);
+    border-radius: 30px;
+    box-shadow:
+        0 0 0 2px var(--fk-gold-deep),
+        0 0 0 8px var(--fk-gold),
+        0 0 0 10px var(--fk-gold-deep),
+        0 24px 50px rgba(75, 20, 10, .45);
+}
+
+/* --- the emblem medallion straddling the top edge -------------------- */
+.fk-auth-card::before {
+    content: "";
+    position: absolute;
+    top: -34px;
+    left: 50%;
+    width: 68px;
+    height: 68px;
+    transform: translateX(-50%);
+    border-radius: 50%;
+    background:
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cg stroke='%23C69334' stroke-width='3' stroke-linejoin='round'%3E%3Cpath d='M32 5v54M5 32h54' fill='none'/%3E%3Cpath d='M32 14l7 7-7 7-7-7zM32 36l7 7-7 7-7-7zM14 32l7-7 7 7-7 7zM36 32l7-7 7 7-7 7z' fill='%23FCE1A9'/%3E%3Ccircle cx='32' cy='32' r='8' fill='%23F4B137'/%3E%3Ccircle cx='32' cy='6' r='4' fill='%23F4B137'/%3E%3Ccircle cx='32' cy='58' r='4' fill='%23F4B137'/%3E%3Ccircle cx='6' cy='32' r='4' fill='%23F4B137'/%3E%3Ccircle cx='58' cy='32' r='4' fill='%23F4B137'/%3E%3C/g%3E%3C/svg%3E") center / 80% no-repeat,
+        radial-gradient(circle, #FFFBEF 0 62%, var(--fk-gold) 64% 100%);
+    border: 3px solid var(--fk-gold-deep);
+    box-shadow: 0 6px 16px rgba(75, 20, 10, .35);
+}
+
+/* --- headings: display face, wine, gold rule under h2 ---------------- */
+.fk-auth-card h1 {
+    font-family: var(--fk-font-display);
+    font-size: clamp(32px, 8vw, 44px);
+    color: var(--fk-wine);
+    margin: 0 0 10px;
+    text-shadow: 0 1px 0 #fff;
+}
+.fk-auth-card h2 {
+    font-size: 24px;
+    color: var(--fk-wine);
+    margin: 0 0 8px;
+}
+.fk-auth-card h2::after {
+    content: "";
+    display: block;
+    width: 140px;
+    height: 14px;
+    margin: 12px auto 0;
+    background:
+        linear-gradient(90deg, transparent, var(--fk-gold-deep) 30%, var(--fk-gold-deep) 70%, transparent) center / 100% 2px no-repeat,
+        radial-gradient(circle, var(--fk-gold) 0 5px, transparent 6px) center / 14px 14px no-repeat;
+}
+.fk-auth-card > p {
+    color: var(--fk-muted);
+    font-size: 17px;
+    line-height: 1.6;
+    margin: 0 0 24px;
+}
+
+/* --- form inside the card -------------------------------------------- */
+.fk-auth-card form {
+    display: flex;
+    flex-direction: column;
+    text-align: left;
+    gap: 6px;
+}
+.fk-auth-card label { margin-top: 10px; font-size: 15px; font-weight: 700; color: var(--fk-wine); }
+.fk-auth-card input { width: 100%; }
+.fk-auth-card .fk-btn { width: 100%; margin-top: 22px; font-size: 18px; }
+
+/* The prototype's field look: ivory fill, gold-deep hairline, wine text. */
+.fk-auth-card input[type="text"],
+.fk-auth-card input[type="password"] {
+    min-height: 50px;
+    padding: 12px 14px;
+    font-family: var(--fk-font);
+    font-size: 16px;
+    color: var(--fk-wine);
+    background: #FFFDF6;
+    border: 1px solid var(--fk-gold-deep);
+    border-radius: 10px;
+    outline: none;
+}
+.fk-auth-card input::placeholder { color: #B08A6A; }
+.fk-auth-card input:focus {
+    border-color: var(--fk-wine);
+    box-shadow: 0 0 0 3px rgba(244, 177, 55, .45);
+}
+
+/* Messages: the prototype's .fk-message, id selectors dropped. */
+.fk-auth-msg {
+    margin: 14px 0 0;
+    padding: 10px 14px;
+    border-radius: 12px;
+    font-size: 15px;
+    font-weight: 600;
+    text-align: left;
+}
+.fk-auth-msg:empty { display: none; }
+.fk-auth-msg[data-kind="error"] { color: var(--fk-bad); background: var(--fk-bad-bg); }
+.fk-auth-msg[data-kind="ok"] { color: var(--fk-ok); background: var(--fk-ok-bg); }
+.fk-auth-msg[data-kind="info"] { color: var(--fk-wine); background: var(--fk-ivory-2); }
+
+/* --- footnote under the card ----------------------------------------- */
+.fk-auth-foot {
+    margin: 18px auto 0;
+    max-width: 34ch;
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--fk-wine-deep);
+    text-shadow: 0 1px 0 rgba(255, 255, 255, .35);
+}
+.fk-auth-foot a { color: var(--fk-wine-deep); font-weight: 700; }
+
+/* --- the welcome page reuses the card, one button --------------------- */
+.fk-auth-card .fk-btn.gold { min-width: 220px; font-size: 19px; }
+
+/* Small phones: the card's 56px top padding is there to clear the medallion;
+   below 380px the gradient is tighter and the card should not touch the sides. */
+@media (max-width: 380px) {
+    .fk-auth-card { padding: 50px 18px 26px; border-radius: 24px; }
+    .fk-auth-card h1 { font-size: 30px; }
+    .fk-auth-card h2 { font-size: 21px; }
+}
 
 /* ---------- forms ---------- */
 .fk-field { display: grid; gap: 6px; margin-bottom: 14px; }

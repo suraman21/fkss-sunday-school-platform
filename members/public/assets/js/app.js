@@ -119,8 +119,19 @@
                 /* A 403 with a known code means credentials were right but the
                    account cannot sign in yet — say which step is missing
                    rather than repeating "wrong password". */
-                if (error && error.status === 403 && error.code === "ACCOUNT_PENDING_ACTIVATION") {
-                    msg = "Your account is not finished setting up. Open the app on your phone to complete it.";
+                /* The API sends `activation_pending` (lowercase, from
+                   err(..., ['code' => 'activation_pending'])) — this used to
+                   test for ACCOUNT_PENDING_ACTIVATION, which never matched, so
+                   the one message that could have explained the situation was
+                   never shown. Both are accepted so a future rename does not
+                   silently disable it again. */
+                var pendingCode = error && (error.code || "").toLowerCase();
+                if (error && error.status === 403
+                        && (pendingCode === "activation_pending"
+                            || pendingCode === "account_pending_activation")) {
+                    msg = document.documentElement.lang === "en"
+                        ? "Your account is not finished setting up. Complete device setup on your phone, then sign in."
+                        : "መለያዎ ገና አልተጠናቀቀም። በስልክዎ ላይ ማጠናቀቅ ያስፈልጋል።";
                 }
                 showError("#login-error", msg);
                 $("#password").focus();
