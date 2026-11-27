@@ -158,11 +158,15 @@ class AcmPersonService
         $limit = max(1, min(50, $limit));
         $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], mb_substr($q, 0, 60)) . '%';
         $n9 = self::normalizePhoneN9($q);
+        // One placeholder per occurrence: PDO cannot reuse a named
+        // parameter under native prepares (config.php sets
+        // ATTR_EMULATE_PREPARES to false), and the resulting HY093 made
+        // every person search fail, not just the odd input.
         $sql = 'SELECT id, full_name_am, full_name_en, father_name, phone, email, member_id, guardian_id'
-            . ' FROM acm_persons WHERE full_name_am LIKE :q ESCAPE \'\\\''
-            . ' OR full_name_en LIKE :q ESCAPE \'\\\' OR father_name LIKE :q ESCAPE \'\\\''
-            . ' OR phone LIKE :q ESCAPE \'\\\' OR id_doc_ref LIKE :q ESCAPE \'\\\'';
-        $params = [':q' => $like];
+            . ' FROM acm_persons WHERE full_name_am LIKE :q1 ESCAPE \'\\\\\''
+            . ' OR full_name_en LIKE :q2 ESCAPE \'\\\\\' OR father_name LIKE :q3 ESCAPE \'\\\\\''
+            . ' OR phone LIKE :q4 ESCAPE \'\\\\\' OR id_doc_ref LIKE :q5 ESCAPE \'\\\\\'';
+        $params = [':q1' => $like, ':q2' => $like, ':q3' => $like, ':q4' => $like, ':q5' => $like];
         if ($n9 !== null) {
             $sql .= ' OR phone_n9 = :n9';
             $params[':n9'] = $n9;

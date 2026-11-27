@@ -49,6 +49,14 @@ $fStatus = (string)($_GET['status'] ?? 'pending_review');
 if (!in_array($fStatus, ['pending_review', 'approved', 'rejected', 'expired', 'canceled'], true)) {
     $fStatus = 'pending_review';
 }
+// Lookup by the reference the member was given, or their ID number, name,
+// or the last digits of their phone. Without this the only way to find one
+// request was to scroll the status tabs -- and request_ref is the ONLY
+// string the member is handed, so it is the one an officer arrives with.
+$fQ = trim((string)($_GET['q'] ?? ''));
+if (mb_strlen($fQ) > 120) {
+    $fQ = mb_substr($fQ, 0, 120);
+}
 $offset = max(0, (int)($_GET['offset'] ?? 0));
 $limit = 25;
 
@@ -57,10 +65,12 @@ $pendingCount = 0;
 $pageError = '';
 try {
     $requests = new AcmActivationRequestService($pdo);
-    $rows = $requests->queue($actorId, $fStatus, $limit, $offset);
+    $rows = $requests->queue($actorId, $fStatus, $limit, $offset, $fQ);
     // The chrome badge means "work waiting", not "rows on this page".
     // Asking for the pending count keeps it correct on every tab.
-    if ($fStatus === 'pending_review') {
+    // Unfiltered and uncapped by the search: the badge means "work
+    // waiting", not "rows matching what I typed".
+    if ($fStatus === 'pending_review' && $fQ === '') {
         $pendingCount = count($rows) + $offset;
     } else {
         $pendingCount = count($requests->queue($actorId, 'pending_review', 100, 0));
@@ -80,10 +90,13 @@ $statusLabel = [
     'canceled' => 'Canceled',
 ];
 
+acm_head('Activation requests');
 acm_chrome_open('requests', 'Activation requests', 'Self-service requests from members and parents', $pendingCount);
 ?>
 
-<h1 class="pg">Activation requests</h1>
+<?php /* The heading and the one-liner are already in the chrome header
+         (acm_chrome_open takes both). Repeating them here printed
+         "Activation requests" twice on every visit. */ ?>
 <p class="sub">
     A member submits their ID number from the member app or web; it lands here.
     Approving creates the ticket — it does not issue the code. Open the ticket
@@ -96,19 +109,35 @@ acm_chrome_open('requests', 'Activation requests', 'Self-service requests from m
     </div>
 <?php endif; ?>
 
-<div class="acm-filterbar">
+<form method="get" class="acm-filterbar">
+    <?php /* The status tabs stay as links so they keep working without JS;
+             the search submits and carries the current tab with it. */ ?>
     <?php foreach ($statusLabel as $key => $label): ?>
         <a class="btn <?= $key === $fStatus ? '' : 'bo' ?>"
-           href="/admin/acm_requests.php?status=<?= urlencode($key) ?>">
+           href="/admin/acm_requests.php?status=<?= urlencode($key) ?><?= $fQ !== '' ? '&amp;q=' . urlencode($fQ) : '' ?>">
             <?= e($label) ?>
         </a>
     <?php endforeach; ?>
-</div>
+    <input type="hidden" name="status" value="<?= e($fStatus) ?>">
+    <input class="inp" type="search" name="q" value="<?= e($fQ) ?>"
+           placeholder="Reference, ID number, name…" aria-label="Search requests">
+    <button class="btn bo" type="submit"><i class="fa-solid fa-magnifying-glass"></i> Search</button>
+    <?php if ($fQ !== ''): ?>
+        <a class="btn bo" href="/admin/acm_requests.php?status=<?= urlencode($fStatus) ?>">Clear</a>
+    <?php endif; ?>
+</form>
 
 <?php if ($rows === []): ?>
     <div class="acm-empty">
         <i class="fa-solid fa-inbox"></i>
-        <p>No <?= e(strtolower($statusLabel[$fStatus])) ?> requests.</p>
+        <?php if ($fQ !== '') : ?>
+            <p>No <?= e(strtolower($statusLabel[$fStatus])) ?> requests match
+               &ldquo;<?= e($fQ) ?>&rdquo;. The search covers the reference, the
+               ID number given, the name, and the last four digits of the phone.
+               Try another status tab &mdash; the match may have been decided.</p>
+        <?php else: ?>
+            <p>No <?= e(strtolower($statusLabel[$fStatus])) ?> requests.</p>
+        <?php endif; ?>
     </div>
 <?php else: ?>
     <div class="tw"><table>

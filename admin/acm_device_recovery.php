@@ -67,6 +67,7 @@ try {
 } catch (\Throwable $e) {
     error_log('acm_device_recovery_boot_failed');
     http_response_code(503);
+    acm_head('Device recovery unavailable');
     acm_chrome_open('queue', 'Device recovery unavailable', '', 0);
     echo '<div class="acm-alert err">Recovery is unavailable right now. Check the ACM migrations.</div>';
     acm_chrome_close();
@@ -104,13 +105,16 @@ function acm_recoverable_accounts(AcmPersonService $persons, int $personId): arr
     return $out;
 }
 
+acm_head('Device recovery');
 acm_chrome_open('queue', 'Device recovery', 'Replace a lost or replaced device', 0);
 ?>
 <div class="acm-btn-row" style="margin-bottom:1rem">
     <a class="btn bo" href="/admin/acm_queue.php"><i class="fa-solid fa-arrow-left"></i> Activation queue</a>
 </div>
 
-<h1 class="pg">Device recovery</h1>
+<?php /* The page heading and the one-line explanation are already in the
+         chrome header (acm_chrome_open takes both). Repeating them here
+         printed "Device recovery" twice on every visit. */ ?>
 <p class="sub">
     For a member who has lost or replaced their phone. This opens a recovery
     ticket for an account that is already active. Approve that ticket, then

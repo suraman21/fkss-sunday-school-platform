@@ -469,10 +469,10 @@ try {
             $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], mb_substr($q, 0, 60)) . '%';
             $stmt = $pdo->prepare(
                 'SELECT id, username, full_name, role FROM users'
-                . " WHERE is_active = 1 AND (username LIKE :q ESCAPE '\\'"
-                . " OR full_name LIKE :q ESCAPE '\\') ORDER BY username ASC LIMIT 20"
+                . " WHERE is_active = 1 AND (username LIKE :q1 ESCAPE '\\\\'"
+                . " OR full_name LIKE :q2 ESCAPE '\\\\') ORDER BY username ASC LIMIT 20"
             );
-            $stmt->execute([':q' => $like]);
+            $stmt->execute([':q1' => $like, ':q2' => $like]);
             acm_ok(['users' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
             break;
         }
@@ -851,12 +851,19 @@ try {
             $requestService = new AcmActivationRequestService($pdo);
             $status = in_array((string)($_GET['status'] ?? ''), ['pending_review','approved','rejected','expired','canceled'], true)
                 ? (string)$_GET['status'] : 'pending_review';
+            // `q` mirrors the console page: reference, ID number given,
+            // name, or the last four digits of the phone.
+            $q = trim((string)($_GET['q'] ?? ''));
+            if (mb_strlen($q) > 120) {
+                $q = mb_substr($q, 0, 120);
+            }
             acm_ok([
                 'requests' => $requestService->queue(
                     $actorId,
                     $status,
                     max(1, min((int)($_GET['limit'] ?? 25), 100)),
-                    max(0, (int)($_GET['offset'] ?? 0))
+                    max(0, (int)($_GET['offset'] ?? 0)),
+                    $q
                 ),
                 'status' => $status,
             ]);

@@ -257,6 +257,62 @@ jobs:
           cat /tmp/ssms-live-server.log
           exit 1
 
+      - name: PDO named placeholders (real MariaDB)
+        # The activation queue failed with "temporarily unavailable" and was
+        # cleared as a server problem, because the query passed under PDO_PGSQL
+        # in a local harness. It was a dialect problem: with
+        # ATTR_EMULATE_PREPARES => false, PDO rewrites each named parameter to
+        # its own positional '?', so a name used four times needs four values.
+        # Given one, MariaDB answers HY093 from execute(). PDO_PGSQL and
+        # PDO_SQLITE never complain, so only this engine can catch it.
+        #
+        # This runs the shipped services against the MariaDB service above and
+        # asserts both that the old statement shape really does fail here and
+        # that the fixed one returns rows. It creates and drops its own
+        # _pdoprobe_* tables and writes to nothing else.
+        env:
+          SSMS_DB_NAME: ssms_comm_e2e
+          # Placed BEFORE the pytest step on purpose: that step has a
+          # pre-existing failure on main, and a failed step skips every
+          # later one. A proof that only runs when an unrelated suite is
+          # green is a proof that never runs.
+        # NOTE ON THE SHELL: GitHub's default non-interactive shell runs with
+        # -e, so any non-zero command aborts the step. That killed the first
+        # two versions of this step before they could say anything, and the
+        # job reported only "exit code 1". Fail soft, then report explicitly.
+        run: |
+          set +e
+          set -uo pipefail
+
+          # ONE annotation carrying the whole output. GitHub keeps only 10
+          # annotations per step, so the previous tail-per-line loop lost
+          # exactly the lines that mattered -- the failure was the last one.
+          report() {
+            if [ -s /tmp/pdoprobe.out ]; then
+              echo "::error::probe output: $(tr '\n' '|' < /tmp/pdoprobe.out | tail -c 5000)"
+            else
+              echo "::error::the harness produced no output at all"
+            fi
+          }
+
+          php -d display_errors=1 -d error_reporting=E_ALL \
+            tests/e2e/acm_named_placeholder_mariadb.php > /tmp/pdoprobe.out 2>&1
+          rc=$?
+          echo "::notice::harness exited ${rc}"
+          sed -n '1,40p' /tmp/pdoprobe.out
+
+          if [ "$rc" -eq 0 ] && grep -q 'NAMED-PLACEHOLDER PROOF: PASS' /tmp/pdoprobe.out; then
+            echo "proof passed"
+            exit 0
+          fi
+          if [ "$rc" -eq 3 ]; then
+            echo "::error::the proof could not run here; a skipped proof verifies nothing."
+          else
+            echo "::error::the named-placeholder proof did not pass (exit ${rc})."
+          fi
+          report
+          exit 1
+
       - name: Run tests/security
         env:
           SSMS_DB_NAME: ssms_comm_e2e

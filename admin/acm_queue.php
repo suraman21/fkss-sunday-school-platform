@@ -82,7 +82,13 @@ acm_chrome_open('queue', 'Activation queue', 'Manual review: verify identity, th
 
 <div class="cd">
     <div class="ct"><i class="fa-solid fa-inbox"></i> <?= (int)$total ?> ticket<?= $total === 1 ? '' : 's' ?></div>
-    <?php if (empty($rows)): ?>
+    <?php if ($pageError !== ''): ?>
+    <div class="acm-empty" style="border-color:rgba(239,68,68,.35)">
+        <i class="fa-solid fa-triangle-exclamation" style="color:#ef4444"></i>
+        This list is unknown, not empty — the queue failed to load. Reload;
+        if it keeps failing, the server error log has the reason.
+    </div>
+    <?php elseif (empty($rows)): ?>
     <div class="acm-empty"><i class="fa-solid fa-circle-check"></i> No tickets match these filters.</div>
     <?php else: ?>
     <div style="overflow-x:auto">
