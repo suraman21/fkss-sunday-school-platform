@@ -321,6 +321,17 @@ jobs:
           TZ: Africa/Addis_Ababa
         run: |
           set -uo pipefail
+          # THE STEP WAS KILLING ITSELF AT THE NEXT LINE.
+          # GitHub runs `run:` blocks with `bash -e`. `pipefail` makes the
+          # pipeline below return pytest's non-zero status, so `-e` aborted the
+          # script there -- before `rc=` was read and before any of the
+          # reporting below could run. That is why the job has only ever said
+          # "Process completed with exit code 1": every line after the test run
+          # was dead code. The PDO probe above documents this precise hazard
+          # ("that killed the first two versions of this step"); this step had
+          # the same bug and nobody could see it, because the evidence it would
+          # have printed was behind the abort.
+          set +e
           # -rs reports every skip with its reason so the gate below can count
           # them and a human can see which test opted out.
           python -m pytest tests/security -q -rs --durations=10 \
