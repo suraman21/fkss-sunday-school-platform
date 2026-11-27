@@ -60,6 +60,7 @@ use InvalidArgumentException;
 use PDO;
 use PDOException;
 use RuntimeException;
+use SSMS\Acm\Identity\AcmPersonService;
 use SSMS\Acm\Identity\AmharicNameMatcher;
 
 final class AcmActivationRequestService
@@ -189,13 +190,39 @@ final class AcmActivationRequestService
             throw new AcmClaimRefused($detection['kind']);
         }
 
+        // THE CLAIM RESOLVED TO A REAL MEMBER, so make sure the person row
+        // exists before the claim becomes work.
+        //
+        // Every member is registered but most have no account yet; the person
+        // row is what an account hangs off (acm_person_accounts). It used to
+        // be created only by hand in the persons console, which meant a claim
+        // matched the register and then could not be approved for anybody the
+        // office had not pre-registered. Creating it here -- from the register
+        // the claim was just checked against -- is what makes "request, then
+        // the office approves" work for the whole membership.
+        //
+        // Idempotent and race-safe (see AcmPersonService::ensureForMember), so
+        // repeated or simultaneous claims converge on one person row.
+        $personId = null;
+        $memberId = $detection['member_id'] !== null ? (int)$detection['member_id'] : null;
+        if ($memberId !== null) {
+            try {
+                $personId = (new AcmPersonService($this->pdo))->ensureForMember($memberId, 0);
+            } catch (\Throwable $linkError) {
+                // Never let person bookkeeping turn a valid claim into a
+                // refusal: the officer can still act on it, and the console
+                // derives the link on approval if it is still missing.
+                $personId = null;
+            }
+        }
+
         $phoneLast4 = self::lastFour(isset($input['phone']) ? (string)$input['phone'] : null);
         $dedupe = self::dedupeHash($accountType, $memberCode, $nameKey, $phoneLast4);
 
         // INSERT-first: the UNIQUE key settles the race, not a check.
         try {
             [$id, $ref] = $this->insertRequest(
-                $accountType, $memberCode, $nameKey, $phoneLast4, $dedupe, $originIp
+                $accountType, $memberCode, $nameKey, $phoneLast4, $dedupe, $originIp, $personId
             );
             $this->recordEvent($id, 'requested', null, null, [
                 'account_type' => $accountType,
@@ -253,15 +280,16 @@ final class AcmActivationRequestService
         string $nameKey,
         ?string $phoneLast4,
         string $dedupe,
-        ?string $originIp
+        ?string $originIp,
+        ?int $personId = null
     ): array {
         $uuid = self::uuidv4();
         $ref = self::newRequestRef();
 
         $sql = 'INSERT INTO acm_activation_requests'
              . ' (uuid, request_ref, dedupe_hash, account_type, member_code, name_key,'
-             . '  phone_last4, status, origin_ip)'
-             . " VALUES (:uuid, :ref, :dedupe, :at, :code, :name, :phone, 'pending_review', :ip)";
+             . '  phone_last4, status, origin_ip, person_id)'
+             . " VALUES (:uuid, :ref, :dedupe, :at, :code, :name, :phone, 'pending_review', :ip, :pid)";
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute([
             ':uuid'   => $uuid,
@@ -272,6 +300,7 @@ final class AcmActivationRequestService
             ':name'   => $nameKey,
             ':phone'  => $phoneLast4,
             ':ip'     => $originIp !== null ? substr($originIp, 0, 45) : null,
+            ':pid'    => $personId,
         ]);
 
         return [(int)$this->pdo->lastInsertId(), $ref];

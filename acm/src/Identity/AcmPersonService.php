@@ -215,6 +215,114 @@ class AcmPersonService
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
+    /**
+     * The person row for a registered member, creating it on first use.
+     *
+     * WHY THIS EXISTS
+     *   A member may activate an account through the public claim route, and
+     *   that route refuses any claim whose person link is missing
+     *   (AcmActivationDetector returns `no_account`). Nothing ever created
+     *   that row for an existing member: the only writer was the manual
+     *   person_create in the persons console, and migration 079 creates the
+     *   table while leaving the register untouched. So the self-service route
+     *   could only ever serve the handful of members somebody had registered
+     *   by hand -- every other member was refused no matter what they typed.
+     *
+     *   The register IS the directory of people, so the person row is derived
+     *   from it rather than asked for again: name, father, grandfather,
+     *   baptismal name, gender, birth date and phone all already exist on
+     *   `members`, and `member_id` is what makes the two rows the same human.
+     *
+     * SAFE TO CALL TWICE
+     *   Returns an existing row untouched (never overwrites a person an
+     *   officer has edited). The UNIQUE key on acm_persons.member_id is what
+     *   settles a concurrent claim and a screenshot-both-submitted race; the
+     *   SELECT-before-INSERT is only the fast path, so two callers cannot
+     *   create two person rows for one member.
+     *
+     * @param int $memberId members.id, already resolved by the detector
+     * @param int $actorId  who caused it: 0 for the member themselves
+     * @return int|null acm_persons.id, or null when the member is unknown
+     */
+    public function ensureForMember(int $memberId, int $actorId = 0): ?int
+    {
+        if ($memberId <= 0) {
+            return null;
+        }
+        $existing = $this->personIdForMember($memberId);
+        if ($existing !== null) {
+            return $existing;
+        }
+
+        $stmt = $this->pdo->prepare(
+            'SELECT id, full_name_am, full_name_en, student_name, baptismal_name,'
+            . ' father_name, grandfather_name, gender, date_of_birth,'
+            . ' dob_ec_day, dob_ec_month, dob_ec_year, phone_primary, phone_number'
+            . ' FROM members WHERE id = :id LIMIT 1'
+        );
+        $stmt->execute([':id' => $memberId]);
+        $m = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!is_array($m)) {
+            return null;
+        }
+
+        // The register's primary name column is NOT NULL, but a migrated row
+        // can still be blank; fall back through the names it does hold so a
+        // person row is never created without a name to show.
+        $nameAm = trim((string)($m['full_name_am'] ?? ''));
+        if ($nameAm === '') {
+            $nameAm = trim((string)($m['student_name'] ?? ''));
+        }
+        if ($nameAm === '') {
+            return null;
+        }
+        $phone = trim((string)($m['phone_primary'] ?? ''));
+        if ($phone === '') {
+            $phone = trim((string)($m['phone_number'] ?? ''));
+        }
+
+        try {
+            $created = $this->create([
+                'full_name_am'      => $nameAm,
+                'full_name_en'      => (string)($m['full_name_en'] ?? ''),
+                'baptismal_name'    => (string)($m['baptismal_name'] ?? ''),
+                'father_name'       => (string)($m['father_name'] ?? ''),
+                'grandfather_name'  => (string)($m['grandfather_name'] ?? ''),
+                'gender'            => (string)($m['gender'] ?? ''),
+                'date_of_birth'     => (string)($m['date_of_birth'] ?? ''),
+                'dob_ec_day'        => $m['dob_ec_day'] ?? null,
+                'dob_ec_month'      => $m['dob_ec_month'] ?? null,
+                'dob_ec_year'       => $m['dob_ec_year'] ?? null,
+                'phone'             => $phone,
+                'member_id'         => $memberId,
+                'notes'             => 'Derived from the member register on first activation.',
+            ], $actorId);
+            return (int)$created['id'];
+        } catch (\PDOException $race) {
+            // Lost the race against a concurrent claim: the winner's row is
+            // the answer. Any other SQL failure is a real one and propagates.
+            $won = $this->personIdForMember($memberId);
+            if ($won !== null) {
+                return $won;
+            }
+            throw $race;
+        }
+    }
+
+    /** acm_persons.id linked to this members.id, or null. */
+    public function personIdForMember(int $memberId): ?int
+    {
+        if ($memberId <= 0) {
+            return null;
+        }
+        $stmt = $this->pdo->prepare(
+            'SELECT id FROM acm_persons WHERE member_id = :mid ORDER BY id ASC LIMIT 1'
+        );
+        $stmt->execute([':mid' => $memberId]);
+        $id = $stmt->fetchColumn();
+        return $id === false || $id === null ? null : (int)$id;
+    }
+
     private function rowExists(string $table, int $id): bool
     {
         if ($id <= 0 || !in_array($table, ['members', 'guardians'], true)) {

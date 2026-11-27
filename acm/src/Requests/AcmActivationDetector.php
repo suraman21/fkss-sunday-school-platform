@@ -166,19 +166,21 @@ final class AcmActivationDetector
             ];
         }
 
+        // A missing person row is NOT a reason to refuse.
+        //
+        // This used to return NO_ACCOUNT, so only a member somebody had
+        // registered by hand in the persons console could ever activate --
+        // every other registered member was refused whatever they typed.
+        // The register is the directory of people: when the ID and the name
+        // both agree with exactly one active member, that member exists, and
+        // the caller creates the person row from the register before the
+        // ticket (AcmPersonService::ensureForMember, idempotent).
+        //
+        // `person_id` stays null here on purpose: detection answers "who is
+        // this", and must not write. The route performs the write, because
+        // the refusal path is what keeps an unmatched claim from becoming
+        // work, and it must stay the only thing that decides.
         $personId = $this->personIdFor($member);
-        if ($personId === null) {
-            return [
-                'kind' => self::NO_ACCOUNT,
-                'person_id' => null,
-                'member_id' => (int)$member['id'],
-                'guardian_id' => null,
-                'match' => $agrees[0]['match']['kind'],
-                'score' => $agrees[0]['match']['score'],
-                'detail' => 'member has no ACM person record yet',
-                'candidates' => [$this->summarise($member)],
-            ];
-        }
 
         return [
             'kind' => self::RESOLVED,
