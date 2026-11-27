@@ -172,7 +172,32 @@ final class AcmRequestDecisionService
                 'guardian_id'  => $guardianId,
             ], $officerId);
 
-            // 6. Compare-and-set the request. Last write wins the race
+            // 6. Move the ticket to `approved`, which is the ONLY state
+            //    from which a code may be issued
+            //    (AcmTicketService::ISSUABLE_STATUSES).
+            //
+            //    MISSING BEFORE THIS STEP -- and the reason the office could
+            //    approve a request and never get a code. AcmTicketService::
+            //    create() always opens a ticket at `submitted`, and nothing
+            //    advanced it: a submitted ticket is decidable, not issuable.
+            //    So the console's "Issue the code" button answered
+            //    "This ticket is not awaiting a code (status: submitted).",
+            //    and the ticket page hid the issue control altogether
+            //    because $canIssueCode requires an issuable status. The
+            //    request was approved, the ticket existed, and no code could
+            //    be produced by any screen.
+            //
+            //    Approving a REQUEST is the office's decision -- that is what
+            //    the officer just made, on this screen, deliberately -- so it
+            //    must not leave a second approval standing between them and
+            //    the code. The ticket's own decide() remains the path for a
+            //    ticket created directly (device recovery, walk-in); this
+            //    arm is the request-driven one. Both end at the same state.
+            $this->tickets->markApprovedByRequest(
+                (int)$ticket['id'], $officerId, (string)$request['uuid']
+            );
+
+            // 7. Compare-and-set the request. Last write wins the race
             //    even if a future caller forgets the FOR UPDATE above.
             $decide = $this->pdo->prepare(
                 'UPDATE acm_activation_requests'
