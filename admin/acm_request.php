@@ -96,12 +96,32 @@ if ($request === null) {
 }
 
 // ---------------------------------------------------------------- data
+// Detection reads the register, which is a separate table from the request
+// and can drift (a missing column, a permissions problem, a half-applied
+// migration). That is a reason to show the officer a card without a match --
+// it is NOT a reason to take the page down. Before this, any detector error
+// escaped to the monitor's handler and the reviewer got the crash page with
+// no way to proceed, on a screen whose whole job is to let them proceed.
 $detector = new AcmActivationDetector($pdo);
-$detection = $detector->detect(
-    (string)$request['member_code'],
-    AmharicNameMatcher::firstName((string)$request['name_key']),
-    (string)$request['account_type']
-);
+try {
+    $detection = $detector->detect(
+        (string)$request['member_code'],
+        AmharicNameMatcher::firstName((string)$request['name_key']),
+        (string)$request['account_type']
+    );
+} catch (\Throwable $detectError) {
+    reportInternalError('ACM detection failed for request ' . $id, $detectError);
+    $detection = [
+        'kind' => AcmActivationDetector::NO_MEMBER,
+        'person_id' => null,
+        'member_id' => null,
+        'guardian_id' => null,
+        'match' => 'none',
+        'score' => 0.0,
+        'detail' => 'the register could not be read',
+        'candidates' => [],
+    ];
+}
 // The register row the detection settled on (empty when it did not resolve).
 $member = $detection['candidates'][0] ?? null;
 $person = $detection['person_id'] !== null
