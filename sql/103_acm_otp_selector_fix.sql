@@ -44,6 +44,19 @@
 --   excludes. A generated column would add a second source of truth for
 --   no gain.
 --
+-- APPLY BEFORE THE CODE, OR ACTIVATION BREAKS ENTIRELY
+--   The S12 code writes NULL for an activation row and does not fall back
+--   to ''. If this file has NOT been applied, every INSERT violates the
+--   NOT NULL constraint (SQLSTATE 23000) and the retry loop exhausts its
+--   five attempts and throws "Code issuance failed." The old '' value at
+--   least let the FIRST code through; NULL lets none through.
+--
+--   So this is not a fix that can ship quietly behind the code. Apply it
+--   first. Once applied, the failure mode is the opposite and harmless:
+--   rolling the code back to '' against a nullable column would let only
+--   one OTP row exist again (the reason this file exists), so roll the
+--   code back only together with the schema.
+--
 -- ORDER OF OPERATIONS
 --   Drop the key, widen the column, re-add the key. If the column were
 --   widened first, existing '' values would become NULL -- fine -- but the
