@@ -261,56 +261,52 @@ class AcmPersonService
             return $existing;
         }
 
-        $stmt = $this->pdo->prepare(
-            'SELECT id, full_name_am, full_name_en, student_name, baptismal_name,'
-            . ' father_name, grandfather_name, gender, date_of_birth,'
-            . ' dob_ec_day, dob_ec_month, dob_ec_year, phone_primary, phone_number'
-            . ' FROM members WHERE id = :id LIMIT 1'
-        );
-        $stmt->execute([':id' => $memberId]);
-        $m = $stmt->fetch(PDO::FETCH_ASSOC);
-        if (!is_array($m)) {
+        // ONLY A REFERENCE IS STORED -- never a copy of the member's details.
+        //
+        // This row exists so tickets, accounts and suspensions have a
+        // person_id to point at. Its identity fields are deliberately NOT
+        // filled from the register: a copy is a second place a name lives, and
+        // a stale copy means the office verifies somebody against an old
+        // spelling. Reads go through view(), which joins the register live --
+        // the same reason edu_dept reads `members` directly instead of keeping
+        // a roster. Nothing to sync, so nothing to backfill.
+        //
+        // The register row must still exist, otherwise this would anchor an
+        // account to nothing.
+        $exists = $this->pdo->prepare('SELECT 1 FROM members WHERE id = :id LIMIT 1');
+        $exists->execute([':id' => $memberId]);
+        if ($exists->fetchColumn() === false) {
             return null;
         }
 
-        // The register's primary name column is NOT NULL, but a migrated row
-        // can still be blank; fall back through the names it does hold so a
-        // person row is never created without a name to show.
-        $nameAm = trim((string)($m['full_name_am'] ?? ''));
-        if ($nameAm === '') {
-            $nameAm = trim((string)($m['student_name'] ?? ''));
-        }
-        if ($nameAm === '') {
-            return null;
-        }
-        $phone = trim((string)($m['phone_primary'] ?? ''));
-        if ($phone === '') {
-            $phone = trim((string)($m['phone_number'] ?? ''));
-        }
+        return $this->insertAnchor($memberId, null, $actorId);
+    }
 
+    /**
+     * The bare anchor row. Identity columns left NULL on purpose (see above);
+     * full_name_am is NOT NULL in sql/079, so it carries a non-name marker that
+     * is never displayed -- view() supplies the real name from the register.
+     */
+    private function insertAnchor(int $memberId, ?int $guardianId, int $actorId): ?int
+    {
+        $uuid = self::uuid4();
         try {
-            $created = $this->create([
-                'full_name_am'      => $nameAm,
-                'full_name_en'      => (string)($m['full_name_en'] ?? ''),
-                'baptismal_name'    => (string)($m['baptismal_name'] ?? ''),
-                'father_name'       => (string)($m['father_name'] ?? ''),
-                'grandfather_name'  => (string)($m['grandfather_name'] ?? ''),
-                'gender'            => (string)($m['gender'] ?? ''),
-                'date_of_birth'     => (string)($m['date_of_birth'] ?? ''),
-                'dob_ec_day'        => $m['dob_ec_day'] ?? null,
-                'dob_ec_month'      => $m['dob_ec_month'] ?? null,
-                'dob_ec_year'       => $m['dob_ec_year'] ?? null,
-                'phone'             => $phone,
-                'member_id'         => $memberId,
-                'notes'             => 'Derived from the member register on first activation.',
-            ], $actorId);
-            return (int)$created['id'];
+            $stmt = $this->pdo->prepare(
+                'INSERT INTO acm_persons (uuid, full_name_am, member_id, guardian_id, notes, created_by)'
+                . ' VALUES (:uuid, :marker, :member, :guardian, :notes, :by)'
+            );
+            $stmt->execute([
+                ':uuid'     => $uuid,
+                ':marker'   => '[' . ($memberId > 0 ? 'member #' . $memberId : 'guardian #' . (int)$guardianId) . ']',
+                ':member'   => $memberId > 0 ? $memberId : null,
+                ':guardian' => $guardianId,
+                ':notes'    => 'Account anchor. Identity is read live from the register.',
+                ':by'       => $actorId > 0 ? $actorId : null,
+            ]);
+            return (int)$this->pdo->lastInsertId();
         } catch (\PDOException $race) {
-            // Reached once migration 107's unique key is present: the loser of
-            // a race adopts the winner's row. Before 107 there is no
-            // constraint to lose against, and the re-read below returns the
-            // row just inserted, so this branch simply never fires.
-            $won = $this->personIdForMember($memberId);
+            // Reached once sql/107's unique key is present: adopt the winner.
+            $won = $memberId > 0 ? $this->personIdForMember($memberId) : $this->personIdForGuardian((int)$guardianId);
             if ($won !== null) {
                 return $won;
             }
@@ -345,23 +341,19 @@ class AcmPersonService
             return $existing;
         }
 
-        $stmt = $this->pdo->prepare(
-            'SELECT id, display_name, phone_primary, phone_alt, city, sub_city,'
-            . ' woreda, mender, block_number, house, status'
-            . ' FROM guardians WHERE id = :id LIMIT 1'
-        );
+        $stmt = $this->pdo->prepare('SELECT id, status FROM guardians WHERE id = :id LIMIT 1');
         $stmt->execute([':id' => $guardianId]);
         $g = $stmt->fetch(PDO::FETCH_ASSOC);
-        if (!is_array($g)) {
-            return null;
-        }
-        if ((string)($g['status'] ?? '') !== 'active') {
-            // Merged/archived guardians are not people to sign in as; a merged
-            // one is reachable through the row it was merged into.
+        if (!is_array($g) || (string)($g['status'] ?? '') !== 'active') {
             return null;
         }
 
-        // Is there at least one child whose link an officer verified?
+        // A parent account is only useful if it can SEE a child, and
+        // apiParentCanSeeMember admits children whose member_guardians link has
+        // verified_by set. Projecting a parent from an unverified link would
+        // hand out an account that signs in and shows nothing -- the failure
+        // that reads as "the app is broken". So refuse, and say why: HR stamps
+        // the link and the next attempt succeeds.
         $verify = $this->pdo->prepare(
             'SELECT COUNT(*) FROM member_guardians'
             . ' WHERE guardian_id = :gid AND verified_by IS NOT NULL'
@@ -374,32 +366,7 @@ class AcmPersonService
             );
         }
 
-        $name = trim((string)($g['display_name'] ?? ''));
-        if ($name === '') {
-            return null;
-        }
-        $phone = trim((string)($g['phone_primary'] ?? ''));
-        if ($phone === '') {
-            $phone = trim((string)($g['phone_alt'] ?? ''));
-        }
-
-        try {
-            $created = $this->create([
-                'full_name_am' => $name,
-                'phone'        => $phone,
-                'guardian_id'  => $guardianId,
-                // The address lives on the guardian, not the child; note it so
-                // an officer reading the person row knows where it came from.
-                'notes'        => 'Derived from the guardian register (verified family link).',
-            ], $actorId);
-            return (int)$created['id'];
-        } catch (\PDOException $race) {
-            $won = $this->personIdForGuardian($guardianId);
-            if ($won !== null) {
-                return $won;
-            }
-            throw $race;
-        }
+        return $this->insertAnchor(0, $guardianId, $actorId);
     }
 
     /** acm_persons.id linked to this guardians.id, or null. */
@@ -414,6 +381,155 @@ class AcmPersonService
         $stmt->execute([':gid' => $guardianId]);
         $id = $stmt->fetchColumn();
         return $id === false || $id === null ? null : (int)$id;
+    }
+
+    /**
+     * A person as ACM should SEE them: identity read live from the register.
+     *
+     * WHY THIS IS NOT A COPY
+     *   ACM must not hold its own version of a member's name, section or phone.
+     *   A copy drifts, and a drifted copy means the office verifies somebody
+     *   against a name HR corrected a year ago. So every identity field below
+     *   is read from `members` / `guardians` AT REQUEST TIME -- the same way
+     *   edu_dept reads `members` directly instead of keeping a roster of its
+     *   own. There is nothing to sync, which is why there is nothing to
+     *   backfill: a member registered five years ago and one registered this
+     *   minute are equally visible, because neither is copied.
+     *
+     * WHAT acm_persons STILL HOLDS
+     *   Not identity -- a place for the ACCOUNT SPINE to hang. Tickets,
+     *   accounts, suspensions and activation requests reference person_id, so
+     *   the row is the anchor those tables point at, plus the one or two
+     *   annotations ACM genuinely owns (ID document seen at the counter, notes).
+     *   `profile` below therefore contains NO register-derived field.
+     *
+     * @return array{
+     *   person_id:int, kind:string, anchor:?int,
+     *   identity:array<string,mixed>, family:array<string,mixed>,
+     *   profile:array<string,mixed>
+     * }|null null when the anchor row or its register record is gone
+     */
+    public function view(int $personId): ?array
+    {
+        if ($personId <= 0) {
+            return null;
+        }
+        $anchor = $this->find($personId);
+        if ($anchor === null) {
+            return null;
+        }
+
+        $memberId = (int)($anchor['member_id'] ?? 0);
+        $guardianId = (int)($anchor['guardian_id'] ?? 0);
+
+        $identity = [];
+        $family = [];
+        $kind = 'unknown';
+        $anchorId = null;
+
+        if ($memberId > 0) {
+            $stmt = $this->pdo->prepare(
+                'SELECT id, member_code, legacy_member_code, student_name, full_name_am,'
+                . ' full_name_en, father_name, grandfather_name, baptismal_name, christian_name,'
+                . ' gender, date_of_birth, age, age_group, current_section, education_level,'
+                . ' member_type, registration_type, status, phone_primary, phone_number,'
+                . ' alt_phone_number, city, sub_city, woreda, mender, block_number, house_number,'
+                . ' is_teacher, is_staff, is_committee, is_volunteer,'
+                . ' student_photo_path, created_at'
+                . ' FROM members WHERE id = :id LIMIT 1'
+            );
+            $stmt->execute([':id' => $memberId]);
+            $m = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (is_array($m)) {
+                $kind = 'member';
+                $anchorId = $memberId;
+                $identity = $m;
+                // The verified family link, read live. `verified_by IS NOT NULL`
+                // is the same rule apiParentCanSeeMember enforces, so the console
+                // never shows a parent a child the parent app would hide.
+                $gs = $this->pdo->prepare(
+                    'SELECT g.id, g.display_name, g.phone_primary, g.status,'
+                    . ' mg.relation, mg.is_primary, mg.verified_by, mg.verified_at'
+                    . ' FROM member_guardians mg JOIN guardians g ON g.id = mg.guardian_id'
+                    . ' WHERE mg.member_id = :mid'
+                    . ' ORDER BY mg.is_primary DESC, mg.contact_priority ASC, g.id ASC'
+                );
+                $gs->execute([':mid' => $memberId]);
+                $family['guardians'] = $gs->fetchAll(PDO::FETCH_ASSOC);
+            }
+        }
+
+        if ($kind === 'unknown' && $guardianId > 0) {
+            $stmt = $this->pdo->prepare(
+                'SELECT id, display_name, phone_primary, phone_alt, city, sub_city,'
+                . ' woreda, mender, block_number, house, photo_path, status, source, created_at'
+                . ' FROM guardians WHERE id = :id LIMIT 1'
+            );
+            $stmt->execute([':id' => $guardianId]);
+            $g = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (is_array($g)) {
+                $kind = 'guardian';
+                $anchorId = $guardianId;
+                // Present the guardian under the same keys the member view uses,
+                // so one template renders either kind without branching on names.
+                $identity = [
+                    'id' => (int)$g['id'],
+                    'display_name' => (string)$g['display_name'],
+                    'student_name' => (string)$g['display_name'],
+                    'phone_primary' => $g['phone_primary'],
+                    'alt_phone_number' => $g['phone_alt'],
+                    'city' => $g['city'],
+                    'sub_city' => $g['sub_city'],
+                    'woreda' => $g['woreda'],
+                    'mender' => $g['mender'],
+                    'block_number' => $g['block_number'],
+                    'house_number' => $g['house'],
+                    'status' => $g['status'],
+                    'source' => $g['source'],
+                    'student_photo_path' => $g['photo_path'],
+                    'created_at' => $g['created_at'],
+                ];
+                // Children, on the same verified-link rule as the parent app.
+                $cs = $this->pdo->prepare(
+                    'SELECT m.id, m.member_code, m.student_name, m.full_name_am,'
+                    . ' m.current_section, m.status, mg.relation, mg.is_primary,'
+                    . ' mg.verified_by'
+                    . ' FROM member_guardians mg JOIN members m ON m.id = mg.member_id'
+                    . ' WHERE mg.guardian_id = :gid'
+                    . ' ORDER BY mg.is_primary DESC, mg.contact_priority ASC, m.id ASC'
+                );
+                $cs->execute([':gid' => $guardianId]);
+                $family['children'] = $cs->fetchAll(PDO::FETCH_ASSOC);
+            }
+        }
+
+        if ($kind === 'unknown') {
+            // A staff person, or an anchor whose register row was removed. The
+            // account spine is still real, so report it rather than hiding it.
+            $identity = [
+                'display_name' => (string)($anchor['full_name_am'] ?? ''),
+                'status' => 'unknown',
+            ];
+        }
+
+        // NOTE: no register-derived field appears here. This is the only part
+        // ACM owns, and the only part an officer may edit.
+        $profile = [
+            'id_doc_type' => $anchor['id_doc_type'] ?? null,
+            'id_doc_ref' => $anchor['id_doc_ref'] ?? null,
+            'notes' => $anchor['notes'] ?? null,
+            'created_at' => $anchor['created_at'] ?? null,
+            'created_by' => $anchor['created_by'] ?? null,
+        ];
+
+        return [
+            'person_id' => $personId,
+            'kind' => $kind,
+            'anchor' => $anchorId,
+            'identity' => $identity,
+            'family' => $family,
+            'profile' => $profile,
+        ];
     }
 
     /** acm_persons.id linked to this members.id, or null. */

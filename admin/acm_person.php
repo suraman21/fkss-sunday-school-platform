@@ -93,6 +93,10 @@ try {
             echo 'Person was not found.';
             exit;
         }
+        // IDENTITY IS READ LIVE FROM THE REGISTER, not from this table.
+        // `$person` is the account anchor; `$view` is what the register says
+        // right now. See AcmPersonService::view().
+        $view = $persons->view($personId);
         $accounts = $persons->accounts($personId);
         $stmt = $pdo->prepare(
             'SELECT id, ticket_no, account_type, status, created_at FROM acm_activation_tickets'
@@ -224,26 +228,104 @@ acm_chrome_open('persons', 'Persons & accounts', 'One human, independently manag
          See docs/design/acm-department-boundaries.md. */ ?>
 
 <?php if ($mode === 'view' && is_array($person)): ?>
+<?php
+// Everything identity-ish comes from $view, which is a live read of the
+// register. Nothing below reads a copied name, phone or section, because ACM
+// does not keep one.
+$vi = is_array($view) ? (array)$view['identity'] : [];
+$vk = is_array($view) ? (string)$view['kind'] : 'unknown';
+$vf = is_array($view) ? (array)($view['family'] ?? []) : [];
+$liveName = (string)($vi['full_name_am'] ?? $vi['display_name'] ?? '');
+$liveNameEn = (string)($vi['full_name_en'] ?? '');
+$isMember = $vk === 'member';
+?>
 <div class="acm-grid2">
     <div class="cd">
-        <div class="ct"><i class="fa-solid fa-id-card"></i> <span class="amharic"><?= e((string)($person['full_name_am'] ?? '')) ?></span></div>
+        <div class="ct"><i class="fa-solid fa-id-card"></i>
+            <span class="amharic"><?= e($liveName !== '' ? $liveName : 'Person #' . $personId) ?></span>
+            <?php if ($vk === 'guardian'): ?>
+                <span class="bg bg-p" style="margin-left:.4rem">parent</span>
+            <?php elseif ($isMember): ?>
+                <span class="bg bg-info" style="margin-left:.4rem">member</span>
+            <?php endif; ?>
+        </div>
+        <p style="font-size:.68rem;color:var(--dim);margin-bottom:.5rem">
+            Read live from the <?= $vk === 'guardian' ? 'guardian' : 'member' ?> register —
+            these fields are HR's and are not editable here.
+        </p>
         <dl class="acm-kv">
-            <dt>Name (EN)</dt><dd><?= e((string)($person['full_name_en'] ?? '—')) ?></dd>
-            <dt>Baptismal</dt><dd><?= e((string)($person['baptismal_name'] ?? '—')) ?></dd>
-            <dt>Father</dt><dd><?= e((string)($person['father_name'] ?? '—')) ?></dd>
-            <dt>Gender / DOB</dt><dd><?= e((string)($person['gender'] ?? '—')) ?> · <?= e((string)($person['date_of_birth'] ?? '—')) ?></dd>
-            <dt>Phone</dt><dd><?= e((string)($person['phone'] ?? '—')) ?></dd>
-            <dt>Email</dt><dd><?= e((string)($person['email'] ?? '—')) ?></dd>
-            <dt>ID document</dt><dd><?= e(trim((string)($person['id_doc_type'] ?? '') . ' ' . (string)($person['id_doc_ref'] ?? '')) ?: '—') ?></dd>
-            <dt>Links</dt><dd>member <?= !empty($person['member_id']) ? '#' . (int)$person['member_id'] : '—' ?> · guardian <?= !empty($person['guardian_id']) ? '#' . (int)$person['guardian_id'] : '—' ?></dd>
+            <?php if ($isMember): ?>
+            <dt>Member code</dt><dd><span class="bg bg-info"><?= e((string)($vi['member_code'] ?? '—')) ?></span></dd>
+            <dt>Name (EN)</dt><dd><?= e($liveNameEn !== '' ? $liveNameEn : '—') ?></dd>
+            <dt>Father / Grandfather</dt><dd><?= e((string)($vi['father_name'] ?? '—')) ?> · <?= e((string)($vi['grandfather_name'] ?? '—')) ?></dd>
+            <dt>Baptismal</dt><dd><?= e((string)($vi['baptismal_name'] ?? '—')) ?></dd>
+            <dt>Section / Level</dt><dd><?= e((string)($vi['current_section'] ?? '—')) ?> · <?= e((string)($vi['education_level'] ?? '—')) ?></dd>
+            <dt>Gender / Age</dt><dd><?= e((string)($vi['gender'] ?? '—')) ?> · <?= e((string)($vi['age'] ?? '—')) ?></dd>
+            <dt>Status</dt><dd><?= e((string)($vi['status'] ?? '—')) ?></dd>
+            <dt>Roles</dt><dd>
+                <?php
+                $flags = [];
+                foreach (['is_teacher' => 'teacher', 'is_staff' => 'staff', 'is_committee' => 'committee', 'is_volunteer' => 'volunteer'] as $col => $lbl) {
+                    if ((int)($vi[$col] ?? 0) === 1) { $flags[] = $lbl; }
+                }
+                echo $flags === [] ? '—' : e(implode(', ', $flags));
+                ?>
+            </dd>
+            <?php else: ?>
+            <dt>Name</dt><dd><?= e($liveName !== '' ? $liveName : '—') ?></dd>
+            <dt>Source</dt><dd><?= e((string)($vi['source'] ?? '—')) ?></dd>
+            <?php endif; ?>
+            <dt>Phone</dt><dd><?= e((string)($vi['phone_primary'] ?? $vi['phone_number'] ?? '—')) ?></dd>
+            <dt>Address</dt><dd><?= e(trim(implode(' · ', array_filter([
+                (string)($vi['city'] ?? ''), (string)($vi['sub_city'] ?? ''),
+                (string)($vi['woreda'] ?? ''),
+            ]))) ?: '—') ?></dd>
         </dl>
-        <?php if (!empty($dups['same_phone']) || !empty($dups['same_name_dob'])): ?>
-        <div class="acm-alert warn" style="margin-top:.7rem"><i class="fa-solid fa-triangle-exclamation"></i> Possible duplicates:
-            <?php foreach (array_merge($dups['same_phone'], $dups['same_name_dob']) as $dd): ?>
-            <a href="/admin/acm_person.php?id=<?= (int)$dd['id'] ?>">#<?= (int)$dd['id'] ?></a>
-            <?php endforeach; ?>
+        <?php if (!empty($vf['guardians'])): ?>
+        <div style="margin-top:.6rem">
+            <div class="acm-kv-label" style="font-size:.68rem;color:var(--dim);letter-spacing:.04em">FAMILY (HR-verified links)</div>
+            <table style="width:100%;font-size:.74rem;margin-top:.3rem">
+                <?php foreach ($vf['guardians'] as $gd): ?>
+                <tr>
+                    <td><?= e((string)($gd['display_name'] ?? '')) ?></td>
+                    <td style="color:var(--dim)"><?= e((string)($gd['relation'] ?? 'other')) ?></td>
+                    <td><?= e((string)($gd['phone_primary'] ?? '—')) ?></td>
+                    <td>
+                        <?php if (!empty($gd['verified_by'])): ?>
+                            <span class="bg bg-ok">verified</span>
+                        <?php else: ?>
+                            <span class="bg bg-w">HR has not verified</span>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </table>
+        </div>
+        <?php elseif (!empty($vf['children'])): ?>
+        <div style="margin-top:.6rem">
+            <div style="font-size:.68rem;color:var(--dim);letter-spacing:.04em">CHILDREN (HR-verified links)</div>
+            <table style="width:100%;font-size:.74rem;margin-top:.3rem">
+                <?php foreach ($vf['children'] as $ch): ?>
+                <tr>
+                    <td><span class="bg bg-info"><?= e((string)($ch['member_code'] ?? '')) ?></span></td>
+                    <td class="amharic"><?= e((string)($ch['full_name_am'] ?? $ch['student_name'] ?? '')) ?></td>
+                    <td style="color:var(--dim)"><?= e((string)($ch['current_section'] ?? '')) ?></td>
+                    <td>
+                        <?php if (!empty($ch['verified_by'])): ?>
+                            <span class="bg bg-ok">verified</span>
+                        <?php else: ?>
+                            <span class="bg bg-w">unverified</span>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </table>
         </div>
         <?php endif; ?>
+        <dl class="acm-kv" style="margin-top:.6rem">
+            <dt>ID document</dt><dd><?= e(trim((string)($person['id_doc_type'] ?? '') . ' ' . (string)($person['id_doc_ref'] ?? '')) ?: '—') ?></dd>
+            <dt>Anchor</dt><dd>person #<?= $personId ?><?= $isMember ? ' · member #' . (int)($person['member_id'] ?? 0) : ' · guardian #' . (int)($person['guardian_id'] ?? 0) ?></dd>
+        </dl>
     </div>
     <div class="cd">
         <div class="ct"><i class="fa-solid fa-key"></i> Accounts</div>

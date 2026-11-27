@@ -117,38 +117,72 @@ class NoManualRegistrationPath(unittest.TestCase):
         self.assertNotIn("Register person", page)
 
 
-class ProjectionIsDerivedNotTyped(unittest.TestCase):
-    """The person row comes from the register, on demand, idempotently."""
+class IdentityIsReadLiveNeverCopied(unittest.TestCase):
+    """ACM stores a REFERENCE to a person, never a copy of one.
+
+    WHY THIS IS THE POINT OF THE FILE
+        edu_dept reads `members` directly and owns no roster of its own: there
+        is nothing to sync because nothing is copied. ACM must work the same
+        way. A copied name is a second place a name lives, and a stale copy
+        means the office verifies somebody against a spelling HR corrected a
+        year ago. It also means nothing to backfill -- a member registered five
+        years ago and one registered this minute are equally visible.
+
+    So `acm_persons` is an ACCOUNT ANCHOR: the row tickets/accounts/suspensions
+    point at, plus the couple of annotations ACM genuinely owns. Identity comes
+    from the register at read time.
+    """
 
     def setUp(self):
-        self.persons = strip_comments(read(ACM / "src" / "Identity" / "AcmPersonService.php"))
+        self.raw = read(ACM / "src" / "Identity" / "AcmPersonService.php")
+        self.persons = strip_comments(self.raw)
 
-    def test_member_projection_reads_the_register(self):
+    def test_member_anchor_copies_no_identity_into_acm_persons(self):
         body = self.persons.split("public function ensureForMember")[1]
-        body = body.split("public function personIdForMember")[0]
+        body = body.split("private function insertAnchor")[0]
+        self.assertIn("insertAnchor", body)
+        # The old behaviour read the member row and copied these across.
+        for copied in ("baptismal_name", "father_name", "grandfather_name",
+                       "date_of_birth", "phone_primary"):
+            self.assertNotIn(copied, body,
+                             f"{copied} must not be copied into acm_persons")
+
+    def test_guardian_anchor_copies_no_identity_either(self):
+        body = self.persons.split("public function ensureForGuardian")[1]
+        body = body.split("public function personIdForGuardian")[0]
+        self.assertNotIn("display_name", body.split("insertAnchor")[0].replace("SELECT id, status", ""))
+        self.assertIn("insertAnchor", body)
+
+    def test_view_reads_the_register_at_request_time(self):
+        body = self.persons.split("public function view(")[1]
         self.assertIn("FROM members", body)
-        # Derived fields, not caller-supplied ones.
-        for column in ("full_name_am", "father_name", "grandfather_name",
-                       "date_of_birth", "phone_primary", "member_id"):
-            self.assertIn(column, body, column)
+        self.assertIn("FROM guardians", body)
+        # Family comes from HR's link table, with its verification stamp.
+        self.assertIn("member_guardians", body)
+        self.assertIn("verified_by", body)
 
-    def test_projection_returns_an_existing_row_untouched(self):
-        body = self.persons.split("public function ensureForMember")[1]
-        body = body.split("public function personIdForMember")[0]
-        # Fast path first: if a person exists, nothing is written.
-        self.assertLess(body.index("personIdForMember"), body.index("INSERT INTO acm_persons")
-                        if "INSERT INTO acm_persons" in body else len(body))
+    def test_view_exposes_only_acm_owned_annotations_as_editable(self):
+        body = self.persons.split("public function view(")[1]
+        profile = body.split("$profile = [")[1].split("];")[0]
+        # The editable slice must not contain register fields.
+        for registered in ("full_name", "student_name", "father_name",
+                           "current_section", "phone"):
+            self.assertNotIn(registered, profile,
+                             f"{registered} belongs to HR, not to ACM's profile")
+        self.assertIn("id_doc_ref", profile)
+        self.assertIn("notes", profile)
 
-    def test_uniqueness_limit_is_stated_not_implied(self):
-        """sql/079 gives member_id a plain KEY. The code must not pretend otherwise."""
-        sql = read(ROOT / "sql" / "079_acm_p0_foundation.sql")
-        self.assertNotRegex(sql, r"UNIQUE[^\n]*member_id",
-                            "if a unique key is added, update the documented limit")
-        # The limit is documented in prose, so this one reads the RAW file:
-        # strip_comments() would delete the very sentence being asserted.
-        raw = read(ACM / "src" / "Identity" / "AcmPersonService.php")
-        self.assertIn("NOT a UNIQUE", raw,
-                      "the honest limit must be stated where the code lives")
+    def test_console_renders_the_live_view_not_the_anchor(self):
+        page = strip_comments(read(ADMIN / "acm_person.php"))
+        self.assertIn("->view(", page)
+        self.assertIn("Read live from the", page)
+        # The old card printed copied fields straight off $person.
+        self.assertNotIn("$person['full_name_am']", page)
+
+    def test_role_flags_are_surfaced_from_the_register(self):
+        page = read(ADMIN / "acm_person.php")
+        for col in ("is_teacher", "is_staff", "is_committee", "is_volunteer"):
+            self.assertIn(col, page, col)
 
 
 class ParentProjectionInheritsTheVerifiedLinkRule(unittest.TestCase):

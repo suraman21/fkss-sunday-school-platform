@@ -41,7 +41,7 @@ family. Asking the accounts office to re-enter that person is:
 | Parents may only see **verified** children | `apiParentCanSeeMember` filters `verified_by IS NOT NULL` (`api/v1/core/acl.php:159-178`) |
 | `acm_persons` was *designed* as a mirror | it holds **both** `member_id` and `guardian_id` (`sql/079:31-32`) |
 | `acm_persons.member_id` is **not unique** | plain `KEY idx_acm_person_member` (`sql/079:41`); `guardian_id` likewise (`:42`) |
-| Nothing ever syncs members into `acm_persons` | only writer is the manual `person_create`; no backfill exists |
+| `acm_persons` need not mirror identity at all | `edu_dept` reads `members` directly and keeps no copy (`api_education.php:1878`) |
 | `users` has `member_id` but **no `guardian_id`** | `sql/012:101` adds `member_id` only |
 | A parent account resolves its guardian through `acm_persons.guardian_id` | `apiParentGuardianId` (`acl.php:126-153`) |
 
@@ -77,51 +77,50 @@ removal of the manual path that was standing in for it.
 **Direction is absolute.** HR → ACM. ACM never writes to `members`, `guardians` or
 `member_guardians`. If ACM believes the register is wrong, it says so and HR fixes it.
 
-### 2.1 Why a projection rather than a join
+### 2.1 It is a reference, not a projection of data
 
-The alternative is "delete `acm_persons` and join `members` directly". Rejected:
+The first draft of this document proposed *copying* each member into `acm_persons`
+and reconciling drift. The owner rejected that, correctly: **edu_dept reads `members`
+directly and keeps no roster of its own**, so there is nothing to sync and nothing to
+backfill. ACM must work the same way.
 
-- `acm_persons` is referenced by `acm_person_accounts`, `acm_activation_tickets` and
-  five more tables — dropping it is a rewrite, not a patch;
-- a person may exist with **no** register row (`staff` enrolment, `sql/091`);
-- the projection is where ACM's *own* annotations belong (`notes`, `id_doc_*`)
-  without contaminating HR's table.
+So `acm_persons` holds **no identity at all**. It is an *account anchor*: the row that
+`acm_person_accounts`, `acm_activation_tickets`, `acm_account_suspensions`,
+`acm_activation_requests` and the device tables point at — because they already have
+`person_id` columns and dropping that spine would be a rewrite, not a patch.
 
-The projection stays. What changes is **who fills it**: a trigger path, not an officer.
+Identity is read **live, per request** by `AcmPersonService::view()`, which joins
+`members` / `guardians` / `member_guardians` at that moment. Consequences:
+
+- a member registered five years ago and one registered this minute are equally
+  visible — there is no copy to be missing or stale;
+- changing a name in HR changes what ACM shows, instantly, with no sync job;
+- `acm_persons` keeps only what ACM genuinely owns: the ID document seen at the
+  counter, and notes. Those are the only editable fields on the console page.
+
+The anchor row is created idempotently by `ensureForMember()` / `ensureForGuardian()`
+on first need — a `member_id` or `guardian_id` plus a non-name marker, nothing else.
 
 ---
 
 ## 3. Design decisions
 
-### D1 — `acm_persons` becomes a derived row, filled on demand and by backfill
+### D1 — `acm_persons` is an anchor, created lazily, never copied, never backfilled
 
-Two entry points, one implementation (`AcmPersonService::projectFromMember()`):
+`ensureForMember()` / `ensureForGuardian()` create the anchor the first time ACM needs
+it: a `member_id`/`guardian_id` and a marker, **no identity fields**. All reads go
+through `view()`, which joins the register live.
 
-- **lazily**, at the moment ACM first needs the person (a claim, or the console
-  opening the record);
-- **in bulk**, by a one-time, resumable, idempotent backfill
-  (`admin/tools/acm_person_backfill.php --dry-run|--execute`), mirroring the existing
-  `guardian_backfill.php` pattern: batch, summary audit, no per-record flooding.
+**There is no backfill and no sync** — there is no copy to populate. A member who has
+never touched ACM has no anchor, and that is fine: every screen reads the register,
+and the anchor appears the moment an account action needs it.
 
-`ensureForMember()` (merged in `#99`) is already the lazy path. It becomes the *only*
-path that creates a member person row.
+### D2 — There is nothing to reconcile
 
-### D2 — HR edits must not silently diverge from ACM's copy
-
-The projection is copied, so it can go stale. `members` has four write paths:
-
-| Path | File |
-|---|---|
-| HR registration | `admin/hr_register_member.php` |
-| Member edit | `admin/info_manage_member.php` |
-| Excel/CSV import | `admin/api_import_members.php` |
-| Telegram approval | `admin/backend/services/TelegramMemberApprovalService.php` |
-
-Rather than trusting four files to remember, the refresh lives in **one** service call
-(`MemberCanonicalIdentityService` already exists as the "fan-out after a member write"
-seam, `hr_register_member.php:675`), and a **reconciliation report** in the ACM console
-lists any person row whose source member has since changed. Divergence becomes visible
-instead of silent — and ACM never edits the register to "fix" it.
+Because no identity is copied, the four `members` write paths (HR registration, member
+edit, import, Telegram approval) need no hooks, no fan-out and no reconciliation report.
+An edited name is simply what ACM reads next time. This is the whole reason the live
+read was chosen over a projection: it removes a class of bug instead of managing it.
 
 ### D3 — Parents are projected from the verified family link
 
@@ -173,10 +172,10 @@ the next well-meaning patch from "just fixing" a name in the ACM console.
 | Step | Change | Risk |
 |---|---|---|
 | 1 | `107_acm_person_identity_unique.sql` — **DONE**: duplicate report + `UNIQUE` added only where duplicate-free | low, no deletion |
-| 2 | `ensureForMember()` / `ensureForGuardian()` projection | **DONE** (guardian half enforces the verified-link rule) |
-| 3 | `admin/tools/acm_person_backfill.php` (dry-run first) | low, idempotent |
+| 2 | `ensureForMember()` / `ensureForGuardian()` anchor + `view()` live read | **DONE** (guardian half enforces the verified-link rule) |
+| 3 | ~~backfill~~ — **not needed**: no copy exists to fill | — |
 | 4 | Remove `person_create` from API + policy + console; add `person_resolve` | **DONE** — breaking by design |
-| 5 | Boundary test + reconciliation report | none |
+| 5 | Boundary test | **DONE** — `test_acm_department_boundary.py` |
 
 Step 4 is the behavioural break the owner asked for. Steps 1–3 must land first so no
 member is left without a projection when the manual form disappears.
@@ -192,10 +191,10 @@ member is left without a projection when the manual form disappears.
    commit message claimed the unique key already existed; it did not, and the code
    comments now say so.
 2. **The verification stamp depends on data.** If `sql/092` (which back-stamps
-   `verified_by = created_by`) was never applied to a deployment, every parent would
-   project but see zero children — the failure looks exactly like "the app is broken".
-   Step 3's dry run must report how many verified links exist before any parent is
-   projected.
+   `verified_by = created_by`) was never applied to a deployment, a parent account
+   exists but sees zero children — the failure looks exactly like "the app is broken".
+   Worth one query on the development database before onboarding parents:
+   `SELECT COUNT(*) FROM member_guardians WHERE verified_by IS NOT NULL;`
 3. **No DB access here.** Every claim above is from schema and source, not from a
    running server. The dry-run reports are the first real evidence.
 4. **This is a design.** Nothing in this PR changes runtime behaviour except the two
