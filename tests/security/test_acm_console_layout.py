@@ -166,9 +166,47 @@ def test_the_stylesheets_exist():
         assert (ADMIN / "css" / name).is_file(), f"admin/css/{name} is missing"
 
 
+I18N_TITLE = re.compile(r"""\bt\(\s*['"]([^'"]+)['"]""")
+
+
 def _chrome_title(code: str):
-    m = re.search(r"acm_chrome_open\(\s*'[^']*'\s*,\s*'([^']*)'", code)
-    return m.group(1) if m else None
+    """The title passed to acm_chrome_open(), resolving i18n keys.
+
+    A few pages pass `t('staffEnroll.title')` rather than a literal. This
+    guard used to skip those, which is a test that asserts nothing -- and
+    this repository fails CI on any skip. The key is resolved through the
+    locale catalogue so those pages are checked like the rest.
+    """
+    m = re.search(r"acm_chrome_open\(\s*'[^']*'\s*,\s*([^,]+),", code)
+    if not m:
+        return None
+    arg = m.group(1).strip()
+    literal = re.fullmatch(r"""['"](.*)['"]""", arg, re.S)
+    if literal:
+        return literal.group(1)
+    key = I18N_TITLE.search(arg)
+    return _locale_value(key.group(1)) if key else None
+
+
+def _locale_value(key: str):
+    """Look the key up in the catalogue the pages are rendered with."""
+    m = re.fullmatch(r"([A-Za-z0-9_]+)\.(.+)", key)
+    if not m:
+        return None
+    group, leaf = m.group(1), m.group(2)
+    pattern = re.compile(
+        r"['\"]?" + re.escape(group) + r"['\"]?\s*=>\s*\[(.*?)\n\s*\],", re.S
+    )
+    for path in sorted(ADMIN.rglob("*.php")):
+        src = _strip_comments(path.read_text(encoding="utf-8", errors="replace"))
+        block = pattern.search(src)
+        if not block:
+            continue
+        leaf_re = re.compile(r"['\"]" + re.escape(leaf) + r"['\"]\s*=>\s*['\"]([^'\"]*)['\"]")
+        hit = leaf_re.search(block.group(1))
+        if hit:
+            return hit.group(1)
+    return None
 
 
 @pytest.mark.parametrize("path,src", _console_pages(), ids=lambda v: v.name if isinstance(v, Path) else "")
@@ -185,9 +223,19 @@ def test_the_page_does_not_repeat_the_chrome_title(path, src):
     """
     code = _strip_comments(src)
     title = _chrome_title(code)
-    if title is None:
-        pytest.skip("chrome title is dynamic; nothing literal to compare")
-    for heading in re.findall(r'<h1 class="pg">([^<]*)</h1>', code):
+    headings = re.findall(r'<h1 class="pg">([^<]*)</h1>', code)
+    if not title:
+        # acm_ticket.php and acm_request.php build the title from the record
+        # ("Activation request MX7CVJNR"), so there is no literal to compare.
+        # That is fine, and it is only fine because they print no literal
+        # <h1> at all -- there is nothing that could duplicate the chrome.
+        assert headings == [], (
+            f"{path.name} has a dynamic chrome title and also prints a literal "
+            f"<h1 class=\"pg\">, which would sit under the chrome heading: "
+            f"{headings}"
+        )
+        return
+    for heading in headings:
         assert heading.strip() != title.strip(), (
             f"{path.name} prints '{title}' as an <h1> as well as passing it to "
             "acm_chrome_open(), so it appears twice on the page. Drop the h1, "
