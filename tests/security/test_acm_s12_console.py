@@ -23,6 +23,7 @@ WHAT THIS DOES NOT DO
     still honours the decisions.
 """
 import re
+import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -495,3 +496,70 @@ class TestTicketPageCeremony:
         assert "not on file" in src, (
             "an empty fact cell must say 'not on file', not print a bare dash"
         )
+
+
+class DetectorColumnContract(unittest.TestCase):
+    """The detector must only name columns that the schema actually has.
+
+    WHY THIS EXISTS (production 500, Ref #868)
+        memberRows() selected `m.photo_path`. No migration has ever added
+        that column to `members` -- the register stores it as
+        `student_photo_path` -- so with PDO's native prepares (config.php
+        sets ATTR_EMULATE_PREPARES false) MySQL rejected the whole statement
+        with "Unknown column". The result was not a degraded photo:
+
+          * admin/acm_request.php 500'd on every request, so no reviewer could
+            open a verification card at all;
+          * AcmActivationRequestService::submit() calls the same detector
+            before it inserts, so the member app could not submit a claim
+            either.
+
+        A source-level test cannot run the query, but it CAN check the column
+        names against the register's schema, which is where the mistake was.
+        Every other column in that SELECT was verified present; this pins it.
+    """
+
+    def setUp(self):
+        self.detector = strip_comments(read(ACM / "Requests" / "AcmActivationDetector.php"))
+        self.schema = read(ROOT / "sql" / "legacy" / "database_schema.sql")
+
+    def test_members_columns_in_the_detector_query_all_exist(self):
+        # The SELECT list lives between "SELECT m." and "FROM members".
+        body = re.search(r"SELECT m\.(.*?)FROM members", self.detector, re.S)
+        self.assertIsNotNone(body, "the members query moved; update this test")
+        listed = set(re.findall(r"\bm\.(\w+)", body.group(1)))
+
+        # Column names the legacy register actually defines.
+        defined = set(re.findall(r"^\s*`(\w+)`", self.schema, re.M))
+        # Columns added by migrations (CALL ssms_013_add_column('members', ...)).
+        for mig in (ROOT / "sql").glob("*.sql"):
+            defined |= set(re.findall(
+                r"add_column\('members','(\w+)'", read(mig), re.I))
+
+        unknown = sorted(listed - defined)
+        self.assertEqual(
+            [], unknown,
+            "AcmActivationDetector selects members columns the schema never "
+            f"defines: {unknown}. With native prepares that is a fatal "
+            "'Unknown column' on every request, not a graceful miss.",
+        )
+
+    def test_photo_comes_from_the_real_column(self):
+        # members stores the photo as student_photo_path; prove the query uses
+        # it rather than inventing a second name for the same thing.
+        self.assertIn("student_photo_path", self.detector)
+        self.assertNotRegex(
+            self.detector, r"m\.photo_path",
+            "m.photo_path does not exist on members (Ref #868)",
+        )
+
+    def test_optional_photo_cannot_take_the_page_down(self):
+        # The photo is the one column probed rather than assumed, so a
+        # deployment with an older `members` degrades to "no photo".
+        self.assertIn("membersColumnExists", self.detector)
+        self.assertIn("AS photo_path", self.detector)
+
+    def test_guardian_link_is_not_read_off_the_member_row(self):
+        # guardians live in member_guardians (sql/069); `members` has no
+        # guardian_id, so reading it there yields null forever.
+        self.assertIn("member_guardians", self.detector)

@@ -53,7 +53,7 @@ class _MemberListScreenState extends State<MemberListScreen>
 
   StreamSubscription<bool>? _radioSub;
   StreamSubscription<PhotoSyncEvent>? _photoEvents;
-  Timer? _photoCounterTimer;
+  int _photoQueued = 0; // outbox depth, refreshed by events only
   PhotoOutboxCounters _photoCounters = PhotoOutboxCounters.zero;
   bool _photoServiceReady = false;
 
@@ -63,7 +63,15 @@ class _MemberListScreenState extends State<MemberListScreen>
       _photoServiceReady = true;
     }
     final c = await PhotoOutboxService.instance.counters();
-    if (mounted) setState(() => _photoCounters = c);
+    // Only repaint when the number actually moved: an event-driven refresh
+    // that always calls setState would rebuild the list on every progress
+    // tick, which is the polling cost this replaced, just harder to see.
+    if (mounted && c.queued != _photoQueued) {
+      setState(() {
+        _photoCounters = c;
+        _photoQueued = c.queued;
+      });
+    }
   }
 
   @override
@@ -82,13 +90,16 @@ class _MemberListScreenState extends State<MemberListScreen>
         });
       }
     });
-    // Photo-outbox badge refresh every 5s and on any sync event.
+    // Photo-outbox badge: refreshed once on open and then only when the worker
+    // reports something. This list is a P1-A local-first screen and must not
+    // poll -- a 5 s timer here woke the radio and rebuilt the badge even when
+    // nothing had changed, which is the exact cost P1-A exists to remove. The
+    // worker's progressStream already emits on every enqueue, start, pause,
+    // resume and COMPLETION, so there is nothing for a timer to discover.
     _refreshPhotoCounters();
     _photoEvents = PhotoSyncWorker.instance.progressStream.listen((_) {
       _refreshPhotoCounters();
     });
-    _photoCounterTimer = Timer.periodic(
-        const Duration(seconds: 5), (_) => _refreshPhotoCounters());
   }
 
   @override
@@ -96,7 +107,6 @@ class _MemberListScreenState extends State<MemberListScreen>
     WidgetsBinding.instance.removeObserver(this);
     _radioSub?.cancel();
     _photoEvents?.cancel();
-    _photoCounterTimer?.cancel();
     _searchController.dispose();
     _scrollController.dispose();
     super.dispose();

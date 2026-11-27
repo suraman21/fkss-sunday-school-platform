@@ -63,6 +63,14 @@ final class AcmActivationDetector
     /** Member statuses that may activate an account. */
     private const ACTIVATABLE_STATUSES = ['active', 'warning'];
 
+    /**
+     * Probe results for optional `members` columns, keyed by column name.
+     * One lookup per column per instance, not per request row.
+     *
+     * @var array<string,bool>
+     */
+    private array $memberColumnCache = [];
+
     public function __construct(private PDO $pdo)
     {
     }
@@ -199,13 +207,54 @@ final class AcmActivationDetector
             'SELECT m.id, m.member_code, m.full_name_am, m.full_name_en, m.student_name,'
             . ' m.christian_name, m.baptismal_name, m.father_name, m.grandfather_name,'
             . ' m.gender, m.date_of_birth, m.age, m.current_section, m.education_level,'
-            . ' m.status, m.phone_primary, m.phone_number, m.photo_path'
+            . ' m.status, m.phone_primary, m.phone_number,'
+            // The member photo is `student_photo_path` in this schema (see
+            // sql/legacy/database_schema.sql and sql/096). This SELECT used to
+            // name `m.photo_path`, which no migration has ever added to
+            // `members`: with ATTR_EMULATE_PREPARES false the server rejected
+            // the whole statement, so the console 500'd on every request and
+            // submit() threw before it could refuse anything.
+            //
+            // `members` is a legacy table whose shape varies between
+            // deployments, so the photo is probed rather than assumed: a
+            // missing photo column degrades the verification card to "no
+            // photo" instead of taking the page down. Everything else in this
+            // list is part of the register contract and stays hard.
+            . ' ' . ($this->membersColumnExists('student_photo_path')
+                ? 'm.student_photo_path AS photo_path'
+                : 'NULL AS photo_path')
             . ' FROM members m WHERE m.member_code = :code'
             . ' ORDER BY m.id ASC LIMIT 25'
         );
         $stmt->execute([':code' => $code]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
         return is_array($rows) ? $rows : [];
+    }
+
+    /**
+     * Is this column present on `members`? Probed once per instance; an
+     * unreadable schema is treated as "absent" because the caller only uses
+     * this to avoid naming a column that might not exist.
+     */
+    private function membersColumnExists(string $column): bool
+    {
+        if (array_key_exists($column, $this->memberColumnCache)) {
+            return $this->memberColumnCache[$column];
+        }
+        $exists = false;
+        try {
+            $stmt = $this->pdo->prepare(
+                'SELECT 1 FROM information_schema.COLUMNS'
+                . ' WHERE TABLE_SCHEMA = DATABASE()'
+                . ' AND TABLE_NAME = :tbl AND COLUMN_NAME = :col LIMIT 1'
+            );
+            $stmt->execute([':tbl' => 'members', ':col' => $column]);
+            $exists = $stmt->fetchColumn() !== false;
+        } catch (\Throwable) {
+            $exists = false;
+        }
+        $this->memberColumnCache[$column] = $exists;
+        return $exists;
     }
 
     /**
@@ -249,14 +298,37 @@ final class AcmActivationDetector
         return $id === false || $id === null ? null : (int)$id;
     }
 
-    /** The guardian row for a parent account, when the register holds one. */
+    /**
+     * The guardian row for a parent account, when the register holds one.
+     *
+     * `members` has no guardian_id column -- the link lives in
+     * `member_guardians` (sql/069: member_id, guardian_id, is_primary). This
+     * used to read it off the member row, so it was always absent and a
+     * parent request never arrived with a guardian prefilled. Falls back to
+     * whatever the row carries, so a caller that already resolved the link
+     * keeps working.
+     */
     private function guardianIdFor(array $member, string $accountType): ?int
     {
         if ($accountType !== 'parent') {
             return null;
         }
         $guardianId = (int)($member['guardian_id'] ?? 0);
-        return $guardianId > 0 ? $guardianId : null;
+        if ($guardianId > 0) {
+            return $guardianId;
+        }
+        try {
+            $stmt = $this->pdo->prepare(
+                'SELECT guardian_id FROM member_guardians'
+                . ' WHERE member_id = :mid ORDER BY is_primary DESC, contact_priority ASC, guardian_id ASC'
+                . ' LIMIT 1'
+            );
+            $stmt->execute([':mid' => (int)($member['id'] ?? 0)]);
+            $id = $stmt->fetchColumn();
+            return $id === false || $id === null ? null : (int)$id;
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     /**

@@ -43,13 +43,28 @@ def test_refresh_has_all_typed_outcomes_and_scope_never_uses_retry_path() -> Non
 
     # Every authenticated transport checks scopeChanged/superseded before the
     # only branch which retries the original request.
-    assert api.count("refreshOutcome == AuthRefreshOutcome.scopeChanged") == 4
-    assert api.count("if (refreshOutcome == AuthRefreshOutcome.sameScope)") == 4
+    #
+    # The count is asserted as "every sameScope branch has a scopeChanged
+    # branch", not as a literal. The literal was 4 and went stale when
+    # uploadMemberPhoto() was added as a fifth authenticated transport -- a
+    # transport that DOES the check. A pin that fails when correct code is
+    # added is measuring the file's size, not its safety.
+    changed = api.count("refreshOutcome == AuthRefreshOutcome.scopeChanged")
+    same = api.count("if (refreshOutcome == AuthRefreshOutcome.sameScope)")
+    assert changed >= 4, f"a transport lost its scopeChanged check ({changed})"
+    assert changed == same, (
+        "each sameScope branch needs its own scopeChanged branch: "
+        f"{changed} scopeChanged vs {same} sameScope"
+    )
     for block_start, block_end in (
         ("Future<ApiResponse> _doGet", "/// Core POST request"),
         ("Future<ApiResponse> post", "/// Core PUT request"),
         ("Future<ApiResponse> put", "/// Handle response"),
         ("Future<ApiResponse> _uploadTaxonomyImage", "/// Drop a category's cover image"),
+        # Added with the transport itself: photo upload is authenticated and
+        # retries, so it needs the same ordering guarantee as the other four.
+        # It is the last method in the class; the class closes after it.
+        ("Future<ApiResponse> uploadMemberPhoto", "\n}\n\n/// "),
     ):
         block = method_block(api, block_start, block_end)
         assert block.index("AuthRefreshOutcome.scopeChanged") < block.index(

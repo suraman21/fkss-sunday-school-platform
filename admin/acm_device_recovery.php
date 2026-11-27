@@ -264,9 +264,10 @@ acm_chrome_open(
     </div>
 <?php endforeach; ?>
 
-<!-- The reason is collected in a real dialog instead of window.prompt():
-     the audit trail needs a considered sentence, and prompt() cannot show
-     who the recovery is for or be styled, translated or keyboard-managed. -->
+<!-- The reason is collected in a real dialog rather than a native input box:
+     the audit trail needs a considered sentence, and the native box cannot
+     show who the recovery is for, nor be styled, translated or
+     keyboard-managed. -->
 <div id="acmRecoverDialog" hidden
      style="position:fixed;inset:0;z-index:300;display:grid;place-items:center;
             background:rgba(16,19,26,.45);padding:var(--v2-s4)">

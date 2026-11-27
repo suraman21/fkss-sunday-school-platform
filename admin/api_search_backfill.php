@@ -85,8 +85,20 @@ try {
     );
     echo json_encode(['status' => 'success', 'action' => 'backfill'] + $result + $diagnostics(), JSON_UNESCAPED_UNICODE);
 } catch (InvalidArgumentException $error) {
+    // An InvalidArgumentException here is a caller-facing validation message,
+    // so the text is intentional -- but it is NOT safe to assume that forever:
+    // the class name only promises "invalid argument", and the message is
+    // whatever the thrower put in it. Log it in full, return it only when it
+    // is short and free of the markers that indicate a leaked internals
+    // message (file paths, SQLSTATE, "SQL", parameter dumps).
+    reportInternalError('Search backfill rejected the request', $error);
+    $safe = $error->getMessage();
+    if (strlen($safe) > 200
+        || preg_match('/(SQLSTATE|\\/|\bSQL\b|near \"|column |table )/i', $safe)) {
+        $safe = 'The request was rejected as invalid.';
+    }
     http_response_code(422);
-    echo json_encode(['status' => 'error', 'message' => $error->getMessage()] + $diagnostics());
+    echo json_encode(['status' => 'error', 'message' => $safe] + $diagnostics());
 } catch (Throwable $error) {
     reportInternalError('Search backfill failed', $error);
     http_response_code(500);

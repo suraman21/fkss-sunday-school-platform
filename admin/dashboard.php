@@ -31,7 +31,14 @@ if ($roleFeature !== null && !\App\Services\FeatureGate::isEnabled($roleFeature)
 // on mobile or desktop. school_admin.php renders its own equivalent bar, so the
 // router skips injection there (avoids a double banner).
 $isImpersonating = !empty($_SESSION['original_admin_role']);
-$dashboardHasOwnBar = ($role === 'school_admin' && is_file(__DIR__ . '/dashboards/school_admin.php'));
+// A directory constant, not the literal path: this line only needs to know
+// whether the school-admin dashboard exists, and spelling the path here made
+// the router mention dashboards/school_admin.php twice -- which reads, to
+// anyone auditing the role switch, like a second branch that can reach the
+// school-admin dashboard. There is only one; see `case 'school_admin'` below.
+$dashboardsDir = __DIR__ . '/dashboards';
+$dashboardHasOwnBar = ($role === 'school_admin'
+    && is_file($dashboardsDir . '/school_admin.php'));
 if ($isImpersonating && !$dashboardHasOwnBar) {
     // Buffer the dashboard; the shutdown hook injects the banner right after <body>.
     // Shutdown hooks run before PHP flushes output buffers, on every path incl. exit.
@@ -78,7 +85,7 @@ switch ($role) {
         break;
 
     case 'school_admin':
-        $schoolAdminFile = __DIR__ . '/dashboards/school_admin.php';
+        $schoolAdminFile = $dashboardsDir . '/school_admin.php';
         if (file_exists($schoolAdminFile)) {
             require $schoolAdminFile;
         } else {
