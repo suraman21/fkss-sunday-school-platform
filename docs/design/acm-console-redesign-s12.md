@@ -123,7 +123,18 @@ reference*, so a code alone cannot activate anything. The panel therefore shows
 the reference beside the code and the copy button copies both. Omitting it
 would have left every member stuck at the next screen.
 
-### D7 — Status is always words, never only colour.
+### D7 — Filled colour carries its own ink, and the palette is verified.
+
+Every semantic fill has an `--v2-on-ok` / `--v2-on-bad` token rather than a
+hard-coded white. The first pass put white text on the dark theme's light green
+(`#3ecf8e`): **2.0:1**, unreadable. The dark hues are light and the light hues
+are dark, so one ink cannot serve both.
+
+**Verified, not eyeballed:** `TestContrast` computes WCAG ratios from the token
+values in both themes and fails below 4.5:1. Confirmed by reintroducing the bug
+and watching the test fail.
+
+### D8 — Status is always words, never only colour.
 
 Every chip carries a label; the status stripe on the card is backed by the
 heading text on the same row.
@@ -131,13 +142,13 @@ heading text on the same row.
 **Why:** colour-blindness and black-and-white printing are both real in this
 office.
 
-### D8 — Motion is feedback, and can be switched off.
+### D9 — Motion is feedback, and can be switched off.
 
 Two durations, one easing, and a `prefers-reduced-motion` block that disables
 transitions and animations wholesale. The old drifting radial background is
 gone: it animated forever on every page and communicated nothing.
 
-### D9 — The console is operable from the keyboard.
+### D10 — The console is operable from the keyboard.
 
 Skip link to `#acmMain`; visible `:focus-visible` rings everywhere; `/` focuses
 search on the list pages; `a` / `r` approve and reject on the verification page;
@@ -147,7 +158,7 @@ search on the list pages; `a` / `r` approve and reject on the verification page;
 typing a name containing "a" cannot approve somebody, and `a` stops working once
 the approve step has been used.
 
-### D10 — The match is described honestly.
+### D11 — The match is described honestly.
 
 `AmharicNameMatcher::compare()` reports `exact` only when the strings are
 identical as written; when folding makes them equal but the letters differ it
@@ -190,6 +201,7 @@ small lie in the one place the console must not lie.
 | Claim refusal | end-to-end `submit()`: 0 rows and 1 refusal log for every failure; identical messages | green |
 | Rendered pages | requests list, verification card (match / homophone / no-match), queue, ticket | inspected |
 | CSS integrity | no undefined `var()`; no unused token drift; braces balanced | green |
+| Colour contrast | WCAG ratios computed for both themes; filled states use their own ink | green (was 2.0:1 in dark) |
 | PHP syntax | `token_get_all(..., TOKEN_PARSE)` on every touched file | green |
 | Test suite | full `tests/` minus e2e, diffed against the base commit | no new failures |
 | JS syntax | `node --check` over every emitted script block | green |

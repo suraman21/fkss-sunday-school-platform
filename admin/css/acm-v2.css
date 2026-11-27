@@ -78,6 +78,11 @@
   --v2-bad-soft: #fdeceb;
   --v2-info: #0b5c8a;
   --v2-info-soft: #e7f3fa;
+  /* Ink used ON a filled semantic colour. Light hues are dark enough for
+     white text; the dark theme's hues are light, so they need dark ink.
+     Getting this wrong produced white-on-light-green at 2.0:1. */
+  --v2-on-ok: #ffffff;
+  --v2-on-bad: #ffffff;
 
   /* Elevation: two steps, both subtle */
   --v2-shadow-1: 0 1px 2px rgba(16, 19, 26, .06), 0 1px 3px rgba(16, 19, 26, .04);
@@ -138,6 +143,8 @@
   --v2-bad-soft: #2a1416;
   --v2-info: #5cb3e0;
   --v2-info-soft: #0e1f29;
+  --v2-on-ok: #06101f;
+  --v2-on-bad: #1a0c0d;
 
   --v2-shadow-1: 0 1px 2px rgba(0, 0, 0, .4);
   --v2-shadow-2: 0 6px 18px rgba(0, 0, 0, .45);
@@ -257,13 +264,13 @@ main { padding: var(--v2-s5) var(--v2-s5) var(--v2-s7); max-width: calc(100vw - 
   border: 1px solid var(--v2-bad);
   border-color: color-mix(in srgb, var(--v2-bad) 35%, transparent);
   color: var(--v2-bad); }
-.v2-danger:hover { background: var(--v2-bad); color: #fff; border-color: var(--v2-bad); }
+.v2-danger:hover { background: var(--v2-bad); color: var(--v2-on-bad); border-color: var(--v2-bad); }
 
 .v2-ok { background: var(--v2-ok-soft);
   border: 1px solid var(--v2-ok);
   border-color: color-mix(in srgb, var(--v2-ok) 35%, transparent);
   color: var(--v2-ok); }
-.v2-ok:hover { background: var(--v2-ok); color: #fff; }
+.v2-ok:hover { background: var(--v2-ok); color: var(--v2-on-ok); }
 
 .bs { padding: 3px var(--v2-s2); font-size: var(--v2-t-micro); }
 
@@ -687,3 +694,26 @@ main:focus { outline: none; }
 .acm-overdue { color: var(--v2-bad); font-weight: 600; }
 .dim { color: var(--v2-ink-4); }
 .sub { font-size: var(--v2-t-small); color: var(--v2-ink-3); line-height: 1.55; }
+
+/* ============================================================
+   12. THE ESTABLISHED DESTRUCTIVE CLASS
+   `.bd` predates this layer and is used by the ticket, person and
+   office screens, which are not rewritten here. It carried hard-coded
+   rgba() reds that only read correctly on a dark canvas. Re-pointing it
+   at the semantic tokens keeps every destructive control consistent,
+   and keeps "reject" looking the same whether it is on the queue, the
+   ticket, or the verification card. `.v2-danger` is the newer spelling
+   with a filled hover; both are kept so no existing markup breaks.
+   ============================================================ */
+.bd {
+  background: var(--v2-bad-soft);
+  border: 1px solid var(--v2-bad);
+  border-color: color-mix(in srgb, var(--v2-bad) 40%, transparent);
+  color: var(--v2-bad);
+}
+.bd:hover {
+  background: var(--v2-bad);
+  border-color: var(--v2-bad);
+  color: var(--v2-on-bad);
+}
+.bd:focus-visible { box-shadow: 0 0 0 3px color-mix(in srgb, var(--v2-bad) 25%, transparent); }

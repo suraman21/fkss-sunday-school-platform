@@ -302,3 +302,85 @@ class TestAccessibility:
         assert ".v2-danger" in css and ".v2-ok" in css, (
             "reject and approve must not share a visual treatment"
         )
+
+
+class TestContrast:
+    """The palette is verified, not eyeballed.
+
+    WCAG AA needs 4.5:1 for body text. The first pass at this layer put
+    white text on the dark theme's light-green approve hover: 2.0:1, which
+    is unreadable, and it was only found by computing the ratio. A filled
+    semantic colour therefore needs its own on-colour token per theme.
+    """
+
+    CSS = ADMIN / "css" / "acm-v2.css"
+
+    @staticmethod
+    def _tokens(block: str) -> dict:
+        return dict(re.findall(r"(--v2-[a-zA-Z0-9-]+)\s*:\s*(#[0-9a-fA-F]{3,8})", block))
+
+    @staticmethod
+    def _luminance(hex_colour: str) -> float:
+        h = hex_colour.lstrip("#")
+        if len(h) == 3:
+            h = "".join(c * 2 for c in h)
+        r, g, b = (int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))
+        f = lambda c: c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+        return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
+
+    @classmethod
+    def _ratio(cls, a: str, b: str) -> float:
+        la, lb = cls._luminance(a), cls._luminance(b)
+        hi, lo = max(la, lb), min(la, lb)
+        return (hi + 0.05) / (lo + 0.05)
+
+    def _blocks(self):
+        css = re.sub(r"/\*.*?\*/", "", read(self.CSS), flags=re.S)
+        light = css[css.index(":root,"):css.index('[data-theme="dark"]')]
+        dark = css[css.index('[data-theme="dark"]'):]
+        dark = dark[:dark.index("}", dark.index("--v2-page")) + 1]
+        return {"light": self._tokens(light), "dark": self._tokens(dark)}
+
+    def test_theme_blocks_define_the_same_tokens(self):
+        b = self._blocks()
+        missing = set(b["light"]) - set(b["dark"])
+        assert not missing, (
+            f"tokens defined for light but not dark: {sorted(missing)}. An "
+            "undefined token silently falls back to the light value, so dark "
+            "mode inherits a light surface"
+        )
+
+    def test_body_text_meets_aa_in_both_themes(self):
+        b = self._blocks()
+        for theme, tokens in b.items():
+            for fg, bg in (("--v2-ink", "--v2-page"),
+                           ("--v2-ink-2", "--v2-raised"),
+                           ("--v2-bad", "--v2-raised"),
+                           ("--v2-ok", "--v2-raised")):
+                ratio = self._ratio(tokens[fg], tokens[bg])
+                assert ratio >= 4.5, (
+                    f"{theme}: {fg} on {bg} is {ratio:.2f}:1, below AA 4.5"
+                )
+
+    def test_filled_colours_use_their_own_ink(self):
+        """White on the dark theme's light hues is the failure this catches."""
+        b = self._blocks()
+        for theme, tokens in b.items():
+            for ink, fill in (("--v2-on-ok", "--v2-ok"), ("--v2-on-bad", "--v2-bad"),
+                              ("--v2-accent-ink", "--v2-accent")):
+                assert ink in tokens, f"{theme}: missing {ink}"
+                ratio = self._ratio(tokens[ink], tokens[fill])
+                assert ratio >= 4.5, (
+                    f"{theme}: {ink} on {fill} is {ratio:.2f}:1, below AA 4.5"
+                )
+
+    def test_no_hardcoded_white_on_a_semantic_fill(self):
+        css = re.sub(r"/\*.*?\*/", "", read(self.CSS), flags=re.S)
+        # `color: #fff` on a hover that also sets a semantic background is how
+        # the 2.0:1 pair got in. Filled states must use the on-colour token.
+        for m in re.finditer(r"\.(?:v2-ok|v2-danger|bd):hover\s*\{([^}]*)\}", css):
+            body = m.group(1)
+            assert "color: #fff" not in body.lower(), (
+                "a filled semantic hover must use --v2-on-ok / --v2-on-bad, "
+                "not a hard-coded white"
+            )
