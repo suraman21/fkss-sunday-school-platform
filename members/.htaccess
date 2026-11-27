@@ -1,0 +1,45 @@
+# Members app — web root.
+# =====================================================================
+# Only `public/` is meant to be reachable. This file does three jobs:
+#   1. route everything through public/index.php;
+#   2. DENY the private tree (app/, resources/, config/, sql/, tests/, docs/);
+#   3. repeat the root .htaccess rules that per-directory rewrites do NOT
+#      inherit (Apache semantics without RewriteOptions Inherit).
+#
+# The root .htaccess blocks (sql|docs|tests|scripts|tools|vendor|Mobile) at the
+# site root. Under this folder the same filenames live one level deeper, so the
+# root rule would not match them. Repeating the denials here is not redundant;
+# without it, /members/tests/... is served.
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # ---- 1. Private tree: hard 403.
+    RewriteRule ^(app|resources|config|sql|tests|docs|bootstrap\.php|autoload\.php)(/|$) - [F,L,NC]
+
+    # ---- 2. Repository artefacts, in case one lands here.
+    RewriteRule ^(composer\.(json|lock)|\.git.*|.*\.(md|sql|sh|py|lock|ya?ml|dist|ini|log|bak))$ - [F,L,NC]
+
+    # ---- 3. Real files under public/ are served as-is; everything else is
+    #         dispatched, so a route can never be a 404 just because a file does
+    #         not exist.
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^ public/index.php [L]
+</IfModule>
+
+# Pass the Authorization header through: Apache strips it by default, and this
+# app's client sends a bearer token on every API call.
+<IfModule mod_rewrite.c>
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+</IfModule>
+
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+Options -Indexes -MultiViews
+DirectoryIndex public/index.php
