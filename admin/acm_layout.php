@@ -14,7 +14,11 @@ function acm_head(string $title): void
 {
     $assetVer = defined('SSMS_ASSET_VER') ? (string)SSMS_ASSET_VER : 'p0';
     $csrf = function_exists('generateCsrfToken') ? generateCsrfToken() : '';
-    echo '<!DOCTYPE html><html lang="en" data-theme="dark"><head><meta charset="utf-8">'
+    // S12: light is the DEFAULT now. An accounts office works in daylight,
+    // often on a shared machine or a projector while explaining a case to a
+    // parent, and a dark surface is harder to read there. Dark is kept in
+    // full: a stored preference still wins, and the toggle still works.
+    echo '<!DOCTYPE html><html lang="en" data-theme="light"><head><meta charset="utf-8">'
         . '<meta name="viewport" content="width=device-width,initial-scale=1">'
         . '<meta name="csrf-token" content="' . htmlspecialchars($csrf, ENT_QUOTES, 'UTF-8') . '">'
         . '<title>' . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . ' · Access Control</title>'
@@ -22,9 +26,15 @@ function acm_head(string $title): void
         . '<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"'
         . ' integrity="sha384-/o6I2CkkWC//PSjvWC/eYN7l3xM3tJm8ZzVkCOfp//W05QcE3mlGskpoHB6XqI+B" crossorigin="anonymous">'
         . '<link rel="stylesheet" href="/admin/css/acm.css?v=' . urlencode($assetVer) . '">'
+        // S12 design layer: extends acm.css (tokens, primitives, the
+        // verification card). Loaded after it so it can refine, never fight.
+        . '<link rel="stylesheet" href="/admin/css/acm-v2.css?v=' . urlencode($assetVer) . '">'
         . '<link rel="stylesheet" href="/admin/css/mobile.css?v=' . urlencode($assetVer) . '">'
         . '<script>(function(){try{var s=localStorage.getItem("wbws-theme");'
-        . 'if(s==="light"||s==="dark"){document.documentElement.setAttribute("data-theme",s);}}catch(e){}})();</script>';
+        . 'if(s==="light"||s==="dark"){document.documentElement.setAttribute("data-theme",s);}}catch(e){}})();</script>'
+        // The console body is the app shell; mark it so the v2 CSS can scope
+        // anything that must not leak into other admin pages.
+        ;
     if (!function_exists('_hRgb') && is_file(__DIR__ . '/theme.php')) {
         include __DIR__ . '/theme.php';
     }
@@ -47,17 +57,21 @@ function acm_status_bg(string $status): string
     return $map[$status] ?? 'bg-n';
 }
 
-function acm_chrome_open(string $active, string $title, string $sub, int $openCount = 0): void
+function acm_chrome_open(string $active, string $title, string $sub, int $openCount = 0, string $badgeNav = ''): void
 {
     $fullName = (string)($_SESSION['admin_full_name'] ?? $_SESSION['admin_username'] ?? 'User');
     $roleLabel = \SSMS\Acm\Policy\AcmPolicy::roleLabel((string)($_SESSION['admin_role'] ?? ''));
     $initial = strtoupper(mb_substr($fullName, 0, 1));
+    if ($badgeNav === '') {
+        // Backwards compatible: callers that passed a count meant the queue.
+        $badgeNav = 'queue';
+    }
     $nav = [
         'overview' => ['acm_overview.php', 'fa-gauge-high', 'Overview'],
         'queue'    => ['acm_queue.php', 'fa-inbox', 'Activation queue'],
         // S11: member-initiated requests. Separate from 'queue' because
         // these are unverified claims, not office-created tickets.
-        'requests' => ['acm_requests.php', 'fa-inbox', 'Activation requests'],
+        'requests' => ['acm_requests.php', 'fa-user-clock', 'Activation requests'],
         // S11: the way back in for a lost or replaced device. Grouped with
         // the queue because it produces a ticket, not an account.
         'recovery' => ['acm_device_recovery.php', 'fa-mobile-screen', 'Device recovery'],
@@ -66,12 +80,19 @@ function acm_chrome_open(string $active, string $title, string $sub, int $openCo
         'office'   => ['acm_office.php', 'fa-building', 'Office'],
         'audit'    => ['acm_audit.php', 'fa-file-shield', 'Monthly audit'],
     ];
-    echo '<body><aside><div class="brand"><div class="brand-logo"><i class="fa-solid fa-shield-halved"></i></div>'
+    echo '<a class="v2-skip" href="#acmMain">Skip to content</a>'
+        // Fallback first, real implementation later in the document. A page
+        // whose script fires before the footer still gets a working (silent)
+        // toast instead of a ReferenceError that would abort the handler.
+        . '<script>if(typeof acmToast!=="function"){window.acmToast=function(){}};</script>'
+        . '<body><aside><div class="brand"><div class="brand-logo"><i class="fa-solid fa-shield-halved"></i></div>'
         . '<div><div class="brand-txt">Access Control</div><div class="brand-sub">Account Command Center</div></div></div>'
         . '<div class="nt">Manage</div>';
     foreach ($nav as $key => $item) {
         $cls = $key === $active ? 'np active' : 'np';
-        $badge = ($key === 'queue' && $openCount > 0)
+        // S12: the badge follows the count's owner. A number shown against
+        // the wrong menu item is worse than no number.
+        $badge = ($key === $badgeNav && $openCount > 0)
             ? '<span class="badge">' . (int)$openCount . '</span>' : '';
         echo '<a class="' . $cls . '" href="/admin/' . $item[0] . '">'
             . '<i class="fa-solid ' . $item[1] . '"></i><span>' . $item[2] . '</span>' . $badge . '</a>';
@@ -83,7 +104,7 @@ function acm_chrome_open(string $active, string $title, string $sub, int $openCo
         . htmlspecialchars($initial, ENT_QUOTES, 'UTF-8') . '</div><div><div class="un">'
         . htmlspecialchars($fullName, ENT_QUOTES, 'UTF-8') . '</div><div class="ur">'
         . htmlspecialchars($roleLabel, ENT_QUOTES, 'UTF-8') . '</div></div></div>'
-        . '</aside><main><div class="topbar"><div class="topbar-left"><h1>'
+        . '</aside><main id="acmMain" tabindex="-1"><div class="topbar"><div class="topbar-left"><h1>'
         . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . '</h1><p>'
         . htmlspecialchars($sub, ENT_QUOTES, 'UTF-8') . '</p></div>'
         . '<div class="topbar-right">'
@@ -110,6 +131,9 @@ function acm_chrome_close(): void
         . 'function toggleTheme(){var h=document.documentElement,c=h.getAttribute("data-theme"),n=c==="dark"?"light":"dark";'
         . 'h.setAttribute("data-theme",n);try{localStorage.setItem("wbws-theme",n);}catch(e){}'
         . 'document.getElementById("themeIcon").className=n==="dark"?"fa-solid fa-sun":"fa-solid fa-moon";}'
+        . 'function acmSyncThemeIcon(){var c=document.documentElement.getAttribute("data-theme");'
+        . 'var i=document.getElementById("themeIcon");if(i){i.className=c==="dark"?"fa-solid fa-sun":"fa-solid fa-moon";}}'
+        . 'acmSyncThemeIcon();'
         . '(function(){var s=null;try{s=localStorage.getItem("wbws-theme");}catch(e){}'
         . 'if(s==="light"){document.getElementById("themeIcon").className="fa-solid fa-moon";}})();'
         . 'async function acmApi(action,params,method){method=method||"GET";'

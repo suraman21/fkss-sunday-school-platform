@@ -58,10 +58,10 @@ acm_chrome_open('overview', 'Access Control — Overview', 'Activation workload 
 <div class="acm-alert warn"><i class="fa-solid fa-file-circle-exclamation"></i> <?= e($lastMonth) ?> is not attested yet. <a href="/admin/acm_audit.php?month=<?= e($lastMonth) ?>">Open the monthly audit</a>.</div>
 <?php endif; ?>
 <div class="sg">
-    <div class="sc"><div class="ico" style="background:rgba(245,158,11,.1);color:var(--warn)"><i class="fa-solid fa-inbox"></i></div><div class="val"><?= (int)($stats['open'] ?? 0) ?></div><div class="lbl">Open tickets</div></div>
-    <div class="sc"><div class="ico" style="background:rgba(239,68,68,.1);color:var(--bad)"><i class="fa-solid fa-clock"></i></div><div class="val"><?= (int)($stats['overdue'] ?? 0) ?></div><div class="lbl">Overdue (48h SLA)</div></div>
-    <div class="sc"><div class="ico" style="background:rgba(6,182,212,.1);color:var(--info)"><i class="fa-solid fa-user-check"></i></div><div class="val"><?= (int)($stats['mine'] ?? 0) ?></div><div class="lbl">Claimed by me</div></div>
-    <div class="sc"><div class="ico" style="background:rgba(16,185,129,.1);color:var(--ok)"><i class="fa-solid fa-user-plus"></i></div><div class="val"><?= (int)($stats['provisioned_week'] ?? 0) ?></div><div class="lbl">Provisioned (7 days)</div></div>
+    <div class="sc"><div class="ico" style="background:var(--v2-warn-soft);color:var(--v2-warn)"><i class="fa-solid fa-inbox"></i></div><div class="val"><?= (int)($stats['open'] ?? 0) ?></div><div class="lbl">Open tickets</div></div>
+    <div class="sc<?= (int)($stats['overdue'] ?? 0) > 0 ? ' is-alert' : '' ?>"><div class="ico" style="background:var(--v2-bad-soft);color:var(--v2-bad)"><i class="fa-solid fa-clock"></i></div><div class="val"><?= (int)($stats['overdue'] ?? 0) ?></div><div class="lbl">Overdue (48h SLA)</div></div>
+    <div class="sc"><div class="ico" style="background:var(--v2-info-soft);color:var(--v2-info)"><i class="fa-solid fa-user-check"></i></div><div class="val"><?= (int)($stats['mine'] ?? 0) ?></div><div class="lbl">Claimed by me</div></div>
+    <div class="sc"><div class="ico" style="background:var(--v2-ok-soft);color:var(--v2-ok)"><i class="fa-solid fa-user-plus"></i></div><div class="val"><?= (int)($stats['provisioned_week'] ?? 0) ?></div><div class="lbl">Provisioned (7 days)</div></div>
 </div>
 
 <div class="cd" style="margin-top:1rem">

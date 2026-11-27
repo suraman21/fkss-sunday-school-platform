@@ -1,0 +1,2375 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ACM console — S12 redesign preview</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="preload" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Noto+Sans+Ethiopic:wght@400;600&display=swap" rel="stylesheet">
+<style>
+/**
+ * ACM console v2 — the S12 design layer.
+ * ---------------------------------------------------------------
+ * This file EXTENDS admin/css/acm.css; it does not replace it. Every token
+ * name and every legacy component class (.np .cd .ct .tw .inp .btn .bg-*)
+ * keeps working, because eight console pages and the ticket screen still
+ * use them and a redesign must not delete functionality (Constitution §30).
+ *
+ * DESIGN DECISIONS, WITH REASONS
+ *
+ * 1. Light-first, dark preserved.
+ *    An accounts office works in daylight, on shared machines, often on a
+ *    projector while explaining a case to a parent. Dark surfaces reflect and
+ *    photograph badly and cost legibility in that room. Light is the default;
+ *    the existing `wbws-theme` key still wins if the visitor chose dark, and
+ *    the toggle still works. Nothing is removed for people who preferred it.
+ *
+ * 2. Restrained surfaces, real elevation.
+ *    The previous layer had blurred glass panels, gradient buttons and a
+ *    drifting radial background. Those cost GPU on the low-end machines this
+ *    console runs on and communicate nothing. Surfaces are now flat, with one
+ *    border and one shadow step: elevation means "this is above the page",
+ *    not "this is decorative".
+ *
+ * 3. Density is a feature, decoration is not.
+ *    An officer scanning a queue needs rows per screen, not padding. Type is
+ *    small but line-height is generous; the table is the primary instrument
+ *    (Constitution §20: "tables are often better than cards for structured
+ *    comparison") and cards are reserved for the single-record view.
+ *
+ * 4. The verification card is the product.
+ *    The one thing this console must do well is let a person look at a
+ *    member's record and decide "same person" with confidence. So the record
+ *    gets the visual weight: a face-sized photo anchor, the name large, the
+ *    facts in a stable grid, and the decision controls immediately adjacent
+ *    (Fitts's Law / proximity: the action belongs to the thing it acts on).
+ *
+ * 5. Colour carries meaning, never decoration.
+ *    Every hue in this file maps to a state: green = verified/active,
+ *    amber = needs attention, red = refused/failed, blue = neutral action.
+ *    Status is also spelled out in text, so it survives colour blindness and
+ *    a black-and-white printout (Constitution §22).
+ *
+ * 6. Motion is feedback only.
+ *    Two durations, one easing, and a global reduced-motion opt-out.
+ */
+
+/* ============================================================
+   1. TOKENS — a coherent scale, light first
+   ============================================================ */
+:root,
+[data-theme="light"] {
+  /* Surface ladder: page < sunken < raised < overlay */
+  --v2-page: #f7f8fa;
+  --v2-sunken: #eef0f4;
+  --v2-raised: #ffffff;
+  --v2-overlay: #ffffff;
+
+  /* Ink */
+  --v2-ink: #10131a;
+  --v2-ink-2: #454b57;
+  --v2-ink-3: #6b7280;
+  --v2-ink-4: #9aa1ad;
+
+  /* Lines */
+  --v2-line: #e3e6ec;
+  --v2-line-strong: #cfd4dd;
+
+  /* Semantic */
+  --v2-accent: #1f6feb;
+  --v2-accent-ink: #ffffff;
+  --v2-accent-soft: #e8f0fe;
+  --v2-ok: #0f7b52;
+  --v2-ok-soft: #e6f5ee;
+  --v2-warn: #9a5b00;
+  --v2-warn-soft: #fdf3e2;
+  --v2-bad: #b42318;
+  --v2-bad-soft: #fdeceb;
+  --v2-info: #0b5c8a;
+  --v2-info-soft: #e7f3fa;
+  /* Ink used ON a filled semantic colour. Light hues are dark enough for
+     white text; the dark theme's hues are light, so they need dark ink.
+     Getting this wrong produced white-on-light-green at 2.0:1. */
+  --v2-on-ok: #ffffff;
+  --v2-on-bad: #ffffff;
+
+  /* Elevation: two steps, both subtle */
+  --v2-shadow-1: 0 1px 2px rgba(16, 19, 26, .06), 0 1px 3px rgba(16, 19, 26, .04);
+  --v2-shadow-2: 0 4px 12px rgba(16, 19, 26, .08), 0 2px 4px rgba(16, 19, 26, .04);
+  --v2-ring: 0 0 0 3px rgba(31, 111, 235, .18);
+
+  /* Radius scale */
+  --v2-r-1: 6px;
+  --v2-r-2: 10px;
+  --v2-r-3: 14px;
+  --v2-r-pill: 999px;
+
+  /* Spacing scale — every gap in this file is one of these */
+  --v2-s1: 4px;
+  --v2-s2: 8px;
+  --v2-s3: 12px;
+  --v2-s4: 16px;
+  --v2-s5: 24px;
+  --v2-s6: 32px;
+  --v2-s7: 48px;
+
+  /* Type scale */
+  --v2-t-display: 1.5rem;
+  --v2-t-h1: 1.1875rem;
+  --v2-t-h2: .9375rem;
+  --v2-t-body: .8125rem;
+  --v2-t-small: .75rem;
+  --v2-t-micro: .6875rem;
+
+  /* Motion */
+  --v2-ease: cubic-bezier(.2, .7, .3, 1);
+  --v2-fast: 120ms;
+  --v2-base: 180ms;
+}
+
+[data-theme="dark"] {
+  --v2-page: #0b0d12;
+  --v2-sunken: #12151c;
+  --v2-raised: #171a22;
+  --v2-overlay: #1c2029;
+
+  --v2-ink: #f2f4f7;
+  --v2-ink-2: #b7bec9;
+  --v2-ink-3: #8b94a3;
+  --v2-ink-4: #6b7482;
+
+  --v2-line: #262b35;
+  --v2-line-strong: #333a46;
+
+  --v2-accent: #4c93f7;
+  --v2-accent-ink: #06101f;
+  --v2-accent-soft: #16233a;
+  --v2-ok: #3ecf8e;
+  --v2-ok-soft: #10251c;
+  --v2-warn: #e2a03f;
+  --v2-warn-soft: #241c0e;
+  --v2-bad: #f2777a;
+  --v2-bad-soft: #2a1416;
+  --v2-info: #5cb3e0;
+  --v2-info-soft: #0e1f29;
+  --v2-on-ok: #06101f;
+  --v2-on-bad: #1a0c0d;
+
+  --v2-shadow-1: 0 1px 2px rgba(0, 0, 0, .4);
+  --v2-shadow-2: 0 6px 18px rgba(0, 0, 0, .45);
+  --v2-ring: 0 0 0 3px rgba(76, 147, 247, .25);
+}
+
+/* ============================================================
+   2. PAGE + TYPE — applied to the existing chrome
+   ============================================================ */
+body {
+  background: var(--v2-page);
+  color: var(--v2-ink-2);
+  font-feature-settings: "cv02", "cv03", "cv04";
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The drifting radial background is gone: it animated forever on every
+   page for no information, which is real battery on the machines this
+   runs on. */
+[data-theme="dark"] body::before { content: none; animation: none; }
+
+aside {
+  background: var(--v2-raised);
+  border-right: 1px solid var(--v2-line);
+  width: 244px;
+  padding: var(--v2-s4) var(--v2-s3);
+  gap: 2px;
+}
+
+.brand { border-bottom: 1px solid var(--v2-line); padding: 0 0 var(--v2-s3); margin-bottom: var(--v2-s2); }
+.brand-logo {
+  width: 34px; height: 34px; border-radius: var(--v2-r-2);
+  background: var(--v2-accent); color: var(--v2-accent-ink);
+  box-shadow: none; font-size: .82rem;
+}
+.brand-txt { font-size: .875rem; color: var(--v2-ink); letter-spacing: -.01em; }
+.brand-sub { font-size: var(--v2-t-micro); color: var(--v2-ink-4); letter-spacing: .01em; }
+
+.nt {
+  font-size: var(--v2-t-micro);
+  letter-spacing: .08em;
+  color: var(--v2-ink-4);
+  padding: var(--v2-s4) var(--v2-s3) var(--v2-s1);
+  font-weight: 600;
+}
+
+.np {
+  padding: 7px var(--v2-s3);
+  border-radius: var(--v2-r-1);
+  font-size: var(--v2-t-body);
+  gap: var(--v2-s3);
+  color: var(--v2-ink-2);
+  transition: background var(--v2-fast) var(--v2-ease), color var(--v2-fast) var(--v2-ease);
+}
+.np:hover { background: var(--v2-sunken); color: var(--v2-ink); }
+.np.active {
+  background: var(--v2-accent-soft);
+  color: var(--v2-accent);
+  border: 1px solid transparent;
+  font-weight: 600;
+}
+.np.active::before { content: none; }
+.np i { width: 16px; font-size: .78rem; }
+.np .badge {
+  background: var(--v2-accent); color: var(--v2-accent-ink);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--v2-t-micro); padding: 0 5px; min-width: 17px; line-height: 16px;
+}
+
+.uc { border-radius: var(--v2-r-2); background: var(--v2-sunken); border: 1px solid var(--v2-line); padding: var(--v2-s2); }
+.ua { width: 30px; height: 30px; background: var(--v2-accent); color: var(--v2-accent-ink); font-size: .72rem; }
+.un { font-size: var(--v2-t-small); color: var(--v2-ink); }
+.ur { font-size: var(--v2-t-micro); color: var(--v2-ink-4); }
+
+main { padding: var(--v2-s5) var(--v2-s5) var(--v2-s7); max-width: calc(100vw - 244px); }
+
+.topbar { margin-bottom: var(--v2-s5); gap: var(--v2-s3); align-items: flex-start; }
+.topbar-left h1 { font-size: var(--v2-t-h1); letter-spacing: -.015em; color: var(--v2-ink); font-weight: 650; }
+.topbar-left p { font-size: var(--v2-t-small); color: var(--v2-ink-3); margin-top: 2px; }
+
+.icon-btn {
+  width: 32px; height: 32px; border-radius: var(--v2-r-1);
+  border: 1px solid var(--v2-line); background: var(--v2-raised); color: var(--v2-ink-3);
+}
+.icon-btn:hover { border-color: var(--v2-line-strong); color: var(--v2-ink); background: var(--v2-sunken); }
+
+/* ============================================================
+   3. PRIMITIVES — buttons, inputs, badges
+   ============================================================ */
+.btn {
+  padding: 6px var(--v2-s3);
+  border-radius: var(--v2-r-1);
+  font-size: var(--v2-t-small);
+  font-weight: 600;
+  gap: 6px;
+  transition: background var(--v2-fast) var(--v2-ease),
+              border-color var(--v2-fast) var(--v2-ease),
+              color var(--v2-fast) var(--v2-ease),
+              box-shadow var(--v2-fast) var(--v2-ease);
+  line-height: 1.5;
+}
+.btn:focus-visible { outline: none; box-shadow: var(--v2-ring); }
+
+/* Primary: the one action that moves the work forward on this screen. */
+.bp {
+  background: var(--v2-accent); color: var(--v2-accent-ink);
+  box-shadow: var(--v2-shadow-1);
+}
+.bp:hover { background: color-mix(in srgb, var(--v2-accent) 88%, #000); transform: none; box-shadow: var(--v2-shadow-1); }
+
+/* Secondary: present but subordinate. */
+.bo { background: var(--v2-raised); border: 1px solid var(--v2-line); color: var(--v2-ink-2); }
+.bo:hover { border-color: var(--v2-line-strong); color: var(--v2-ink); background: var(--v2-sunken); }
+
+/* Destructive: only ever on a final action, never adjacent to primary. */
+.v2-danger { background: var(--v2-bad-soft);
+  border: 1px solid var(--v2-bad);
+  border-color: color-mix(in srgb, var(--v2-bad) 35%, transparent);
+  color: var(--v2-bad); }
+.v2-danger:hover { background: var(--v2-bad); color: var(--v2-on-bad); border-color: var(--v2-bad); }
+
+.v2-ok { background: var(--v2-ok-soft);
+  border: 1px solid var(--v2-ok);
+  border-color: color-mix(in srgb, var(--v2-ok) 35%, transparent);
+  color: var(--v2-ok); }
+.v2-ok:hover { background: var(--v2-ok); color: var(--v2-on-ok); }
+
+.bs { padding: 3px var(--v2-s2); font-size: var(--v2-t-micro); }
+
+.btn[disabled], .btn[aria-disabled="true"] { opacity: .5; pointer-events: none; }
+
+/* Loading state: the label stays, the button stops accepting input. */
+.btn.is-busy { position: relative; color: transparent; pointer-events: none; }
+.btn.is-busy::after {
+  content: ''; position: absolute; inset: 50% auto auto 50%;
+  width: 12px; height: 12px; margin: -6px 0 0 -6px;
+  border-radius: 50%; border: 2px solid currentColor; border-top-color: transparent;
+  color: #fff; animation: v2spin .7s linear infinite;
+}
+@keyframes v2spin { to { transform: rotate(360deg); } }
+
+.inp {
+  background: var(--v2-raised);
+  border: 1px solid var(--v2-line);
+  border-radius: var(--v2-r-1);
+  padding: 6px var(--v2-s3);
+  color: var(--v2-ink);
+  font-size: var(--v2-t-small);
+  min-height: 32px;
+}
+.inp:focus { border-color: var(--v2-accent); box-shadow: var(--v2-ring); }
+.inp::placeholder { color: var(--v2-ink-4); }
+
+.bg { border-radius: var(--v2-r-pill); font-size: var(--v2-t-micro); font-weight: 600; padding: 2px 8px; }
+.bg-ok { background: var(--v2-ok-soft); color: var(--v2-ok); }
+.bg-w { background: var(--v2-warn-soft); color: var(--v2-warn); }
+.bg-bad { background: var(--v2-bad-soft); color: var(--v2-bad); }
+.bg-info { background: var(--v2-info-soft); color: var(--v2-info); }
+.bg-p { background: var(--v2-accent-soft); color: var(--v2-accent); }
+.bg-n { background: var(--v2-sunken); color: var(--v2-ink-3); }
+
+.acm-alert { border-radius: var(--v2-r-2); font-size: var(--v2-t-small); padding: 10px var(--v2-s3); }
+.acm-alert.warn { background: var(--v2-warn-soft); border-color: var(--v2-warn);
+  border-color: color-mix(in srgb, var(--v2-warn) 30%, transparent); color: var(--v2-warn); }
+.acm-alert.err { background: var(--v2-bad-soft); border-color: var(--v2-bad);
+  border-color: color-mix(in srgb, var(--v2-bad) 30%, transparent); color: var(--v2-bad); }
+.acm-alert.ok { background: var(--v2-ok-soft); border-color: var(--v2-ok);
+  border-color: color-mix(in srgb, var(--v2-ok) 30%, transparent); color: var(--v2-ok); }
+
+/* ============================================================
+   4. CARDS AND TABLES
+   ============================================================ */
+.cd {
+  background: var(--v2-raised);
+  border: 1px solid var(--v2-line);
+  border-radius: var(--v2-r-3);
+  padding: var(--v2-s4);
+  margin-bottom: var(--v2-s3);
+  backdrop-filter: none;
+  box-shadow: var(--v2-shadow-1);
+}
+.cd::before { content: none; }
+.ct { font-size: var(--v2-t-h2); color: var(--v2-ink); margin-bottom: var(--v2-s3); font-weight: 600; }
+
+.tw { border: 1px solid var(--v2-line); border-radius: var(--v2-r-2); overflow: hidden; }
+.tw table { font-size: var(--v2-t-small); }
+.tw thead { background: var(--v2-sunken); }
+.tw th {
+  padding: var(--v2-s2) var(--v2-s3);
+  font-size: var(--v2-t-micro);
+  letter-spacing: .06em;
+  color: var(--v2-ink-3);
+  border-bottom: 1px solid var(--v2-line);
+}
+.tw td { padding: 10px var(--v2-s3); border-top: 1px solid var(--v2-line); color: var(--v2-ink-2); vertical-align: middle; }
+.tw tbody tr:first-child td { border-top: none; }
+.tw tr:hover td { background: var(--v2-sunken); }
+.tw a { color: var(--v2-accent); text-decoration: none; }
+.tw a:hover { text-decoration: underline; }
+
+/* Numerals in a data table must line up or the column cannot be scanned. */
+.tw td, [data-num] { font-variant-numeric: tabular-nums; }
+
+/* ============================================================
+   5. THE VERIFICATION CARD — the centre of this redesign
+   ============================================================ */
+.v2-verify {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: var(--v2-s5);
+  align-items: start;
+  margin-bottom: var(--v2-s5);
+}
+@media (max-width: 1080px) { .v2-verify { grid-template-columns: minmax(0, 1fr); } }
+
+.v2-card {
+  background: var(--v2-raised);
+  border: 1px solid var(--v2-line);
+  border-radius: var(--v2-r-3);
+  box-shadow: var(--v2-shadow-1);
+  overflow: hidden;
+}
+
+/* A status stripe across the top: the verdict is the first thing seen. */
+.v2-card-head {
+  transition: background var(--v2-base) var(--v2-ease);
+  display: flex; align-items: center; gap: var(--v2-s3);
+  padding: var(--v2-s3) var(--v2-s4);
+  border-bottom: 1px solid var(--v2-line);
+  background: var(--v2-sunken);
+}
+.v2-card-head.is-ok { background: var(--v2-ok-soft); border-bottom-color: var(--v2-ok);
+  border-bottom-color: color-mix(in srgb, var(--v2-ok) 22%, transparent); }
+.v2-card-head.is-warn { background: var(--v2-warn-soft); border-bottom-color: var(--v2-warn);
+  border-bottom-color: color-mix(in srgb, var(--v2-warn) 22%, transparent); }
+.v2-card-head.is-bad { background: var(--v2-bad-soft); border-bottom-color: var(--v2-bad);
+  border-bottom-color: color-mix(in srgb, var(--v2-bad) 22%, transparent); }
+
+.v2-card-body { padding: var(--v2-s4); }
+
+/* Identity block: photo + name, the two things a human verifies. */
+.v2-identity { display: flex; gap: var(--v2-s4); align-items: center; }
+.v2-photo {
+  width: 96px; height: 96px; flex: 0 0 96px;
+  border-radius: var(--v2-r-2);
+  background: var(--v2-sunken);
+  border: 1px solid var(--v2-line);
+  display: grid; place-items: center;
+  overflow: hidden;
+  color: var(--v2-ink-4);
+  font-size: 1.75rem;
+}
+.v2-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.v2-name {
+  font-size: var(--v2-t-display);
+  line-height: 1.2;
+  font-weight: 650;
+  color: var(--v2-ink);
+  letter-spacing: -.02em;
+}
+.v2-name-sub { font-size: var(--v2-t-body); color: var(--v2-ink-3); margin-top: 2px; }
+.v2-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: var(--v2-s2); }
+
+/* Fact grid: stable columns so the eye can compare two records. */
+.v2-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--v2-s3) var(--v2-s4);
+  margin-top: var(--v2-s4);
+  padding-top: var(--v2-s4);
+  border-top: 1px solid var(--v2-line);
+}
+.v2-fact { min-width: 0; }
+.v2-fact dt {
+  font-size: var(--v2-t-micro);
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--v2-ink-4);
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.v2-fact dd { font-size: var(--v2-t-body); color: var(--v2-ink); margin: 0; overflow-wrap: anywhere; }
+.v2-fact dd.is-missing { color: var(--v2-ink-4); font-style: italic; }
+
+/* The claim, as typed. Visually separated from the register above, because
+   conflating "what they typed" with "what we have" is the mistake that
+   produces a wrong approval. */
+.v2-claim {
+  border: 1px dashed var(--v2-line-strong);
+  border-radius: var(--v2-r-2);
+  padding: var(--v2-s3);
+  background: var(--v2-sunken);
+}
+.v2-claim-label {
+  font-size: var(--v2-t-micro);
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--v2-ink-4);
+  font-weight: 600;
+  margin-bottom: var(--v2-s2);
+  display: flex; align-items: center; gap: 6px;
+}
+.v2-claim-pair { display: flex; flex-wrap: wrap; gap: var(--v2-s4); }
+.v2-claim-k { font-size: var(--v2-t-micro); color: var(--v2-ink-4); }
+.v2-claim-v { font-size: var(--v2-t-body); color: var(--v2-ink); font-weight: 600; }
+
+/* Decision rail: the actions, grouped and ordered by consequence. */
+.v2-rail { position: sticky; top: var(--v2-s4); display: flex; flex-direction: column; gap: var(--v2-s3); }
+.v2-rail-card { background: var(--v2-raised); border: 1px solid var(--v2-line); border-radius: var(--v2-r-3); box-shadow: var(--v2-shadow-1); padding: var(--v2-s4); }
+/* The decision card is the one thing to act on, so it sits one step higher
+   than the record beside it (Von Restorff: one salient element per view). */
+.v2-rail > .v2-rail-card:first-child { box-shadow: var(--v2-shadow-2); }
+.v2-rail-title { font-size: var(--v2-t-h2); font-weight: 650; color: var(--v2-ink); margin-bottom: var(--v2-s1); }
+.v2-rail-hint { font-size: var(--v2-t-small); color: var(--v2-ink-3); margin-bottom: var(--v2-s3); }
+.v2-rail-actions { display: flex; flex-direction: column; gap: var(--v2-s2); }
+.v2-rail-actions .btn { justify-content: center; width: 100%; padding: 8px var(--v2-s3); }
+
+/* Match explanation: why the system thinks this is the person. */
+.v2-matchline {
+  display: flex; align-items: flex-start; gap: var(--v2-s2);
+  font-size: var(--v2-t-small);
+  padding: var(--v2-s2) var(--v2-s3);
+  border-radius: var(--v2-r-1);
+  background: var(--v2-sunken);
+  color: var(--v2-ink-2);
+}
+.v2-matchline.is-ok { background: var(--v2-ok-soft); color: var(--v2-ok); }
+.v2-matchline.is-warn { background: var(--v2-warn-soft); color: var(--v2-warn); }
+
+/* ============================================================
+   6. QUEUE ROWS — a list built for scanning, not for beauty
+   ============================================================ */
+.v2-list { display: flex; flex-direction: column; border: 1px solid var(--v2-line); border-radius: var(--v2-r-2); overflow: hidden; background: var(--v2-raised); }
+.v2-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1.6fr) minmax(0, 1fr) 96px 104px minmax(0, 1.2fr) 92px;
+  gap: var(--v2-s3);
+  align-items: center;
+  padding: var(--v2-s3) var(--v2-s4);
+  border-top: 1px solid var(--v2-line);
+  text-decoration: none;
+  color: inherit;
+  transition: background var(--v2-fast) var(--v2-ease);
+}
+.v2-row:first-child { border-top: none; }
+.v2-row:hover { background: var(--v2-sunken); text-decoration: none; }
+.v2-row:focus-visible { outline: none; box-shadow: inset var(--v2-ring); }
+@media (max-width: 1100px) {
+  .v2-row { grid-template-columns: 34px minmax(0, 1fr) 96px 92px; }
+  .v2-row .v2-col-hide { display: none; }
+}
+
+.v2-avatar {
+  width: 34px; height: 34px; border-radius: 50%;
+  background: var(--v2-accent-soft); color: var(--v2-accent);
+  display: grid; place-items: center;
+  font-size: var(--v2-t-small); font-weight: 650;
+  overflow: hidden;
+}
+.v2-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+.v2-row-name { font-size: var(--v2-t-body); font-weight: 600; color: var(--v2-ink); }
+.v2-row-meta { font-size: var(--v2-t-micro); color: var(--v2-ink-4); margin-top: 1px; }
+.v2-row-cell { font-size: var(--v2-t-small); color: var(--v2-ink-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v2-code {
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .06em;
+  font-size: var(--v2-t-small);
+  font-weight: 600;
+  color: var(--v2-ink);
+}
+
+/* ============================================================
+   7. STATUS TABS — one control, not two competing rows
+   ============================================================ */
+.v2-tabs {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--v2-sunken);
+  border: 1px solid var(--v2-line);
+  border-radius: var(--v2-r-2);
+  overflow-x: auto;
+  max-width: 100%;
+}
+.v2-tab {
+  padding: 5px var(--v2-s3);
+  border-radius: var(--v2-r-1);
+  font-size: var(--v2-t-small);
+  font-weight: 550;
+  color: var(--v2-ink-3);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background var(--v2-fast) var(--v2-ease), color var(--v2-fast) var(--v2-ease);
+}
+.v2-tab:hover { color: var(--v2-ink); background: var(--v2-raised); text-decoration: none; }
+.v2-tab[aria-current="page"] {
+  background: var(--v2-raised);
+  color: var(--v2-ink);
+  font-weight: 650;
+  box-shadow: var(--v2-shadow-1);
+}
+.v2-tab-count {
+  margin-left: 6px;
+  font-size: var(--v2-t-micro);
+  color: var(--v2-ink-4);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Search: the command bar of this console. */
+.v2-search {
+  display: flex; align-items: center; gap: var(--v2-s2);
+  background: var(--v2-raised);
+  border: 1px solid var(--v2-line);
+  border-radius: var(--v2-r-2);
+  padding: 3px 3px 3px var(--v2-s3);
+  min-width: 280px;
+  flex: 1;
+  max-width: 520px;
+  transition: border-color var(--v2-fast) var(--v2-ease), box-shadow var(--v2-fast) var(--v2-ease);
+}
+.v2-search:focus-within { border-color: var(--v2-accent); box-shadow: var(--v2-ring); }
+.v2-search i { color: var(--v2-ink-4); font-size: var(--v2-t-small); }
+.v2-search input {
+  flex: 1; border: none; background: none; outline: none;
+  color: var(--v2-ink); font-size: var(--v2-t-small);
+  font-family: inherit; min-height: 28px;
+  min-width: 0;
+}
+.v2-search input::placeholder { color: var(--v2-ink-4); }
+.v2-search .btn { flex: 0 0 auto; }
+
+.v2-toolbar { display: flex; gap: var(--v2-s3); align-items: center; flex-wrap: wrap; margin-bottom: var(--v2-s3); }
+
+/* ============================================================
+   8. EMPTY AND ERROR STATES
+   ============================================================ */
+.v2-state {
+  padding: var(--v2-s7) var(--v2-s5);
+  text-align: center;
+  color: var(--v2-ink-3);
+  font-size: var(--v2-t-body);
+}
+.v2-state i { font-size: 1.5rem; color: var(--v2-ink-4); display: block; margin-bottom: var(--v2-s3); }
+.v2-state-title { font-size: var(--v2-t-h2); font-weight: 650; color: var(--v2-ink); margin-bottom: var(--v2-s1); }
+.v2-state p { max-width: 46ch; margin: 0 auto var(--v2-s3); line-height: 1.55; }
+.v2-state-actions { display: flex; gap: var(--v2-s2); justify-content: center; flex-wrap: wrap; }
+
+/* ============================================================
+   9. TIMELINE — a record, read top to bottom
+   ============================================================ */
+.v2-timeline { list-style: none; margin: 0; padding: 0; }
+.v2-timeline li { position: relative; padding: 0 0 var(--v2-s3) var(--v2-s5); }
+.v2-timeline li::before {
+  content: ''; position: absolute; left: 5px; top: 6px;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--v2-line-strong);
+}
+.v2-timeline li::after {
+  content: ''; position: absolute; left: 8px; top: 16px; bottom: 0;
+  width: 1px; background: var(--v2-line);
+}
+.v2-timeline li:last-child { padding-bottom: 0; }
+.v2-timeline li:last-child::after { content: none; }
+.v2-timeline .v2-ev { font-size: var(--v2-t-small); color: var(--v2-ink); font-weight: 550; }
+.v2-timeline .v2-ev-meta { font-size: var(--v2-t-micro); color: var(--v2-ink-4); margin-top: 1px; }
+
+/* ============================================================
+   10. KEYBOARD + MOTION
+   ============================================================ */
+.v2-kbd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px; padding: 1px 4px;
+  border: 1px solid var(--v2-line-strong);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  color: var(--v2-ink-3);
+  background: var(--v2-raised);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
+}
+
+/* Focus is never invisible. The console is keyboard-operable end to end
+   because an officer taking a phone call has one hand. */
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--v2-accent);
+  outline-offset: 2px;
+}
+
+/* Screen-reader-only, for labels that must exist but not be seen. */
+.v2-sr {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* Skip link: visible only when focused. It exists so a keyboard user does
+   not have to tab through nine navigation items on every page. */
+.v2-skip {
+  position: absolute; left: -9999px; top: 8px; z-index: 200;
+  background: var(--v2-accent); color: var(--v2-accent-ink);
+  padding: 8px 14px; border-radius: var(--v2-r-1);
+  font-size: var(--v2-t-small); font-weight: 600; text-decoration: none;
+}
+.v2-skip:focus { left: 8px; }
+main:focus { outline: none; }
+
+/* ============================================================
+   11. STAT CARDS — four numbers, read as a set
+   ============================================================ */
+.sg { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--v2-s3); margin-bottom: var(--v2-s4); }
+.sc {
+  background: var(--v2-raised);
+  border: 1px solid var(--v2-line);
+  border-radius: var(--v2-r-2);
+  padding: var(--v2-s4);
+  backdrop-filter: none;
+  box-shadow: none;
+  transition: border-color var(--v2-fast) var(--v2-ease);
+}
+.sc::before { content: none; }
+.sc:hover { transform: none; box-shadow: none; border-color: var(--v2-line-strong); }
+.sc .ico {
+  width: 28px; height: 28px; border-radius: var(--v2-r-1);
+  display: grid; place-items: center;
+  font-size: .75rem; margin-bottom: var(--v2-s2);
+}
+.sc .val {
+  font-size: 1.75rem; font-weight: 650; color: var(--v2-ink);
+  letter-spacing: -.03em; line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.sc .lbl { font-size: var(--v2-t-micro); color: var(--v2-ink-3); margin-top: 2px; letter-spacing: .01em; }
+
+/* A stat that needs acting on gets a left edge, so "overdue" is not read as
+   just another number. */
+.sc.is-alert { border-left: 3px solid var(--v2-bad); }
+.sc.is-alert .val { color: var(--v2-bad); }
+
+.acm-overdue { color: var(--v2-bad); font-weight: 600; }
+.dim { color: var(--v2-ink-4); }
+.sub { font-size: var(--v2-t-small); color: var(--v2-ink-3); line-height: 1.55; }
+
+/* ============================================================
+   12. THE ESTABLISHED DESTRUCTIVE CLASS
+   `.bd` predates this layer and is used by the ticket, person and
+   office screens, which are not rewritten here. It carried hard-coded
+   rgba() reds that only read correctly on a dark canvas. Re-pointing it
+   at the semantic tokens keeps every destructive control consistent,
+   and keeps "reject" looking the same whether it is on the queue, the
+   ticket, or the verification card. `.v2-danger` is the newer spelling
+   with a filled hover; both are kept so no existing markup breaks.
+   ============================================================ */
+.bd {
+  background: var(--v2-bad-soft);
+  border: 1px solid var(--v2-bad);
+  border-color: color-mix(in srgb, var(--v2-bad) 40%, transparent);
+  color: var(--v2-bad);
+}
+.bd:hover {
+  background: var(--v2-bad);
+  border-color: var(--v2-bad);
+  color: var(--v2-on-bad);
+}
+.bd:focus-visible { box-shadow: 0 0 0 3px color-mix(in srgb, var(--v2-bad) 25%, transparent); }
+
+body { display:block; padding:0; background:var(--v2-page); }
+.preview-bar { position:sticky; top:0; z-index:50; background:var(--v2-raised);
+  border-bottom:1px solid var(--v2-line); padding:12px 20px; display:flex; gap:12px;
+  align-items:center; flex-wrap:wrap; }
+.preview-bar h1 { font-size:.95rem; color:var(--v2-ink); margin:0; font-weight:650; }
+.preview-bar .note { font-size:11px; color:var(--v2-ink-4); }
+.tab { font-size:12px; padding:5px 11px; border-radius:7px; text-decoration:none;
+  color:var(--v2-ink-3); border:1px solid var(--v2-line); background:var(--v2-raised); }
+.tab.on { background:var(--v2-accent); color:var(--v2-accent-ink); border-color:var(--v2-accent); font-weight:600; }
+.pane { display:none; padding:0 0 40px; }
+.pane.on { display:block; }
+.paneh { font-size:11px; text-transform:uppercase; letter-spacing:.09em;
+  color:var(--v2-ink-4); padding:16px 20px 6px; font-weight:600; margin:0; }
+.frame { background:var(--v2-page); }
+/* neutralise the page-level chrome that assumed a sidebar outside it */
+.frame main { max-width:none; padding:0 20px 24px; }
+.frame .topbar { display:none; }
+.frame aside, .frame #acmToast, .frame .v2-skip { display:none !important; }
+</style>
+</head>
+<body>
+<div class="preview-bar">
+  <h1>ACM console — S12</h1>
+  <span class="note">rendered from the real PHP pages</span>
+  <span style="flex:1"></span>
+  <button class="tab" id="themeBtn" type="button">Dark / light</button>
+</div>
+<div class="preview-bar" style="top:57px"><a class="tab" data-t="requests" href="#requests">Activation requests — the queue of member claims</a><a class="tab" data-t="req_match" href="#req_match">Verified</a><a class="tab" data-t="req_homophone" href="#req_homophone">Verified</a><a class="tab" data-t="req_nomatch" href="#req_nomatch">Refused</a><a class="tab" data-t="req_done">After approval</a>
+<a class="tab" data-t="queue" href="#queue">The office ticket queue</a></div>
+<section id="requests" class="pane" data-title="Activation requests — the queue of member claims"><h2 class="paneh">Activation requests — the queue of member claims</h2><div class="frame"><main id="acmMain" tabindex="-1"><div class="topbar"><div class="topbar-left"><h1>Activation requests</h1><p>Members asking for an account. Verify a person, then approve.</p></div><div class="topbar-right"><button class="icon-btn" onclick="toggleTheme()" title="Toggle theme"><i class="fa-solid fa-sun" id="themeIcon"></i></button><a class="btn bo bs" href="/admin/dashboard.php"><i class="fa-solid fa-arrow-left"></i> Dashboard</a></div></div><div class="acm-mobnav"><a class="btn bo bs" href="/admin/acm_overview.php"><i class="fa-solid fa-gauge-high"></i> Overview</a><a class="btn bo bs" href="/admin/acm_queue.php"><i class="fa-solid fa-inbox"></i> Activation queue</a><a class="btn bp bs" href="/admin/acm_requests.php"><i class="fa-solid fa-user-clock"></i> Activation requests</a><a class="btn bo bs" href="/admin/acm_device_recovery.php"><i class="fa-solid fa-mobile-screen"></i> Device recovery</a><a class="btn bo bs" href="/admin/acm_person.php"><i class="fa-solid fa-users"></i> Persons & accounts</a><a class="btn bo bs" href="/admin/acm_staff_enroll.php"><i class="fa-solid fa-id-badge"></i> Staff enrollment</a><a class="btn bo bs" href="/admin/acm_office.php"><i class="fa-solid fa-building"></i> Office</a><a class="btn bo bs" href="/admin/acm_audit.php"><i class="fa-solid fa-file-shield"></i> Monthly audit</a></div>
+
+<div class="v2-toolbar">
+    <nav class="v2-tabs" aria-label="Request status">
+                    <a class="v2-tab"
+               href="/admin/acm_requests.php?status=pending_review"
+               aria-current="page">
+                Pending                                    <span class="v2-tab-count">2</span>
+                            </a>
+                    <a class="v2-tab"
+               href="/admin/acm_requests.php?status=approved"
+               >
+                Approved                                    <span class="v2-tab-count">0</span>
+                            </a>
+                    <a class="v2-tab"
+               href="/admin/acm_requests.php?status=rejected"
+               >
+                Rejected                                    <span class="v2-tab-count">0</span>
+                            </a>
+                    <a class="v2-tab"
+               href="/admin/acm_requests.php?status=expired"
+               >
+                Expired                                    <span class="v2-tab-count">0</span>
+                            </a>
+                    <a class="v2-tab"
+               href="/admin/acm_requests.php?status=canceled"
+               >
+                Canceled                                    <span class="v2-tab-count">0</span>
+                            </a>
+            </nav>
+
+    <form method="get" class="v2-search" role="search">
+        <input type="hidden" name="status" value="pending_review">
+        <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+        <input type="search" name="q" value=""
+               placeholder="Reference, ID number, or name…"
+               aria-label="Search requests">
+        <button class="btn bp" type="submit">Search</button>
+            </form>
+</div>
+
+    <div class="v2-list" role="list">
+                                <a class="v2-row" role="listitem"
+               href="/admin/acm_request.php?id=1"
+               aria-label="Verify request MX7CVJNR">
+                <div class="v2-avatar amharic" aria-hidden="true"></div>
+
+                <div style="min-width:0">
+                    <div class="v2-row-name amharic">ናሆም</div>
+                    <div class="v2-row-meta">
+                        Member                        · 1 day ago                                                    · <span title="The same claim was submitted more than once">2× resubmitted</span>
+                                            </div>
+                </div>
+
+                <div class="v2-row-cell v2-col-hide">
+                    <span class="v2-code">79714</span>
+                </div>
+
+                <div class="v2-row-cell v2-col-hide">
+                    <span class="v2-code" style="letter-spacing:.04em;color:var(--v2-ink-3)">
+                        MX7CVJNR                    </span>
+                </div>
+
+                <div>
+                                            <span class="bg bg-n">
+                            Pending                        </span>
+                                    </div>
+
+                <div class="v2-row-cell v2-col-hide">
+                                            <span class="dim" style="font-size:var(--v2-t-micro)">phone …4321</span>
+                                    </div>
+
+                <div style="text-align:right">
+                                            <span class="btn bp bs">Verify <i class="fa-solid fa-arrow-right"></i></span>
+                                    </div>
+            </a>
+                                <a class="v2-row" role="listitem"
+               href="/admin/acm_request.php?id=2"
+               aria-label="Verify request KQ2WPD9A">
+                <div class="v2-avatar amharic" aria-hidden="true"></div>
+
+                <div style="min-width:0">
+                    <div class="v2-row-name amharic">ሰላም</div>
+                    <div class="v2-row-meta">
+                        Member                        · 1 day ago                                            </div>
+                </div>
+
+                <div class="v2-row-cell v2-col-hide">
+                    <span class="v2-code">50000</span>
+                </div>
+
+                <div class="v2-row-cell v2-col-hide">
+                    <span class="v2-code" style="letter-spacing:.04em;color:var(--v2-ink-3)">
+                        KQ2WPD9A                    </span>
+                </div>
+
+                <div>
+                                            <span class="bg bg-n">
+                            Pending                        </span>
+                                    </div>
+
+                <div class="v2-row-cell v2-col-hide">
+                                            <span class="dim" style="font-size:var(--v2-t-micro)">phone …5566</span>
+                                    </div>
+
+                <div style="text-align:right">
+                                            <span class="btn bp bs">Verify <i class="fa-solid fa-arrow-right"></i></span>
+                                    </div>
+            </a>
+            </div>
+
+        <div style="display:flex;align-items:center;gap:var(--v2-s3);margin-top:var(--v2-s3)">
+        <span style="font-size:var(--v2-t-micro);color:var(--v2-ink-4)">
+            Showing 2 of 2        </span>
+        <span style="flex:1"></span>
+                    </div>
+
+<script>
+// "/" focuses the search box, the one keyboard affordance worth having on a
+// page whose whole job is finding one row.
+document.addEventListener('keydown', function (e) {
+    var tag = (e.target.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || e.metaKey || e.ctrlKey) { return; }
+    if (e.key === '/') {
+        var box = document.querySelector('.v2-search input[type="search"]');
+        if (box) { e.preventDefault(); box.focus(); }
+    }
+});
+</script>
+
+</main></div></section><section id="req_match" class="pane" data-title="Verified: exact first-name match"><h2 class="paneh">Verified: exact first-name match</h2><div class="frame"><main id="acmMain" tabindex="-1"><div class="topbar"><div class="topbar-left"><h1>Verify request MX7CVJNR</h1><p>Confirm this is the same person, then decide</p></div><div class="topbar-right"><button class="icon-btn" onclick="toggleTheme()" title="Toggle theme"><i class="fa-solid fa-sun" id="themeIcon"></i></button><a class="btn bo bs" href="/admin/dashboard.php"><i class="fa-solid fa-arrow-left"></i> Dashboard</a></div></div><div class="acm-mobnav"><a class="btn bo bs" href="/admin/acm_overview.php"><i class="fa-solid fa-gauge-high"></i> Overview</a><a class="btn bo bs" href="/admin/acm_queue.php"><i class="fa-solid fa-inbox"></i> Activation queue</a><a class="btn bp bs" href="/admin/acm_requests.php"><i class="fa-solid fa-user-clock"></i> Activation requests</a><a class="btn bo bs" href="/admin/acm_device_recovery.php"><i class="fa-solid fa-mobile-screen"></i> Device recovery</a><a class="btn bo bs" href="/admin/acm_person.php"><i class="fa-solid fa-users"></i> Persons & accounts</a><a class="btn bo bs" href="/admin/acm_staff_enroll.php"><i class="fa-solid fa-id-badge"></i> Staff enrollment</a><a class="btn bo bs" href="/admin/acm_office.php"><i class="fa-solid fa-building"></i> Office</a><a class="btn bo bs" href="/admin/acm_audit.php"><i class="fa-solid fa-file-shield"></i> Monthly audit</a></div>
+<div class="v2-toolbar" style="margin-bottom:var(--v2-s4)">
+    <a class="btn bo" href="/admin/acm_requests.php">
+        <i class="fa-solid fa-arrow-left"></i> All requests
+    </a>
+    <span class="bg bg-n">
+        Pending review    </span>
+    <span class="v2-code">MX7CVJNR</span>
+            <span class="bg bg-w" title="The same claim was submitted more than once">
+            <i class="fa-solid fa-rotate"></i> resubmitted 2×
+        </span>
+    </div>
+
+<div class="v2-verify">
+
+    <!-- ============ LEFT: the person, as the register knows them ============ -->
+    <div>
+        <div class="v2-card">
+            <div class="v2-card-head is-ok">
+                <i class="fa-solid fa-circle-check"
+                   style="color:var(--v2-ok)"></i>
+                <strong style="color:var(--v2-ink);font-size:var(--v2-t-small)">
+                    Matched to a registered member                </strong>
+                <span style="margin-left:auto;font-size:var(--v2-t-micro);color:var(--v2-ink-3)">
+                    Name matches the register exactly                </span>
+            </div>
+
+            <div class="v2-card-body">
+                                    <div class="v2-identity">
+                        <div class="v2-photo">
+                                                            <i class="fa-solid fa-user"></i>
+                                                    </div>
+                        <div style="min-width:0">
+                            <div class="v2-name amharic">ናሆም አለሙ ተስፋዬ</div>
+                                                            <div class="v2-name-sub">Nahom Alemu Tesfaye</div>
+                                                        <div class="v2-chips">
+                                <span class="bg bg-n">ID 79714</span>
+                                                                    <span class="bg bg-info">Section B</span>
+                                                                                                    <span class="bg bg-p">Grade 7</span>
+                                                                <span class="bg bg-ok">
+                                    Active                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <dl class="v2-facts">
+                        <div class="v2-fact">
+                            <dt>Section</dt>
+                            <dd class="">
+                                Section B                            </dd>
+                        </div>
+                        <div class="v2-fact">
+                            <dt>Class</dt>
+                            <dd class="">
+                                Grade 7                            </dd>
+                        </div>
+                        <div class="v2-fact">
+                            <dt>Christian name</dt>
+                            <dd class="amharic">
+                                ገብርኤል                            </dd>
+                        </div>
+                        <div class="v2-fact">
+                            <dt>Date of birth</dt>
+                            <dd class="" data-num>
+                                12 Apr 2011                            </dd>
+                        </div>
+                        <div class="v2-fact">
+                            <dt>Age</dt>
+                            <dd class="" data-num>
+                                15 years                            </dd>
+                        </div>
+                        <div class="v2-fact">
+                            <dt>Gender</dt>
+                            <dd class="">
+                                Male                            </dd>
+                        </div>
+                        <div class="v2-fact">
+                            <dt>Father's name</dt>
+                            <dd class="amharic">
+                                አለሙ                            </dd>
+                        </div>
+                        <div class="v2-fact">
+                            <dt>Account</dt>
+                            <dd>
+                                                                    <a href="/admin/acm_person.php?id=1"
+                                       style="color:var(--v2-accent);text-decoration:none">
+                                        Person #1 <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:.6rem"></i>
+                                    </a>
+                                                            </dd>
+                        </div>
+                    </dl>
+                            </div>
+        </div>
+
+        <!-- what they typed, kept apart from what we have -->
+        <div class="v2-claim">
+            <div class="v2-claim-label">
+                <i class="fa-solid fa-keyboard"></i> What the member submitted
+            </div>
+            <div class="v2-claim-pair">
+                <div>
+                    <div class="v2-claim-k">ID number</div>
+                    <div class="v2-claim-v v2-code">79714</div>
+                </div>
+                <div>
+                    <div class="v2-claim-k">Name given</div>
+                    <div class="v2-claim-v amharic">ናሆም</div>
+                </div>
+                <div>
+                    <div class="v2-claim-k">Phone (last 4)</div>
+                    <div class="v2-claim-v">
+                        …4321                    </div>
+                </div>
+                <div>
+                    <div class="v2-claim-k">Account type</div>
+                    <div class="v2-claim-v">Member</div>
+                </div>
+                <div>
+                    <div class="v2-claim-k">Received</div>
+                    <div class="v2-claim-v" data-num>26 Nov, 08:14</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- fallback lookup -->
+                <div class="cd" style="margin-top:var(--v2-s3)">
+            <div class="ct"><i class="fa-solid fa-magnifying-glass"></i> Looking for someone else?</div>
+            <form method="get" class="v2-search" style="max-width:none">
+                <input type="hidden" name="id" value="1">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input type="search" name="q" value=""
+                       placeholder="Search people by name, phone or ID…"
+                       aria-label="Search people">
+                <button class="btn bp" type="submit">Search</button>
+            </form>
+
+                    </div>
+        
+        <!-- timeline -->
+        <div class="cd">
+            <div class="ct"><i class="fa-solid fa-clock-rotate-left"></i> History</div>
+                            <ul class="v2-timeline">
+                                            <li>
+                            <div class="v2-ev">Submitted</div>
+                            <div class="v2-ev-meta">
+                                26 Nov 2026, 08:14                                                                    · by the member
+                                                                                            </div>
+                        </li>
+                                            <li>
+                            <div class="v2-ev">Resubmitted</div>
+                            <div class="v2-ev-meta">
+                                26 Nov 2026, 08:40                                                                    · by the member
+                                                                                            </div>
+                        </li>
+                                            <li>
+                            <div class="v2-ev">Claimed</div>
+                            <div class="v2-ev-meta">
+                                26 Nov 2026, 09:10                                                                    · by officer #4                                                                                            </div>
+                        </li>
+                                    </ul>
+                    </div>
+    </div>
+
+    <!-- ============ RIGHT: the decision ============ -->
+    <div class="v2-rail">
+                    <!-- S12: the whole decision happens here. Approving used to send the
+                 officer to acm_ticket.php in a new page load; now the ticket and
+                 then the code appear in this panel, so the person standing at
+                 the counter never watches the officer navigate. -->
+            <div class="v2-rail-card" id="acmDecisionPanel">
+                <div id="acmApproveStage">
+                    <div class="v2-rail-title">Approve</div>
+                    <div class="v2-matchline is-ok">
+                        <i class="fa-solid fa-circle-check"
+                           style="margin-top:2px"></i>
+                        <span>Spelled exactly as registered.</span>
+                    </div>
+                    <p class="v2-rail-hint" style="margin-top:var(--v2-s3)">
+                        Creates the activation ticket. You will be offered the code
+                        next, to read out once.
+                    </p>
+                    <div class="v2-rail-actions">
+                        <button class="btn bp acm-approve" data-primary="1"
+                                data-request="1"
+                                data-person="1"
+                                data-member="1"
+                                data-guardian=""
+                                data-ref="MX7CVJNR">
+                            <i class="fa-solid fa-check"></i> Approve
+                        </button>
+                    </div>
+                </div>
+
+                <!-- revealed in place once approved -->
+                <div id="acmTicketStage" hidden>
+                    <div class="v2-rail-title" style="display:flex;align-items:center;gap:var(--v2-s2)">
+                        <i class="fa-solid fa-circle-check" style="color:var(--v2-ok)"></i>
+                        Approved
+                    </div>
+                    <p class="v2-rail-hint">
+                        Ticket <strong class="v2-code" id="acmTicketNo">—</strong> created.
+                    </p>
+
+                    <div id="acmIssueStage">
+                        <div class="v2-rail-title" style="font-size:var(--v2-t-small);margin-top:var(--v2-s2)">
+                            Next: the activation code
+                        </div>
+                        <p class="v2-rail-hint">
+                            The member types this in the app. It is shown once — read
+                            it out, then it is masked for good.
+                        </p>
+                        <div class="v2-rail-actions">
+                            <button class="btn bp" id="acmIssueBtn">
+                                <i class="fa-solid fa-key"></i> Issue the code
+                            </button>
+                        </div>
+                        <div class="acm-alert err" id="acmIssueError" style="display:none;margin-top:var(--v2-s2)"></div>
+                    </div>
+
+                    <div id="acmCodeBox" hidden>
+                        <div style="text-align:center;padding:var(--v2-s4) 0 var(--v2-s3)">
+                            <div style="font-size:var(--v2-t-micro);color:var(--v2-ink-4);text-transform:uppercase;letter-spacing:.08em;margin-bottom:var(--v2-s1)">
+                                Activation code
+                            </div>
+                            <div id="acmCodeValue"
+                                 style="font-size:1.875rem;font-weight:700;letter-spacing:.14em;color:var(--v2-ink);font-variant-numeric:tabular-nums">
+                                —
+                            </div>
+                            <div id="acmCodeExpiry" style="font-size:var(--v2-t-micro);color:var(--v2-ink-4);margin-top:var(--v2-s1)"></div>
+                        </div>
+                        <!-- The OTP is scoped to ONE request: verification looks the
+                             code up against this request reference, so the member
+                             cannot activate without both. Saying "read the code"
+                             and stopping would leave them stuck at the form. -->
+                        <div class="v2-claim" style="text-align:center">
+                            <div class="v2-claim-label" style="justify-content:center">
+                                <i class="fa-solid fa-hashtag"></i> Give them this reference too
+                            </div>
+                            <div class="v2-code" style="font-size:1.125rem;letter-spacing:.1em">
+                                MX7CVJNR                            </div>
+                        </div>
+                        <div class="v2-rail-actions" style="margin-top:var(--v2-s3)">
+                            <button class="btn bo" id="acmCopyCode" type="button">
+                                <i class="fa-solid fa-copy"></i> Copy code + reference
+                            </button>
+                        </div>
+                        <p class="v2-rail-hint" style="margin-top:var(--v2-s3)">
+                            Shown once. Reloading loses the code — reissue from the
+                            ticket if that happens. It works a single time, against
+                            this reference only.
+                        </p>
+                    </div>
+
+                    <div class="v2-rail-actions" style="margin-top:var(--v2-s3);border-top:1px solid var(--v2-line);padding-top:var(--v2-s3)">
+                                                    <a class="btn bp" href="/admin/acm_request.php?id=2">
+                                Review the next request <i class="fa-solid fa-arrow-right"></i>
+                            </a>
+                                                <a class="btn bo" href="/admin/acm_ticket.php?id=" id="acmTicketLink" hidden>
+                            Open the full ticket
+                        </a>
+                        <a class="btn bo" href="/admin/acm_requests.php">Back to the queue</a>
+                    </div>
+                </div>
+            </div>
+        
+                    <div class="v2-rail-card">
+                <div class="v2-rail-title">Reject</div>
+                <p class="v2-rail-hint">
+                    The member is not told why. A reason is required for the record.
+                </p>
+                <label class="v2-sr" for="acmRejectReason">Reason for rejecting</label>
+                <textarea class="inp" id="acmRejectReason" rows="2"
+                          style="width:100%;resize:vertical;margin-bottom:var(--v2-s2)"
+                          placeholder="Reason (at least 3 characters)"></textarea>
+                <div class="v2-rail-actions">
+                    <button class="btn v2-danger" id="acmRejectBtn" data-request="1">
+                        <i class="fa-solid fa-xmark"></i> Reject request
+                    </button>
+                </div>
+            </div>
+        
+        <div class="v2-rail-card">
+            <div class="v2-rail-title" style="font-size:var(--v2-t-small)">Shortcuts</div>
+            <p class="v2-rail-hint" style="margin-bottom:var(--v2-s2)">
+                <span class="v2-kbd">A</span> approve ·
+                <span class="v2-kbd">R</span> reject ·
+                <span class="v2-kbd">/</span> search ·
+                <span class="v2-kbd">Esc</span> back
+            </p>
+            <a class="btn bo" style="width:100%;justify-content:center" href="/admin/acm_requests.php">
+                <i class="fa-solid fa-arrow-left"></i> Back to the queue
+            </a>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    function csrf() {
+        var m = document.querySelector('meta[name="csrf-token"]');
+        return m ? m.getAttribute('content') : '';
+    }
+    async function post(action, params) {
+        var fd = new FormData();
+        fd.append('action', action);
+        fd.append('csrf_token', csrf());
+        Object.keys(params || {}).forEach(function (k) { fd.append(k, params[k]); });
+        var r = await fetch('/admin/api_acm.php', { method: 'POST', body: fd, credentials: 'same-origin' });
+        var d = await r.json().catch(function () { return { status: 'error', message: 'Bad response' }; });
+        if (d.status !== 'success') { throw new Error(d.message || 'Request failed'); }
+        return d;
+    }
+    function busy(btn, on) {
+        btn.classList.toggle('is-busy', on);
+        btn.setAttribute('aria-busy', on ? 'true' : 'false');
+    }
+
+    var approveButtons = document.querySelectorAll('.acm-approve');
+    approveButtons.forEach(function (btn, index) {
+        btn.addEventListener('click', async function () {
+            var body = { id: btn.getAttribute('data-request'), person_id: btn.getAttribute('data-person') };
+            if (btn.getAttribute('data-member')) { body.member_id = btn.getAttribute('data-member'); }
+            if (btn.getAttribute('data-guardian')) { body.guardian_id = btn.getAttribute('data-guardian'); }
+            if (!confirm('Approve this request? This creates the activation ticket.')) { return; }
+            busy(btn, true);
+            try {
+                var d = await post('request_approve', body);
+                revealTicket(d.ticket || {});
+            } catch (e) {
+                acmToast(e.message, false);
+                busy(btn, false);
+            }
+        });
+        // Keyboard: the first approve action is reachable with "a".
+        if (index === 0) { btn.dataset.primary = '1'; }
+    });
+
+    // ---- S12 inline ceremony ------------------------------------------
+    // Approving no longer navigates. The panel swaps to the ticket, then to
+    // the code, so the officer stays where the person is standing.
+    var ticketId = 0;
+
+    function revealTicket(ticket) {
+        ticketId = ticket.ticket_id || ticket.id || 0;
+        var stage = document.getElementById('acmTicketStage');
+        var approve = document.getElementById('acmApproveStage');
+        if (!stage) { return; }
+        if (approve) { approve.hidden = true; }
+        stage.hidden = false;
+        var no = document.getElementById('acmTicketNo');
+        if (no) { no.textContent = ticket.ticket_no || '—'; }
+        var link = document.getElementById('acmTicketLink');
+        if (link && ticketId) { link.href = '/admin/acm_ticket.php?id=' + ticketId; }
+        acmToast('Approved. Ticket ' + (ticket.ticket_no || '') + ' created.', true);
+        // Focus moves to the next step, so a keyboard or screen-reader user
+        // lands on the action that now matters rather than staying on a
+        // button that just disappeared.
+        var issue = document.getElementById('acmIssueBtn');
+        if (issue) { issue.focus(); }
+    }
+
+    var issueBtn = document.getElementById('acmIssueBtn');
+    if (issueBtn) {
+        issueBtn.addEventListener('click', async function () {
+            if (!ticketId) { return; }
+            busy(issueBtn, true);
+            var errBox = document.getElementById('acmIssueError');
+            if (errBox) { errBox.style.display = 'none'; }
+            try {
+                var d = await post('code_issue', { id: ticketId, purpose: 'activation' });
+                var code = (d.code || {});
+                var box = document.getElementById('acmCodeBox');
+                var val = document.getElementById('acmCodeValue');
+                if (val) { val.textContent = code.display || '—'; }
+                var exp = document.getElementById('acmCodeExpiry');
+                if (exp && code.expires_at) {
+                    exp.textContent = 'Expires ' + code.expires_at;
+                }
+                var issueStage = document.getElementById('acmIssueStage');
+                if (issueStage) { issueStage.hidden = true; }
+                if (box) { box.hidden = false; }
+                var copy = document.getElementById('acmCopyCode');
+                if (copy && code.display) {
+                    // Both halves are needed for the member to activate.
+                    copy.dataset.value = code.display + ' — reference MX7CVJNR';
+                }
+            } catch (e) {
+                // Issuing can fail on a terminal ticket, a closed network gate,
+                // or a burned out OTP budget. All of those are actionable, so
+                // they are shown in place rather than as a transient toast.
+                if (errBox) {
+                    errBox.textContent = e.message;
+                    errBox.style.display = '';
+                } else {
+                    acmToast(e.message, false);
+                }
+                busy(issueBtn, false);
+            }
+        });
+    }
+
+    var copyBtn = document.getElementById('acmCopyCode');
+    if (copyBtn) {
+        copyBtn.addEventListener('click', async function () {
+            var v = copyBtn.dataset.value || '';
+            try {
+                await navigator.clipboard.writeText(v);
+                acmToast('Copied.', true);
+            } catch (err) {
+                acmToast('Copy failed — select it and copy by hand.', false);
+            }
+        });
+    }
+
+    var rejectBtn = document.getElementById('acmRejectBtn');
+    var rejectReason = document.getElementById('acmRejectReason');
+    if (rejectBtn) {
+        rejectBtn.addEventListener('click', async function () {
+            var reason = (rejectReason || {}).value || '';
+            if (reason.trim().length < 3) {
+                acmToast('Write a reason first (at least 3 characters).', false);
+                if (rejectReason) { rejectReason.focus(); }
+                return;
+            }
+            if (!confirm('Reject this request?')) { return; }
+            busy(rejectBtn, true);
+            try {
+                await post('request_reject', { id: rejectBtn.getAttribute('data-request'), reason: reason });
+                window.location.reload();
+            } catch (e) {
+                acmToast(e.message, false);
+                busy(rejectBtn, false);
+            }
+        });
+    }
+
+    // Keyboard shortcuts. Deliberately NOT active while typing in a field,
+    // so a name containing "a" does not approve somebody.
+    document.addEventListener('keydown', function (e) {
+        var tag = (e.target.tagName || '').toLowerCase();
+        var typing = tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable;
+        if (typing || e.metaKey || e.ctrlKey || e.altKey) { return; }
+        if (e.key === 'a' || e.key === 'A') {
+            var primary = document.querySelector('.acm-approve[data-primary="1"]');
+            var apr = document.getElementById('acmApproveStage');
+            // Only while the approve step is still on screen; after approval
+            // "a" must not re-fire an action that has already happened.
+            if (primary && (!apr || !apr.hidden)) { e.preventDefault(); primary.click(); }
+        } else if (e.key === 'r' || e.key === 'R') {
+            if (rejectReason) { e.preventDefault(); rejectReason.focus(); }
+        } else if (e.key === '/') {
+            var search = document.querySelector('.v2-search input');
+            if (search) { e.preventDefault(); search.focus(); }
+        } else if (e.key === 'Escape') {
+            window.location.href = '/admin/acm_requests.php';
+        }
+    });
+})();
+</script>
+
+</main></div></section><section id="req_homophone" class="pane" data-title="Verified: Amharic homophone (ሰላም vs ሠላም)"><h2 class="paneh">Verified: Amharic homophone (ሰላም vs ሠላም)</h2><div class="frame"><main id="acmMain" tabindex="-1"><div class="topbar"><div class="topbar-left"><h1>Verify request KQ2WPD9A</h1><p>Confirm this is the same person, then decide</p></div><div class="topbar-right"><button class="icon-btn" onclick="toggleTheme()" title="Toggle theme"><i class="fa-solid fa-sun" id="themeIcon"></i></button><a class="btn bo bs" href="/admin/dashboard.php"><i class="fa-solid fa-arrow-left"></i> Dashboard</a></div></div><div class="acm-mobnav"><a class="btn bo bs" href="/admin/acm_overview.php"><i class="fa-solid fa-gauge-high"></i> Overview</a><a class="btn bo bs" href="/admin/acm_queue.php"><i class="fa-solid fa-inbox"></i> Activation queue</a><a class="btn bp bs" href="/admin/acm_requests.php"><i class="fa-solid fa-user-clock"></i> Activation requests</a><a class="btn bo bs" href="/admin/acm_device_recovery.php"><i class="fa-solid fa-mobile-screen"></i> Device recovery</a><a class="btn bo bs" href="/admin/acm_person.php"><i class="fa-solid fa-users"></i> Persons & accounts</a><a class="btn bo bs" href="/admin/acm_staff_enroll.php"><i class="fa-solid fa-id-badge"></i> Staff enrollment</a><a class="btn bo bs" href="/admin/acm_office.php"><i class="fa-solid fa-building"></i> Office</a><a class="btn bo bs" href="/admin/acm_audit.php"><i class="fa-solid fa-file-shield"></i> Monthly audit</a></div>
+<div class="v2-toolbar" style="margin-bottom:var(--v2-s4)">
+    <a class="btn bo" href="/admin/acm_requests.php">
+        <i class="fa-solid fa-arrow-left"></i> All requests
+    </a>
+    <span class="bg bg-n">
+        Pending review    </span>
+    <span class="v2-code">KQ2WPD9A</span>
+    </div>
+
+<div class="v2-verify">
+
+    <!-- ============ LEFT: the person, as the register knows them ============ -->
+    <div>
+        <div class="v2-card">
+            <div class="v2-card-head is-ok">
+                <i class="fa-solid fa-circle-check"
+                   style="color:var(--v2-ok)"></i>
+                <strong style="color:var(--v2-ink);font-size:var(--v2-t-small)">
+                    Matched to a registered member                </strong>
+                <span style="margin-left:auto;font-size:var(--v2-t-micro);color:var(--v2-ink-3)">
+                    Same Amharic sounds, different letters                </span>
+            </div>
+
+            <div class="v2-card-body">
+                                    <div class="v2-identity">
+                        <div class="v2-photo">
+                                                            <i class="fa-solid fa-user"></i>
+                                                    </div>
+                        <div style="min-width:0">
+                            <div class="v2-name amharic">ሠላም ገበረ</div>
+                                                            <div class="v2-name-sub">Selam Gebre</div>
+                                                        <div class="v2-chips">
+                                <span class="bg bg-n">ID 50000</span>
+                                                                    <span class="bg bg-info">Section C</span>
+                                                                                                    <span class="bg bg-p">Grade 8</span>
+                                                                <span class="bg bg-ok">
+                                    Active                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <dl class="v2-facts">
+                        <div class="v2-fact">
+                            <dt>Section</dt>
+                            <dd class="">
+                                Section C                            </dd>
+                        </div>
+                        <div class="v2-fact">
+                            <dt>Class</dt>
+                            <dd class="">
+                                Grade 8                            </dd>
+                        </div>
+                        <div class="v2-fact">
+                            <dt>Christian name</dt>
+                            <dd class="amharic">
+                                ሩፋኤል                            </dd>
+                        </div>
+                        <div class="v2-fact">
+                            <dt>Date of birth</dt>
+                            <dd class="" data-num>
+                                20 Jan 2010                            </dd>
+                        </div>
+                        <div class="v2-fact">
+                            <dt>Age</dt>
+                            <dd class="" data-num>
+                                16 years                            </dd>
+                        </div>
+                        <div class="v2-fact">
+                            <dt>Gender</dt>
+                            <dd class="">
+                                Female                            </dd>
+                        </div>
+                        <div class="v2-fact">
+                            <dt>Father's name</dt>
+                            <dd class="amharic">
+                                ገበረ                            </dd>
+                        </div>
+                        <div class="v2-fact">
+                            <dt>Account</dt>
+                            <dd>
+                                                                    <a href="/admin/acm_person.php?id=2"
+                                       style="color:var(--v2-accent);text-decoration:none">
+                                        Person #2 <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:.6rem"></i>
+                                    </a>
+                                                            </dd>
+                        </div>
+                    </dl>
+                            </div>
+        </div>
+
+        <!-- what they typed, kept apart from what we have -->
+        <div class="v2-claim">
+            <div class="v2-claim-label">
+                <i class="fa-solid fa-keyboard"></i> What the member submitted
+            </div>
+            <div class="v2-claim-pair">
+                <div>
+                    <div class="v2-claim-k">ID number</div>
+                    <div class="v2-claim-v v2-code">50000</div>
+                </div>
+                <div>
+                    <div class="v2-claim-k">Name given</div>
+                    <div class="v2-claim-v amharic">ሰላም</div>
+                </div>
+                <div>
+                    <div class="v2-claim-k">Phone (last 4)</div>
+                    <div class="v2-claim-v">
+                        …5566                    </div>
+                </div>
+                <div>
+                    <div class="v2-claim-k">Account type</div>
+                    <div class="v2-claim-v">Member</div>
+                </div>
+                <div>
+                    <div class="v2-claim-k">Received</div>
+                    <div class="v2-claim-v" data-num>26 Nov, 09:02</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- fallback lookup -->
+                <div class="cd" style="margin-top:var(--v2-s3)">
+            <div class="ct"><i class="fa-solid fa-magnifying-glass"></i> Looking for someone else?</div>
+            <form method="get" class="v2-search" style="max-width:none">
+                <input type="hidden" name="id" value="2">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input type="search" name="q" value=""
+                       placeholder="Search people by name, phone or ID…"
+                       aria-label="Search people">
+                <button class="btn bp" type="submit">Search</button>
+            </form>
+
+                    </div>
+        
+        <!-- timeline -->
+        <div class="cd">
+            <div class="ct"><i class="fa-solid fa-clock-rotate-left"></i> History</div>
+                            <p class="dim" style="font-size:var(--v2-t-small)">No events recorded yet.</p>
+                    </div>
+    </div>
+
+    <!-- ============ RIGHT: the decision ============ -->
+    <div class="v2-rail">
+                    <!-- S12: the whole decision happens here. Approving used to send the
+                 officer to acm_ticket.php in a new page load; now the ticket and
+                 then the code appear in this panel, so the person standing at
+                 the counter never watches the officer navigate. -->
+            <div class="v2-rail-card" id="acmDecisionPanel">
+                <div id="acmApproveStage">
+                    <div class="v2-rail-title">Approve</div>
+                    <div class="v2-matchline is-ok">
+                        <i class="fa-solid fa-circle-check"
+                           style="margin-top:2px"></i>
+                        <span>Same sounds, different letters (for example ሰ/ሠ).</span>
+                    </div>
+                    <p class="v2-rail-hint" style="margin-top:var(--v2-s3)">
+                        Creates the activation ticket. You will be offered the code
+                        next, to read out once.
+                    </p>
+                    <div class="v2-rail-actions">
+                        <button class="btn bp acm-approve" data-primary="1"
+                                data-request="2"
+                                data-person="2"
+                                data-member="2"
+                                data-guardian=""
+                                data-ref="KQ2WPD9A">
+                            <i class="fa-solid fa-check"></i> Approve
+                        </button>
+                    </div>
+                </div>
+
+                <!-- revealed in place once approved -->
+                <div id="acmTicketStage" hidden>
+                    <div class="v2-rail-title" style="display:flex;align-items:center;gap:var(--v2-s2)">
+                        <i class="fa-solid fa-circle-check" style="color:var(--v2-ok)"></i>
+                        Approved
+                    </div>
+                    <p class="v2-rail-hint">
+                        Ticket <strong class="v2-code" id="acmTicketNo">—</strong> created.
+                    </p>
+
+                    <div id="acmIssueStage">
+                        <div class="v2-rail-title" style="font-size:var(--v2-t-small);margin-top:var(--v2-s2)">
+                            Next: the activation code
+                        </div>
+                        <p class="v2-rail-hint">
+                            The member types this in the app. It is shown once — read
+                            it out, then it is masked for good.
+                        </p>
+                        <div class="v2-rail-actions">
+                            <button class="btn bp" id="acmIssueBtn">
+                                <i class="fa-solid fa-key"></i> Issue the code
+                            </button>
+                        </div>
+                        <div class="acm-alert err" id="acmIssueError" style="display:none;margin-top:var(--v2-s2)"></div>
+                    </div>
+
+                    <div id="acmCodeBox" hidden>
+                        <div style="text-align:center;padding:var(--v2-s4) 0 var(--v2-s3)">
+                            <div style="font-size:var(--v2-t-micro);color:var(--v2-ink-4);text-transform:uppercase;letter-spacing:.08em;margin-bottom:var(--v2-s1)">
+                                Activation code
+                            </div>
+                            <div id="acmCodeValue"
+                                 style="font-size:1.875rem;font-weight:700;letter-spacing:.14em;color:var(--v2-ink);font-variant-numeric:tabular-nums">
+                                —
+                            </div>
+                            <div id="acmCodeExpiry" style="font-size:var(--v2-t-micro);color:var(--v2-ink-4);margin-top:var(--v2-s1)"></div>
+                        </div>
+                        <!-- The OTP is scoped to ONE request: verification looks the
+                             code up against this request reference, so the member
+                             cannot activate without both. Saying "read the code"
+                             and stopping would leave them stuck at the form. -->
+                        <div class="v2-claim" style="text-align:center">
+                            <div class="v2-claim-label" style="justify-content:center">
+                                <i class="fa-solid fa-hashtag"></i> Give them this reference too
+                            </div>
+                            <div class="v2-code" style="font-size:1.125rem;letter-spacing:.1em">
+                                KQ2WPD9A                            </div>
+                        </div>
+                        <div class="v2-rail-actions" style="margin-top:var(--v2-s3)">
+                            <button class="btn bo" id="acmCopyCode" type="button">
+                                <i class="fa-solid fa-copy"></i> Copy code + reference
+                            </button>
+                        </div>
+                        <p class="v2-rail-hint" style="margin-top:var(--v2-s3)">
+                            Shown once. Reloading loses the code — reissue from the
+                            ticket if that happens. It works a single time, against
+                            this reference only.
+                        </p>
+                    </div>
+
+                    <div class="v2-rail-actions" style="margin-top:var(--v2-s3);border-top:1px solid var(--v2-line);padding-top:var(--v2-s3)">
+                                                    <a class="btn bp" href="/admin/acm_request.php?id=1">
+                                Review the next request <i class="fa-solid fa-arrow-right"></i>
+                            </a>
+                                                <a class="btn bo" href="/admin/acm_ticket.php?id=" id="acmTicketLink" hidden>
+                            Open the full ticket
+                        </a>
+                        <a class="btn bo" href="/admin/acm_requests.php">Back to the queue</a>
+                    </div>
+                </div>
+            </div>
+        
+                    <div class="v2-rail-card">
+                <div class="v2-rail-title">Reject</div>
+                <p class="v2-rail-hint">
+                    The member is not told why. A reason is required for the record.
+                </p>
+                <label class="v2-sr" for="acmRejectReason">Reason for rejecting</label>
+                <textarea class="inp" id="acmRejectReason" rows="2"
+                          style="width:100%;resize:vertical;margin-bottom:var(--v2-s2)"
+                          placeholder="Reason (at least 3 characters)"></textarea>
+                <div class="v2-rail-actions">
+                    <button class="btn v2-danger" id="acmRejectBtn" data-request="2">
+                        <i class="fa-solid fa-xmark"></i> Reject request
+                    </button>
+                </div>
+            </div>
+        
+        <div class="v2-rail-card">
+            <div class="v2-rail-title" style="font-size:var(--v2-t-small)">Shortcuts</div>
+            <p class="v2-rail-hint" style="margin-bottom:var(--v2-s2)">
+                <span class="v2-kbd">A</span> approve ·
+                <span class="v2-kbd">R</span> reject ·
+                <span class="v2-kbd">/</span> search ·
+                <span class="v2-kbd">Esc</span> back
+            </p>
+            <a class="btn bo" style="width:100%;justify-content:center" href="/admin/acm_requests.php">
+                <i class="fa-solid fa-arrow-left"></i> Back to the queue
+            </a>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    function csrf() {
+        var m = document.querySelector('meta[name="csrf-token"]');
+        return m ? m.getAttribute('content') : '';
+    }
+    async function post(action, params) {
+        var fd = new FormData();
+        fd.append('action', action);
+        fd.append('csrf_token', csrf());
+        Object.keys(params || {}).forEach(function (k) { fd.append(k, params[k]); });
+        var r = await fetch('/admin/api_acm.php', { method: 'POST', body: fd, credentials: 'same-origin' });
+        var d = await r.json().catch(function () { return { status: 'error', message: 'Bad response' }; });
+        if (d.status !== 'success') { throw new Error(d.message || 'Request failed'); }
+        return d;
+    }
+    function busy(btn, on) {
+        btn.classList.toggle('is-busy', on);
+        btn.setAttribute('aria-busy', on ? 'true' : 'false');
+    }
+
+    var approveButtons = document.querySelectorAll('.acm-approve');
+    approveButtons.forEach(function (btn, index) {
+        btn.addEventListener('click', async function () {
+            var body = { id: btn.getAttribute('data-request'), person_id: btn.getAttribute('data-person') };
+            if (btn.getAttribute('data-member')) { body.member_id = btn.getAttribute('data-member'); }
+            if (btn.getAttribute('data-guardian')) { body.guardian_id = btn.getAttribute('data-guardian'); }
+            if (!confirm('Approve this request? This creates the activation ticket.')) { return; }
+            busy(btn, true);
+            try {
+                var d = await post('request_approve', body);
+                revealTicket(d.ticket || {});
+            } catch (e) {
+                acmToast(e.message, false);
+                busy(btn, false);
+            }
+        });
+        // Keyboard: the first approve action is reachable with "a".
+        if (index === 0) { btn.dataset.primary = '1'; }
+    });
+
+    // ---- S12 inline ceremony ------------------------------------------
+    // Approving no longer navigates. The panel swaps to the ticket, then to
+    // the code, so the officer stays where the person is standing.
+    var ticketId = 0;
+
+    function revealTicket(ticket) {
+        ticketId = ticket.ticket_id || ticket.id || 0;
+        var stage = document.getElementById('acmTicketStage');
+        var approve = document.getElementById('acmApproveStage');
+        if (!stage) { return; }
+        if (approve) { approve.hidden = true; }
+        stage.hidden = false;
+        var no = document.getElementById('acmTicketNo');
+        if (no) { no.textContent = ticket.ticket_no || '—'; }
+        var link = document.getElementById('acmTicketLink');
+        if (link && ticketId) { link.href = '/admin/acm_ticket.php?id=' + ticketId; }
+        acmToast('Approved. Ticket ' + (ticket.ticket_no || '') + ' created.', true);
+        // Focus moves to the next step, so a keyboard or screen-reader user
+        // lands on the action that now matters rather than staying on a
+        // button that just disappeared.
+        var issue = document.getElementById('acmIssueBtn');
+        if (issue) { issue.focus(); }
+    }
+
+    var issueBtn = document.getElementById('acmIssueBtn');
+    if (issueBtn) {
+        issueBtn.addEventListener('click', async function () {
+            if (!ticketId) { return; }
+            busy(issueBtn, true);
+            var errBox = document.getElementById('acmIssueError');
+            if (errBox) { errBox.style.display = 'none'; }
+            try {
+                var d = await post('code_issue', { id: ticketId, purpose: 'activation' });
+                var code = (d.code || {});
+                var box = document.getElementById('acmCodeBox');
+                var val = document.getElementById('acmCodeValue');
+                if (val) { val.textContent = code.display || '—'; }
+                var exp = document.getElementById('acmCodeExpiry');
+                if (exp && code.expires_at) {
+                    exp.textContent = 'Expires ' + code.expires_at;
+                }
+                var issueStage = document.getElementById('acmIssueStage');
+                if (issueStage) { issueStage.hidden = true; }
+                if (box) { box.hidden = false; }
+                var copy = document.getElementById('acmCopyCode');
+                if (copy && code.display) {
+                    // Both halves are needed for the member to activate.
+                    copy.dataset.value = code.display + ' — reference KQ2WPD9A';
+                }
+            } catch (e) {
+                // Issuing can fail on a terminal ticket, a closed network gate,
+                // or a burned out OTP budget. All of those are actionable, so
+                // they are shown in place rather than as a transient toast.
+                if (errBox) {
+                    errBox.textContent = e.message;
+                    errBox.style.display = '';
+                } else {
+                    acmToast(e.message, false);
+                }
+                busy(issueBtn, false);
+            }
+        });
+    }
+
+    var copyBtn = document.getElementById('acmCopyCode');
+    if (copyBtn) {
+        copyBtn.addEventListener('click', async function () {
+            var v = copyBtn.dataset.value || '';
+            try {
+                await navigator.clipboard.writeText(v);
+                acmToast('Copied.', true);
+            } catch (err) {
+                acmToast('Copy failed — select it and copy by hand.', false);
+            }
+        });
+    }
+
+    var rejectBtn = document.getElementById('acmRejectBtn');
+    var rejectReason = document.getElementById('acmRejectReason');
+    if (rejectBtn) {
+        rejectBtn.addEventListener('click', async function () {
+            var reason = (rejectReason || {}).value || '';
+            if (reason.trim().length < 3) {
+                acmToast('Write a reason first (at least 3 characters).', false);
+                if (rejectReason) { rejectReason.focus(); }
+                return;
+            }
+            if (!confirm('Reject this request?')) { return; }
+            busy(rejectBtn, true);
+            try {
+                await post('request_reject', { id: rejectBtn.getAttribute('data-request'), reason: reason });
+                window.location.reload();
+            } catch (e) {
+                acmToast(e.message, false);
+                busy(rejectBtn, false);
+            }
+        });
+    }
+
+    // Keyboard shortcuts. Deliberately NOT active while typing in a field,
+    // so a name containing "a" does not approve somebody.
+    document.addEventListener('keydown', function (e) {
+        var tag = (e.target.tagName || '').toLowerCase();
+        var typing = tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable;
+        if (typing || e.metaKey || e.ctrlKey || e.altKey) { return; }
+        if (e.key === 'a' || e.key === 'A') {
+            var primary = document.querySelector('.acm-approve[data-primary="1"]');
+            var apr = document.getElementById('acmApproveStage');
+            // Only while the approve step is still on screen; after approval
+            // "a" must not re-fire an action that has already happened.
+            if (primary && (!apr || !apr.hidden)) { e.preventDefault(); primary.click(); }
+        } else if (e.key === 'r' || e.key === 'R') {
+            if (rejectReason) { e.preventDefault(); rejectReason.focus(); }
+        } else if (e.key === '/') {
+            var search = document.querySelector('.v2-search input');
+            if (search) { e.preventDefault(); search.focus(); }
+        } else if (e.key === 'Escape') {
+            window.location.href = '/admin/acm_requests.php';
+        }
+    });
+})();
+</script>
+
+</main></div></section><section id="req_nomatch" class="pane" data-title="Refused: no member record to match"><h2 class="paneh">Refused: no member record to match</h2><div class="frame"><main id="acmMain" tabindex="-1"><div class="topbar"><div class="topbar-left"><h1>Verify request ZZZZ1111</h1><p>Confirm this is the same person, then decide</p></div><div class="topbar-right"><button class="icon-btn" onclick="toggleTheme()" title="Toggle theme"><i class="fa-solid fa-sun" id="themeIcon"></i></button><a class="btn bo bs" href="/admin/dashboard.php"><i class="fa-solid fa-arrow-left"></i> Dashboard</a></div></div><div class="acm-mobnav"><a class="btn bo bs" href="/admin/acm_overview.php"><i class="fa-solid fa-gauge-high"></i> Overview</a><a class="btn bo bs" href="/admin/acm_queue.php"><i class="fa-solid fa-inbox"></i> Activation queue</a><a class="btn bp bs" href="/admin/acm_requests.php"><i class="fa-solid fa-user-clock"></i> Activation requests</a><a class="btn bo bs" href="/admin/acm_device_recovery.php"><i class="fa-solid fa-mobile-screen"></i> Device recovery</a><a class="btn bo bs" href="/admin/acm_person.php"><i class="fa-solid fa-users"></i> Persons & accounts</a><a class="btn bo bs" href="/admin/acm_staff_enroll.php"><i class="fa-solid fa-id-badge"></i> Staff enrollment</a><a class="btn bo bs" href="/admin/acm_office.php"><i class="fa-solid fa-building"></i> Office</a><a class="btn bo bs" href="/admin/acm_audit.php"><i class="fa-solid fa-file-shield"></i> Monthly audit</a></div>
+<div class="v2-toolbar" style="margin-bottom:var(--v2-s4)">
+    <a class="btn bo" href="/admin/acm_requests.php">
+        <i class="fa-solid fa-arrow-left"></i> All requests
+    </a>
+    <span class="bg bg-n">
+        Pending review    </span>
+    <span class="v2-code">ZZZZ1111</span>
+    </div>
+
+<div class="v2-verify">
+
+    <!-- ============ LEFT: the person, as the register knows them ============ -->
+    <div>
+        <div class="v2-card">
+            <div class="v2-card-head is-warn">
+                <i class="fa-solid fa-triangle-exclamation"
+                   style="color:var(--v2-warn)"></i>
+                <strong style="color:var(--v2-ink);font-size:var(--v2-t-small)">
+                    No confident match                </strong>
+                <span style="margin-left:auto;font-size:var(--v2-t-micro);color:var(--v2-ink-3)">
+                    No member record                </span>
+            </div>
+
+            <div class="v2-card-body">
+                                    <div class="v2-state">
+                        <i class="fa-solid fa-user-slash"></i>
+                        <div class="v2-state-title">No member record to show</div>
+                        <p>
+                            The ID number on this request does not resolve to a registered
+                            member that matches the name given. Search for the person
+                            below, or reject and ask them to contact the office.
+                        </p>
+                    </div>
+                            </div>
+        </div>
+
+        <!-- what they typed, kept apart from what we have -->
+        <div class="v2-claim">
+            <div class="v2-claim-label">
+                <i class="fa-solid fa-keyboard"></i> What the member submitted
+            </div>
+            <div class="v2-claim-pair">
+                <div>
+                    <div class="v2-claim-k">ID number</div>
+                    <div class="v2-claim-v v2-code">99999</div>
+                </div>
+                <div>
+                    <div class="v2-claim-k">Name given</div>
+                    <div class="v2-claim-v amharic">ዳዊት</div>
+                </div>
+                <div>
+                    <div class="v2-claim-k">Phone (last 4)</div>
+                    <div class="v2-claim-v">
+                        …1111                    </div>
+                </div>
+                <div>
+                    <div class="v2-claim-k">Account type</div>
+                    <div class="v2-claim-v">Member</div>
+                </div>
+                <div>
+                    <div class="v2-claim-k">Received</div>
+                    <div class="v2-claim-v" data-num>26 Nov, 10:00</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- fallback lookup -->
+                <div class="cd" style="margin-top:var(--v2-s3)">
+            <div class="ct"><i class="fa-solid fa-magnifying-glass"></i> Looking for someone else?</div>
+            <form method="get" class="v2-search" style="max-width:none">
+                <input type="hidden" name="id" value="3">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input type="search" name="q" value=""
+                       placeholder="Search people by name, phone or ID…"
+                       aria-label="Search people">
+                <button class="btn bp" type="submit">Search</button>
+            </form>
+
+                    </div>
+        
+        <!-- timeline -->
+        <div class="cd">
+            <div class="ct"><i class="fa-solid fa-clock-rotate-left"></i> History</div>
+                            <p class="dim" style="font-size:var(--v2-t-small)">No events recorded yet.</p>
+                    </div>
+    </div>
+
+    <!-- ============ RIGHT: the decision ============ -->
+    <div class="v2-rail">
+                    <div class="v2-rail-card">
+                <div class="v2-rail-title">Needs a decision</div>
+                <div class="v2-matchline is-warn">
+                    <i class="fa-solid fa-triangle-exclamation" style="margin-top:2px"></i>
+                    <span>No member record. Pick the person from the search on the left
+                    to approve, or reject the request.</span>
+                </div>
+            </div>
+        
+                    <div class="v2-rail-card">
+                <div class="v2-rail-title">Reject</div>
+                <p class="v2-rail-hint">
+                    The member is not told why. A reason is required for the record.
+                </p>
+                <label class="v2-sr" for="acmRejectReason">Reason for rejecting</label>
+                <textarea class="inp" id="acmRejectReason" rows="2"
+                          style="width:100%;resize:vertical;margin-bottom:var(--v2-s2)"
+                          placeholder="Reason (at least 3 characters)"></textarea>
+                <div class="v2-rail-actions">
+                    <button class="btn v2-danger" id="acmRejectBtn" data-request="3">
+                        <i class="fa-solid fa-xmark"></i> Reject request
+                    </button>
+                </div>
+            </div>
+        
+        <div class="v2-rail-card">
+            <div class="v2-rail-title" style="font-size:var(--v2-t-small)">Shortcuts</div>
+            <p class="v2-rail-hint" style="margin-bottom:var(--v2-s2)">
+                <span class="v2-kbd">A</span> approve ·
+                <span class="v2-kbd">R</span> reject ·
+                <span class="v2-kbd">/</span> search ·
+                <span class="v2-kbd">Esc</span> back
+            </p>
+            <a class="btn bo" style="width:100%;justify-content:center" href="/admin/acm_requests.php">
+                <i class="fa-solid fa-arrow-left"></i> Back to the queue
+            </a>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    function csrf() {
+        var m = document.querySelector('meta[name="csrf-token"]');
+        return m ? m.getAttribute('content') : '';
+    }
+    async function post(action, params) {
+        var fd = new FormData();
+        fd.append('action', action);
+        fd.append('csrf_token', csrf());
+        Object.keys(params || {}).forEach(function (k) { fd.append(k, params[k]); });
+        var r = await fetch('/admin/api_acm.php', { method: 'POST', body: fd, credentials: 'same-origin' });
+        var d = await r.json().catch(function () { return { status: 'error', message: 'Bad response' }; });
+        if (d.status !== 'success') { throw new Error(d.message || 'Request failed'); }
+        return d;
+    }
+    function busy(btn, on) {
+        btn.classList.toggle('is-busy', on);
+        btn.setAttribute('aria-busy', on ? 'true' : 'false');
+    }
+
+    var approveButtons = document.querySelectorAll('.acm-approve');
+    approveButtons.forEach(function (btn, index) {
+        btn.addEventListener('click', async function () {
+            var body = { id: btn.getAttribute('data-request'), person_id: btn.getAttribute('data-person') };
+            if (btn.getAttribute('data-member')) { body.member_id = btn.getAttribute('data-member'); }
+            if (btn.getAttribute('data-guardian')) { body.guardian_id = btn.getAttribute('data-guardian'); }
+            if (!confirm('Approve this request? This creates the activation ticket.')) { return; }
+            busy(btn, true);
+            try {
+                var d = await post('request_approve', body);
+                revealTicket(d.ticket || {});
+            } catch (e) {
+                acmToast(e.message, false);
+                busy(btn, false);
+            }
+        });
+        // Keyboard: the first approve action is reachable with "a".
+        if (index === 0) { btn.dataset.primary = '1'; }
+    });
+
+    // ---- S12 inline ceremony ------------------------------------------
+    // Approving no longer navigates. The panel swaps to the ticket, then to
+    // the code, so the officer stays where the person is standing.
+    var ticketId = 0;
+
+    function revealTicket(ticket) {
+        ticketId = ticket.ticket_id || ticket.id || 0;
+        var stage = document.getElementById('acmTicketStage');
+        var approve = document.getElementById('acmApproveStage');
+        if (!stage) { return; }
+        if (approve) { approve.hidden = true; }
+        stage.hidden = false;
+        var no = document.getElementById('acmTicketNo');
+        if (no) { no.textContent = ticket.ticket_no || '—'; }
+        var link = document.getElementById('acmTicketLink');
+        if (link && ticketId) { link.href = '/admin/acm_ticket.php?id=' + ticketId; }
+        acmToast('Approved. Ticket ' + (ticket.ticket_no || '') + ' created.', true);
+        // Focus moves to the next step, so a keyboard or screen-reader user
+        // lands on the action that now matters rather than staying on a
+        // button that just disappeared.
+        var issue = document.getElementById('acmIssueBtn');
+        if (issue) { issue.focus(); }
+    }
+
+    var issueBtn = document.getElementById('acmIssueBtn');
+    if (issueBtn) {
+        issueBtn.addEventListener('click', async function () {
+            if (!ticketId) { return; }
+            busy(issueBtn, true);
+            var errBox = document.getElementById('acmIssueError');
+            if (errBox) { errBox.style.display = 'none'; }
+            try {
+                var d = await post('code_issue', { id: ticketId, purpose: 'activation' });
+                var code = (d.code || {});
+                var box = document.getElementById('acmCodeBox');
+                var val = document.getElementById('acmCodeValue');
+                if (val) { val.textContent = code.display || '—'; }
+                var exp = document.getElementById('acmCodeExpiry');
+                if (exp && code.expires_at) {
+                    exp.textContent = 'Expires ' + code.expires_at;
+                }
+                var issueStage = document.getElementById('acmIssueStage');
+                if (issueStage) { issueStage.hidden = true; }
+                if (box) { box.hidden = false; }
+                var copy = document.getElementById('acmCopyCode');
+                if (copy && code.display) {
+                    // Both halves are needed for the member to activate.
+                    copy.dataset.value = code.display + ' — reference ZZZZ1111';
+                }
+            } catch (e) {
+                // Issuing can fail on a terminal ticket, a closed network gate,
+                // or a burned out OTP budget. All of those are actionable, so
+                // they are shown in place rather than as a transient toast.
+                if (errBox) {
+                    errBox.textContent = e.message;
+                    errBox.style.display = '';
+                } else {
+                    acmToast(e.message, false);
+                }
+                busy(issueBtn, false);
+            }
+        });
+    }
+
+    var copyBtn = document.getElementById('acmCopyCode');
+    if (copyBtn) {
+        copyBtn.addEventListener('click', async function () {
+            var v = copyBtn.dataset.value || '';
+            try {
+                await navigator.clipboard.writeText(v);
+                acmToast('Copied.', true);
+            } catch (err) {
+                acmToast('Copy failed — select it and copy by hand.', false);
+            }
+        });
+    }
+
+    var rejectBtn = document.getElementById('acmRejectBtn');
+    var rejectReason = document.getElementById('acmRejectReason');
+    if (rejectBtn) {
+        rejectBtn.addEventListener('click', async function () {
+            var reason = (rejectReason || {}).value || '';
+            if (reason.trim().length < 3) {
+                acmToast('Write a reason first (at least 3 characters).', false);
+                if (rejectReason) { rejectReason.focus(); }
+                return;
+            }
+            if (!confirm('Reject this request?')) { return; }
+            busy(rejectBtn, true);
+            try {
+                await post('request_reject', { id: rejectBtn.getAttribute('data-request'), reason: reason });
+                window.location.reload();
+            } catch (e) {
+                acmToast(e.message, false);
+                busy(rejectBtn, false);
+            }
+        });
+    }
+
+    // Keyboard shortcuts. Deliberately NOT active while typing in a field,
+    // so a name containing "a" does not approve somebody.
+    document.addEventListener('keydown', function (e) {
+        var tag = (e.target.tagName || '').toLowerCase();
+        var typing = tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable;
+        if (typing || e.metaKey || e.ctrlKey || e.altKey) { return; }
+        if (e.key === 'a' || e.key === 'A') {
+            var primary = document.querySelector('.acm-approve[data-primary="1"]');
+            var apr = document.getElementById('acmApproveStage');
+            // Only while the approve step is still on screen; after approval
+            // "a" must not re-fire an action that has already happened.
+            if (primary && (!apr || !apr.hidden)) { e.preventDefault(); primary.click(); }
+        } else if (e.key === 'r' || e.key === 'R') {
+            if (rejectReason) { e.preventDefault(); rejectReason.focus(); }
+        } else if (e.key === '/') {
+            var search = document.querySelector('.v2-search input');
+            if (search) { e.preventDefault(); search.focus(); }
+        } else if (e.key === 'Escape') {
+            window.location.href = '/admin/acm_requests.php';
+        }
+    });
+})();
+</script>
+
+</main></div></section><section id="queue" class="pane" data-title="The office ticket queue"><h2 class="paneh">The office ticket queue</h2><div class="frame"><main id="acmMain" tabindex="-1"><div class="topbar"><div class="topbar-left"><h1>Activation queue</h1><p>Tickets the office is working, oldest and most overdue first</p></div><div class="topbar-right"><button class="icon-btn" onclick="toggleTheme()" title="Toggle theme"><i class="fa-solid fa-sun" id="themeIcon"></i></button><a class="btn bo bs" href="/admin/dashboard.php"><i class="fa-solid fa-arrow-left"></i> Dashboard</a></div></div><div class="acm-mobnav"><a class="btn bo bs" href="/admin/acm_overview.php"><i class="fa-solid fa-gauge-high"></i> Overview</a><a class="btn bp bs" href="/admin/acm_queue.php"><i class="fa-solid fa-inbox"></i> Activation queue</a><a class="btn bo bs" href="/admin/acm_requests.php"><i class="fa-solid fa-user-clock"></i> Activation requests</a><a class="btn bo bs" href="/admin/acm_device_recovery.php"><i class="fa-solid fa-mobile-screen"></i> Device recovery</a><a class="btn bo bs" href="/admin/acm_person.php"><i class="fa-solid fa-users"></i> Persons & accounts</a><a class="btn bo bs" href="/admin/acm_staff_enroll.php"><i class="fa-solid fa-id-badge"></i> Staff enrollment</a><a class="btn bo bs" href="/admin/acm_office.php"><i class="fa-solid fa-building"></i> Office</a><a class="btn bo bs" href="/admin/acm_audit.php"><i class="fa-solid fa-file-shield"></i> Monthly audit</a></div>
+
+<div class="v2-toolbar">
+    <nav class="v2-tabs" aria-label="Ticket status">
+                    <a class="v2-tab"
+               href="/admin/acm_queue.php"
+               aria-current="page">
+                All open                            </a>
+                    <a class="v2-tab"
+               href="/admin/acm_queue.php?status=submitted"
+               >
+                New                            </a>
+                    <a class="v2-tab"
+               href="/admin/acm_queue.php?status=in_review"
+               >
+                In review                            </a>
+                    <a class="v2-tab"
+               href="/admin/acm_queue.php?status=changes_requested"
+               >
+                Changes asked                            </a>
+                    <a class="v2-tab"
+               href="/admin/acm_queue.php?status=approved"
+               >
+                Approved                            </a>
+                    <a class="v2-tab"
+               href="/admin/acm_queue.php?status=code_issued"
+               >
+                Code issued                            </a>
+            </nav>
+
+    <form method="get" class="v2-search" role="search">
+        <input type="hidden" name="status" value="">
+                <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+        <input type="search" name="q" value=""
+               placeholder="Ticket number, name, or phone…" aria-label="Search tickets">
+        <button class="btn bp" type="submit">Search</button>
+            </form>
+</div>
+
+<div class="v2-toolbar" style="margin-top:calc(-1 * var(--v2-s1))">
+    <a class="v2-tab" href="/admin/acm_queue.php?mine=1"
+       style=""
+       >
+        <i class="fa-solid fa-user-check" aria-hidden="true"></i> Assigned to me
+            </a>
+    <a class="v2-tab" href="/admin/acm_queue.php?overdue=1"
+       style=""
+       >
+        <i class="fa-solid fa-clock" aria-hidden="true"></i> Past the 48 h target
+            </a>
+        <span style="flex:1"></span>
+    <a class="btn bo bs" href="/admin/acm_requests.php">
+        <i class="fa-solid fa-user-clock"></i> Member requests
+    </a>
+</div>
+
+    <div class="v2-list" role="list">
+                                <a class="v2-row" role="listitem"
+               href="/admin/acm_ticket.php?id=1"
+               aria-label="Open ticket T-2026-0041">
+                <div class="v2-avatar amharic" aria-hidden="true"></div>
+
+                <div style="min-width:0">
+                    <div class="v2-row-name amharic">ናሆም አለሙ ተስፋዬ</div>
+                    <div class="v2-row-meta v2-code">
+                        T-2026-0041                        · 23 Nov, 09:55                    </div>
+                </div>
+
+                <div class="v2-row-cell v2-col-hide">
+                    Member                                            <span class="dim" style="font-size:var(--v2-t-micro);display:block">
+                            0911224321                        </span>
+                                    </div>
+
+                <div>
+                    <span class="bg bg-info">
+                        In review                    </span>
+                </div>
+
+                <div class="v2-row-cell v2-col-hide">
+                                            <span class="bg bg-bad"
+                              title="Target: 2026-11-25 09:55:03">
+                            <i class="fa-solid fa-clock" style="font-size:.55rem"></i> 2 days late                        </span>
+                                    </div>
+
+                <div class="v2-row-cell v2-col-hide">
+                                            <span style="font-size:var(--v2-t-micro)">abebe.kebede</span>
+                                    </div>
+
+                <div style="text-align:right">
+                    <span class="btn bo bs">Open <i class="fa-solid fa-arrow-right"></i></span>
+                </div>
+            </a>
+                                <a class="v2-row" role="listitem"
+               href="/admin/acm_ticket.php?id=2"
+               aria-label="Open ticket T-2026-0042">
+                <div class="v2-avatar amharic" aria-hidden="true"></div>
+
+                <div style="min-width:0">
+                    <div class="v2-row-name amharic">ሠላም ገበረ</div>
+                    <div class="v2-row-meta v2-code">
+                        T-2026-0042                        · 27 Nov, 08:55                    </div>
+                </div>
+
+                <div class="v2-row-cell v2-col-hide">
+                    Member                                            <span class="dim" style="font-size:var(--v2-t-micro);display:block">
+                            0933445566                        </span>
+                                    </div>
+
+                <div>
+                    <span class="bg bg-w">
+                        New                    </span>
+                </div>
+
+                <div class="v2-row-cell v2-col-hide">
+                                            <span class="bg bg-n"
+                              title="Target: 2026-12-02 09:55:03">
+                            <i class="fa-solid fa-clock" style="font-size:.55rem"></i> in 5 days                        </span>
+                                    </div>
+
+                <div class="v2-row-cell v2-col-hide">
+                                            <span class="bg bg-w" style="font-size:10px">unclaimed</span>
+                                    </div>
+
+                <div style="text-align:right">
+                    <span class="btn bo bs">Open <i class="fa-solid fa-arrow-right"></i></span>
+                </div>
+            </a>
+            </div>
+
+    <div style="display:flex;align-items:center;gap:var(--v2-s3);margin-top:var(--v2-s3)">
+        <span style="font-size:var(--v2-t-micro);color:var(--v2-ink-4)">
+            Showing 1–2            of 2        </span>
+        <span style="flex:1"></span>
+                    </div>
+
+<script>
+document.addEventListener('keydown', function (e) {
+    var tag = (e.target.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || e.metaKey || e.ctrlKey) { return; }
+    if (e.key === '/') {
+        var box = document.querySelector('.v2-search input[type="search"]');
+        if (box) { e.preventDefault(); box.focus(); }
+    }
+});
+</script>
+
+</main></div></section>
+<script>
+var tabs = document.querySelectorAll('.tab[data-t]');
+var panes = document.querySelectorAll('.pane');
+function show(k) {
+  panes.forEach(function(p) { p.classList.toggle('on', p.id === k); });
+  tabs.forEach(function(t) { t.classList.toggle('on', t.dataset.t === k); });
+  window.scrollTo(0, 0);
+}
+tabs.forEach(function(t) { t.addEventListener('click', function (e) {
+  e.preventDefault(); show(t.dataset.t); history.replaceState(null, '', '#' + t.dataset.t);
+}); });
+show((location.hash || '#requests').slice(1));
+document.getElementById('themeBtn').addEventListener('click', function () {
+  var h = document.documentElement;
+  h.setAttribute('data-theme', h.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+});
+</script>
+<section id="req_done" class="pane" data-title="After approving — ticket and code appear in place"><h2 class="paneh">After approving — the ticket, then the code, in the same panel</h2><div class="frame"><main style="max-width:none;padding:0 20px 24px"><div class="v2-verify" style="grid-template-columns:minmax(0,1fr) 340px"><div style="color:var(--v2-ink-3);font-size:.8125rem;line-height:1.6;padding:8px 0"><p><strong style="color:var(--v2-ink)">This is the state the officer sees immediately after approving.</strong></p><p>Nothing navigated. The approve step was replaced by the ticket number, then the six-digit code and the request reference. The reference is shown with the code because verification is scoped to it — a code alone cannot activate anything.</p><p style="color:var(--v2-ink-4);font-size:.75rem">The code is read out once and masked thereafter; reissuing kills it. The full ticket (devices, notes, cancel, reissue) stays one click away.</p></div>he ticket and
+                 then the code appear in this panel, so the person standing at
+                 the counter never watches the officer navigate. -->
+            <div class="v2-rail-card" id="acmDecisionPanel">
+                <div id="acmApproveStage" hidden>
+                    <div class="v2-rail-title">Approve</div>
+                    <div class="v2-matchline is-ok">
+                        <i class="fa-solid fa-circle-check"
+                           style="margin-top:2px"></i>
+                        <span>Spelled exactly as registered.</span>
+                    </div>
+                    <p class="v2-rail-hint" style="margin-top:var(--v2-s3)">
+                        Creates the activation ticket. You will be offered the code
+                        next, to read out once.
+                    </p>
+                    <div class="v2-rail-actions">
+                        <button class="btn bp acm-approve" data-primary="1"
+                                data-request="1"
+                                data-person="1"
+                                data-member="1"
+                                data-guardian=""
+                                data-ref="MX7CVJNR">
+                            <i class="fa-solid fa-check"></i> Approve
+                        </button>
+                    </div>
+                </div>
+
+                <!-- revealed in place once approved -->
+                <div id="acmTicketStage">
+                    <div class="v2-rail-title" style="display:flex;align-items:center;gap:var(--v2-s2)">
+                        <i class="fa-solid fa-circle-check" style="color:var(--v2-ok)"></i>
+                        Approved
+                    </div>
+                    <p class="v2-rail-hint">
+                        Ticket <strong class="v2-code" id="acmTicketNo">T-2026-0044</strong> created.
+                    </p>
+
+                    <div id="acmIssueStage" hidden>
+                        <div class="v2-rail-title" style="font-size:var(--v2-t-small);margin-top:var(--v2-s2)">
+                            Next: the activation code
+                        </div>
+                        <p class="v2-rail-hint">
+                            The member types this in the app. It is shown once — read
+                            it out, then it is masked for good.
+                        </p>
+                        <div class="v2-rail-actions">
+                            <button class="btn bp" id="acmIssueBtn">
+                                <i class="fa-solid fa-key"></i> Issue the code
+                            </button>
+                        </div>
+                        <div class="acm-alert err" id="acmIssueError" style="display:none;margin-top:var(--v2-s2)"></div>
+                    </div>
+
+                    <div id="acmCodeBox">
+                        <div style="text-align:center;padding:var(--v2-s4) 0 var(--v2-s3)">
+                            <div style="font-size:var(--v2-t-micro);color:var(--v2-ink-4);text-transform:uppercase;letter-spacing:.08em;margin-bottom:var(--v2-s1)">
+                                Activation code
+                            </div>
+                            <div id="acmCodeValue"
+                                 style="font-size:1.875rem;font-weight:700;letter-spacing:.14em;color:var(--v2-ink);font-variant-numeric:tabular-nums">
+                                418 902
+                            </div>
+                            <div id="acmCodeExpiry" style="font-size:var(--v2-t-micro);color:var(--v2-ink-4);margin-top:var(--v2-s1)">Expires 2026-11-26 10:45</div>
+                        </div>
+                        <!-- The OTP is scoped to ONE request: verification looks the
+                             code up against this request reference, so the member
+                             cannot activate without both. Saying "read the code"
+                             and stopping would leave them stuck at the form. -->
+                        <div class="v2-claim" style="text-align:center">
+                            <div class="v2-claim-label" style="justify-content:center">
+                                <i class="fa-solid fa-hashtag"></i> Give them this reference too
+                            </div>
+                            <div class="v2-code" style="font-size:1.125rem;letter-spacing:.1em">
+                                MX7CVJNR                            </div>
+                        </div>
+                        <div class="v2-rail-actions" style="margin-top:var(--v2-s3)">
+                            <button class="btn bo" id="acmCopyCode" type="button">
+                                <i class="fa-solid fa-copy"></i> Copy code + reference
+                            </button>
+                        </div>
+                        <p class="v2-rail-hint" style="margin-top:var(--v2-s3)">
+                            Shown once. Reloading loses the code — reissue from the
+                            ticket if that happens. It works a single time, against
+                            this reference only.
+                        </p>
+                    </div>
+
+                    <div class="v2-rail-actions" style="margin-top:var(--v2-s3);border-top:1px solid var(--v2-line);padding-top:var(--v2-s3)">
+                                                    <a class="btn bp" href="/admin/acm_request.php?id=2">
+                                Review the next request <i class="fa-solid fa-arrow-right"></i>
+                            </a>
+                                                <a class="btn bo" href="/admin/acm_ticket.php?id=" id="acmTicketLink" hidden>
+                            Open the full ticket
+                        </a>
+                        <a class="btn bo" href="/admin/acm_requests.php">Back to the queue</a>
+                    </div>
+                </div>
+            </div>
+        
+                    <div class="v2-rail-card">
+                <div class="v2-rail-title">Reject</div>
+                <p class="v2-rail-hint">
+                    The member is not told why. A reason is required for the record.
+                </p>
+                <label class="v2-sr" for="acmRejectReason">Reason for rejecting</label>
+                <textarea class="inp" id="acmRejectReason" rows="2"
+                          style="width:100%;resize:vertical;margin-bottom:var(--v2-s2)"
+                          placeholder="Reason (at least 3 characters)"></textarea>
+                <div class="v2-rail-actions">
+                    <button class="btn v2-danger" id="acmRejectBtn" data-request="1">
+                        <i class="fa-solid fa-xmark"></i> Reject request
+                    </button>
+                </div>
+            </div>
+        
+        <div class="v2-rail-card">
+            <div class="v2-rail-title" style="font-size:var(--v2-t-small)">Shortcuts</div>
+            <p class="v2-rail-hint" style="margin-bottom:var(--v2-s2)">
+                <span class="v2-kbd">A</span> approve ·
+                <span class="v2-kbd">R</span> reject ·
+                <span class="v2-kbd">/</span> search ·
+                <span class="v2-kbd">Esc</span> back
+            </p>
+            <a class="btn bo" style="width:100%;justify-content:center" href="/admin/acm_requests.php">
+                <i class="fa-solid fa-arrow-left"></i> Back to the queue
+            </a>
+        </div></main></div>
+</div></section>
+</body>
+</html>

@@ -34,8 +34,9 @@ enumeration oracle and a ticket-flooding vector.
 STUDENT                    PLATFORM                         OFFICE
    |                          |                                |
    |-- 1. request activation ->| (public, rate-limited)        |
-   |   {member_code, full_name,|  creates acm_activation_request
-   |    phone}                |  -> pending_review ------------>|
+   |   {member_code, first_name,| S12: detector must find the  |
+   |    phone}                |  person or the claim is       |
+   |                          |  REFUSED (no row created) ----|
    |                          |                                |
    |                          |<-- 2. claim (office) -----------|
    |                          |<-- 3. decide: approve ---------|
@@ -73,18 +74,41 @@ Request (strict body; exactly these keys):
 | field | rule |
 |---|---|
 | `member_code` | 1–40 chars, normalized uppercase, `[A-Z0-9-]` |
-| `full_name` | 3–120 chars, compared normalized (case/space-insensitive) |
+| `first_name` | **S12: 1–120 chars, FIRST NAME ONLY.** The form no longer asks for the full name, which removes most legitimate mismatches. `full_name` is still accepted for clients that have not shipped the change. |
 | `phone` | optional; last 4 digits compared only |
-| `idempotency_key` | UUIDv4 |
+| `account_type` | `member` or `parent` |
 
-Response — **always identical**, whatever the truth:
+**S12 supersedes the "always 202" rule below.** The original design accepted
+every claim and let the office sort it out. In practice that filled the queue
+with claims that could never succeed, and each one cost a human decision. The
+platform now verifies the claim before it becomes work.
+
+Two outcomes, each with ONE body:
 
 ```
-202 { "status": "success", "data": { "request_ref": "<8-char ref>" } }
+202 { request_ref }                 claim matched exactly one registered member
+422 { code: "not_verified", ... }   anything else
 ```
 
-`404`/`409`/`200`-with-different-body are all forbidden. A distinct response for
-"no such member code" turns this endpoint into a member-directory scraper.
+The `422` is what keeps the original reasoning intact: it is identical for an
+ID that does not exist, an ID that exists but whose name does not match, an
+ambiguous match, an archived member, and a member with no person record. It
+carries no field name and no reason, so it still cannot be used to discover
+whether a member code is real. What it does NOT do is confirm that the pair was
+close — the message is the same whether the name was one letter off or
+completely unrelated.
+
+**What "matched" means** (`AcmActivationDetector` + `AmharicNameMatcher`):
+the code resolves to exactly one account, the member is `active` or `warning`,
+and the typed first name compares `exact` or `homophone` against the stored
+name. Homophone comparison folds Amharic consonant families that read the same
+(ሰ/ሠ, አ/ዓ, ጸ/ፀ, ቀ/ከ, …) while keeping the vowel order, so `ሰላም` and `ሠላም` agree
+but `አ` and `ኡ` do not. Two members agreeing means *ambiguous*: nothing is
+bound, and the officer decides.
+
+A refusal is recorded in `acm_request_refusals` with the member code and the
+kind only — never the typed name, and with no foreign keys, so a refusal does
+not leak into any member's record.
 
 Honeypot fields are rejected (the "verify-then-ignore" contract, consistent with
 the existing ACM ceremony).

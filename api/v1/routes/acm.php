@@ -193,7 +193,10 @@ $acmPath = implode('/', $acmParts);
 //   found.
 // ============================================================
 if ($acmPath === 'activate/request' && $method === 'POST') {
-    $reqBody = acmStrictBody(['member_code', 'full_name', 'phone', 'account_type'], 2048);
+    // `first_name` is the S12 field: the app now asks for the first name
+    // only, which is what removes most mismatches. `full_name` is still
+    // accepted so the already-shipped clients keep working.
+    $reqBody = acmStrictBody(['member_code', 'first_name', 'full_name', 'phone', 'account_type'], 2048);
 
     // Three independent buckets, all DB-backed and atomic. Subject for
     // the per-code bucket is a HASH so raw member codes never reach
@@ -212,10 +215,22 @@ if ($acmPath === 'activate/request' && $method === 'POST') {
     try {
         $reqResult = $requestService->submit([
             'member_code'  => $reqBody['member_code'] ?? '',
+            'first_name'   => $reqBody['first_name'] ?? '',
             'full_name'    => $reqBody['full_name'] ?? '',
             'phone'        => $reqBody['phone'] ?? null,
             'account_type' => $reqBody['account_type'] ?? 'member',
         ], (string)($_SERVER['REMOTE_ADDR'] ?? ''));
+    } catch (\SSMS\Acm\Requests\AcmClaimRefused $refused) {
+        // S12: the claim did not match a registered member, so NO request
+        // was created. The kind() is for the audit trail only -- this
+        // response is deliberately identical to every other refusal, and
+        // carries no reason, so it cannot be used to discover whether an ID
+        // is real.
+        err(
+            \SSMS\Acm\Requests\AcmClaimRefused::PUBLIC_MESSAGE,
+            422,
+            ['code' => 'not_verified']
+        );
     } catch (InvalidArgumentException $e) {
         // Field validation only. The message names the FIELD, never
         // whether the person exists -- but the route owns the wire
