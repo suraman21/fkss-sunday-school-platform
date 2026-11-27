@@ -109,7 +109,18 @@ if (!function_exists('acmStrictBody')) {
         $out = [];
         foreach ($allowed as $key) {
             $value = $input[$key] ?? null;
-            if (!is_string($value)) {
+            if ($value !== null && !is_string($value)) {
+                // A number or an object is a CLIENT bug, and the honest answer
+                // is "invalid request", not "check your details". This used to
+                // coerce to '' silently, so a portal that posted
+                // {"member_code": 17615} as a number was told the details were
+                // wrong -- pointing the member at their ID number when the
+                // fault was in the form. Type is a property of the body, not of
+                // the person, so it says nothing about whether the ID exists
+                // and does not weaken the anti-enumeration rule.
+                err('Field ' . $key . ' must be text.', 400, ['code' => 'invalid_request']);
+            }
+            if ($value === null) {
                 $out[$key] = '';
                 continue;
             }

@@ -68,6 +68,46 @@ try {
     $pageError = 'The request queue could not be loaded.';
 }
 
+// REFUSALS ARE WRITTEN BUT WERE NEVER READ.
+//
+// recordRefusal() inserts the reason for every claim that did not resolve
+// (no_member, name_mismatch, ambiguous, not_active). Nothing in the console
+// displayed it, so when a member said "it will not accept my ID" the office
+// had no way to answer -- the difference between "your ID is not on the
+// register" and "the name does not match" is exactly what the officer needs
+// to fix, and precisely what the public response must NOT reveal. Read here,
+// shown to staff only.
+$refusals = [];
+$refusalTotal = 0;
+try {
+    $rs = $pdo->prepare(
+        'SELECT member_code, refusal_kind, match_kind, COUNT(*) AS n, MAX(created_at) AS last_at'
+        . ' FROM acm_request_refusals'
+        . ' WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)'
+        . ' GROUP BY member_code, refusal_kind, match_kind'
+        . ' ORDER BY n DESC, last_at DESC LIMIT 12'
+    );
+    $rs->execute();
+    $refusals = $rs->fetchAll(PDO::FETCH_ASSOC);
+    $rt = $pdo->prepare(
+        'SELECT COUNT(*) FROM acm_request_refusals WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)'
+    );
+    $rt->execute();
+    $refusalTotal = (int)$rt->fetchColumn();
+} catch (\Throwable $e) {
+    // Migration 104 may not be applied yet; a missing refusal log must not
+    // stop the queue from rendering.
+    error_log('acm_refusal_summary_failed');
+    $refusals = [];
+}
+
+$refusalLabel = [
+    'no_member' => 'No member has that ID',
+    'name_mismatch' => 'ID found, first name does not agree',
+    'ambiguous' => 'More than one member fits that ID and name',
+    'not_active' => 'Member is not active',
+];
+
 $canDecide = AcmPolicy::can($role, AcmPolicy::RES_REQUEST, 'approve');
 $statusLabel = [
     'pending_review' => 'Pending',
@@ -107,6 +147,39 @@ acm_chrome_open(
     'requests'
 );
 ?>
+
+<?php if ($refusalTotal > 0): ?>
+<div class="cd" style="margin-bottom:var(--v2-s4)">
+    <div class="ct"><i class="fa-solid fa-ban"></i> Claims turned away (last 30 days) — <?= (int)$refusalTotal ?></div>
+    <p style="font-size:.74rem;color:var(--dim);margin-bottom:.6rem">
+        Each row is a person who tried to activate and did not match the register.
+        The member is never told which check failed — you are, so you can fix it.
+    </p>
+    <div class="tw"><table>
+        <thead><tr><th>Member ID typed</th><th>What failed</th><th>Name agreement</th><th>Times</th><th>Last</th><th></th></tr></thead>
+        <tbody>
+        <?php foreach ($refusals as $r): ?>
+            <tr>
+                <td><span class="bg bg-info"><?= e((string)$r['member_code']) ?></span></td>
+                <td><?= e($refusalLabel[(string)$r['refusal_kind']] ?? (string)$r['refusal_kind']) ?></td>
+                <td><?= e((string)$r['match_kind']) ?></td>
+                <td><?= (int)$r['n'] ?></td>
+                <td><?= e($ago((string)$r['last_at'])) ?></td>
+                <td>
+                    <?php if ((string)$r['refusal_kind'] === 'no_member'): ?>
+                        <a href="/admin/acm_person.php?q=<?= urlencode((string)$r['member_code']) ?>">Look up</a>
+                    <?php elseif ((string)$r['refusal_kind'] === 'not_active'): ?>
+                        <a href="/admin/dashboard.php?section=members">Open register</a>
+                    <?php else: ?>
+                        <span style="color:var(--dim)">name spelling</span>
+                    <?php endif; ?>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table></div>
+</div>
+<?php endif; ?>
 
 <?php if ($pageError !== ''): ?>
     <div class="acm-alert err">

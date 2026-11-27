@@ -25,6 +25,10 @@ if (!in_array($role, AcmPolicy::consoleRoles(), true)) {
 }
 
 $canCreate = AcmPolicy::can($role, 'person', 'create');
+// Set when the office arrived from a register match: the form starts from what
+// the register already knows, so they correct it rather than retype it.
+$prefill = null;
+$prefillMemberId = (int)($_GET['member_id'] ?? 0);
 $canEdit = AcmPolicy::can($role, 'person', 'edit');
 $canTicket = AcmPolicy::can($role, 'ticket', 'create');
 // S7: per-account suspend/reactivate (member/parent rows only;
@@ -45,6 +49,7 @@ if ($personId > 0) {
 }
 
 $results = [];
+$registerMatches = [];
 $person = null;
 $accounts = [];
 $personTickets = [];
@@ -56,8 +61,54 @@ try {
     $persons = new AcmPersonService($pdo);
     $tickets = new AcmTicketService($pdo, $persons);
     $openCount = (int)($tickets->overviewStats($role, $actorId)['open'] ?? 0);
+    if ($mode === 'new' && $prefillMemberId > 0) {
+        $pf = $pdo->prepare(
+            'SELECT id, member_code, full_name_am, full_name_en, student_name,'
+            . ' baptismal_name, father_name, grandfather_name, gender, date_of_birth,'
+            . ' phone_primary, phone_number, status'
+            . ' FROM members WHERE id = :id LIMIT 1'
+        );
+        $pf->execute([':id' => $prefillMemberId]);
+        $row = $pf->fetch(PDO::FETCH_ASSOC);
+        // A blank Amharic name is not a valid prefill (the form requires it);
+        // fall back to the student name the register also holds.
+        if (is_array($row)) {
+            if (trim((string)($row['full_name_am'] ?? '')) === '') {
+                $row['full_name_am'] = (string)($row['student_name'] ?? '');
+            }
+            $prefill = $row;
+        }
+    }
     if ($mode === 'search' && $q !== '') {
         $results = $persons->search($q);
+        // THE REGISTER IS THE DIRECTORY OF PEOPLE. Most members have a
+        // `members` row and no acm_persons row yet, so a search that only
+        // looks at acm_persons cannot find the person the office is holding a
+        // paper file for. This is a READ of the register, on the same screen:
+        // it shows what the register holds and offers the existing, audited
+        // "Register person" form prefilled from it. No new write path.
+        $stmt = $pdo->prepare(
+            'SELECT m.id, m.member_code, m.student_name, m.full_name_am,'
+            . ' m.father_name, m.grandfather_name, m.baptismal_name, m.gender,'
+            . ' m.date_of_birth, m.status, m.current_section, m.is_teacher, m.is_staff,'
+            . ' m.phone_primary, m.phone_number,'
+            . ' (SELECT p.id FROM acm_persons p WHERE p.member_id = m.id ORDER BY p.id ASC LIMIT 1) AS person_id'
+            . ' FROM members m'
+            . " WHERE m.status <> 'archived' AND ("
+            // One placeholder per occurrence: config.php sets
+            // ATTR_EMULATE_PREPARES false, so a reused named parameter is
+            // HY093 at runtime (pinned by test_pdo_repeated_named_placeholders).
+            . ' m.student_name LIKE :q1 OR m.full_name_am LIKE :q2 OR m.father_name LIKE :q3'
+            . ' OR m.grandfather_name LIKE :q4 OR m.member_code LIKE :q5'
+            . ' OR m.phone_number LIKE :q6 OR m.phone_primary LIKE :q7)'
+            . ' ORDER BY m.student_name ASC LIMIT 20'
+        );
+        $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], mb_substr($q, 0, 60)) . '%';
+        $stmt->execute([
+            ':q1' => $like, ':q2' => $like, ':q3' => $like, ':q4' => $like,
+            ':q5' => $like, ':q6' => $like, ':q7' => $like,
+        ]);
+        $registerMatches = $stmt->fetchAll(PDO::FETCH_ASSOC);
     } elseif ($mode === 'view') {
         $person = $persons->find($personId);
         if ($person === null) {
@@ -104,6 +155,53 @@ acm_chrome_open('persons', 'Persons & accounts', 'One human, independently manag
         </a>
     <?php endif; ?>
 </div>
+<?php if ($q !== '' && !empty($registerMatches)): ?>
+<div class="cd">
+    <div class="ct"><i class="fa-solid fa-book"></i> In the member register</div>
+    <p style="font-size:.74rem;color:var(--dim);margin-bottom:.6rem">
+        These people are registered but do not all have an accounts-office record yet.
+        Someone with an account opens it; someone without one can be registered from
+        what the register already holds.
+    </p>
+    <div class="tw"><table>
+        <thead><tr><th>Code</th><th>Name</th><th>Father</th><th>Section</th><th>Status</th><th>Account</th><th></th></tr></thead>
+        <tbody>
+        <?php foreach ($registerMatches as $rm): ?>
+            <?php
+            $hasPerson = !empty($rm['person_id']);
+            $roles = [];
+            if ((int)($rm['is_teacher'] ?? 0) === 1) { $roles[] = 'teacher'; }
+            if ((int)($rm['is_staff'] ?? 0) === 1) { $roles[] = 'staff'; }
+            ?>
+            <tr>
+                <td><span class="bg bg-info"><?= e((string)($rm['member_code'] ?? '—')) ?></span></td>
+                <td><span class="amharic"><?= e((string)($rm['full_name_am'] ?? $rm['student_name'] ?? '')) ?></span>
+                    <?php if ($roles !== []): ?>
+                        <span style="font-size:.62rem;color:var(--dim)"> · <?= e(implode(', ', $roles)) ?></span>
+                    <?php endif; ?>
+                </td>
+                <td><?= e((string)($rm['father_name'] ?? '—')) ?></td>
+                <td><?= e((string)($rm['current_section'] ?? '—')) ?></td>
+                <td><?= e((string)($rm['status'] ?? '—')) ?></td>
+                <td>
+                    <?php if ($hasPerson): ?>
+                        <a href="/admin/acm_person.php?id=<?= (int)$rm['person_id'] ?>">#<?= (int)$rm['person_id'] ?></a>
+                    <?php else: ?>
+                        <span style="color:var(--dim)">none yet</span>
+                    <?php endif; ?>
+                </td>
+                <td>
+                    <?php if (!$hasPerson && $canCreate): ?>
+                        <a href="/admin/acm_person.php?new=1&amp;member_id=<?= (int)$rm['id'] ?>">Register</a>
+                    <?php endif; ?>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table></div>
+</div>
+<?php endif; ?>
+
 <div class="cd">
     <div class="ct"><i class="fa-solid fa-users"></i> Results</div>
     <?php if ($q === ''): ?>
@@ -161,17 +259,25 @@ acm_chrome_open('persons', 'Persons & accounts', 'One human, independently manag
     <div class="acm-alert warn">Only the Accounts Office can register persons.</div>
     <?php else: ?>
     <form id="acmPersonForm" class="acm-form" onsubmit="return false">
-        <div><label class="flbl" for="f_am">Full name — Amharic *</label><input class="inp" id="f_am" name="full_name_am" required maxlength="150"></div>
-        <div><label class="flbl" for="f_en">Full name — English</label><input class="inp" id="f_en" name="full_name_en" maxlength="150"></div>
-        <div><label class="flbl" for="f_bap">Baptismal name</label><input class="inp" id="f_bap" name="baptismal_name" maxlength="150"></div>
-        <div><label class="flbl" for="f_father">Father name</label><input class="inp" id="f_father" name="father_name" maxlength="150"></div>
-        <div><label class="flbl" for="f_gender">Gender</label><select class="inp" id="f_gender" name="gender"><option value="">—</option><option value="male">Male</option><option value="female">Female</option></select></div>
-        <div><label class="flbl" for="f_dob">Birth date (GC)</label><input class="inp" id="f_dob" name="date_of_birth" type="date"></div>
-        <div><label class="flbl" for="f_phone">Phone</label><input class="inp" id="f_phone" name="phone" maxlength="30" placeholder="09XXXXXXXX"></div>
+        <?php if (is_array($prefill)): ?>
+        <div class="full acm-alert ok" style="margin-bottom:.2rem">
+            <i class="fa-solid fa-book"></i>
+            Started from the member register
+            (<span class="bg bg-info"><?= e((string)($prefill['member_code'] ?? '')) ?></span>).
+            Check the name before saving — the register is the source of truth.
+        </div>
+        <?php endif; ?>
+        <div><label class="flbl" for="f_am">Full name — Amharic *</label><input class="inp" id="f_am" name="full_name_am" required maxlength="150" value="<?= e((string)($prefill['full_name_am'] ?? '')) ?>"></div>
+        <div><label class="flbl" for="f_en">Full name — English</label><input class="inp" id="f_en" name="full_name_en" maxlength="150" value="<?= e((string)($prefill['full_name_en'] ?? '')) ?>"></div>
+        <div><label class="flbl" for="f_bap">Baptismal name</label><input class="inp" id="f_bap" name="baptismal_name" maxlength="150" value="<?= e((string)($prefill['baptismal_name'] ?? '')) ?>"></div>
+        <div><label class="flbl" for="f_father">Father name</label><input class="inp" id="f_father" name="father_name" maxlength="150" value="<?= e((string)($prefill['father_name'] ?? '')) ?>"></div>
+        <div><label class="flbl" for="f_gender">Gender</label><select class="inp" id="f_gender" name="gender"><option value="">—</option><option value="male"<?= ($prefill['gender'] ?? '') === 'male' ? ' selected' : '' ?>>Male</option><option value="female"<?= ($prefill['gender'] ?? '') === 'female' ? ' selected' : '' ?>>Female</option></select></div>
+        <div><label class="flbl" for="f_dob">Birth date (GC)</label><input class="inp" id="f_dob" name="date_of_birth" type="date" value="<?= e((string)($prefill['date_of_birth'] ?? '')) ?>"></div>
+        <div><label class="flbl" for="f_phone">Phone</label><input class="inp" id="f_phone" name="phone" maxlength="30" placeholder="09XXXXXXXX" value="<?= e((string)($prefill['phone_primary'] ?? $prefill['phone_number'] ?? '')) ?>"></div>
         <div><label class="flbl" for="f_email">Email</label><input class="inp" id="f_email" name="email" type="email" maxlength="100"></div>
         <div><label class="flbl" for="f_doctype">ID document type</label><input class="inp" id="f_doctype" name="id_doc_type" maxlength="40" placeholder="Kebele ID / Passport / …"></div>
         <div><label class="flbl" for="f_docref">ID document ref</label><input class="inp" id="f_docref" name="id_doc_ref" maxlength="100"></div>
-        <div><label class="flbl" for="f_member">Linked member ID (members.id)</label><input class="inp" id="f_member" name="member_id" inputmode="numeric" placeholder="optional"></div>
+        <div><label class="flbl" for="f_member">Linked member ID (members.id)</label><input class="inp" id="f_member" name="member_id" inputmode="numeric" placeholder="optional" value="<?= is_array($prefill) ? (int)($prefill['id'] ?? 0) : '' ?>"></div>
         <div><label class="flbl" for="f_guardian">Linked guardian ID (guardians.id)</label><input class="inp" id="f_guardian" name="guardian_id" inputmode="numeric" placeholder="optional"></div>
         <div class="full"><label class="flbl" for="f_notes">Notes</label><textarea class="inp" id="f_notes" name="notes" rows="2" maxlength="2000"></textarea></div>
         <div class="acm-btn-row full"><button class="btn bp" id="acmPersonSave"><i class="fa-solid fa-floppy-disk"></i> Save person</button></div>

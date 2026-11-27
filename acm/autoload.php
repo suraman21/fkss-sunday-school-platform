@@ -70,9 +70,11 @@ if (!defined('SSMS_ACM_AUTOLOAD')) {
     // S10 staff enrollment request queue.
     require_once __DIR__ . '/src/Enrollment/StaffEnrollmentRequestService.php';
     // S11 self-service activation requests. Order matters: the
-    // request service has no dependencies beyond PDO; the decision
-    // service names AcmTicketService and AcmPersonService, which are
-    // already loaded above; the directory is standalone.
+    // request service names AcmPersonService (it derives a person row for a
+    // verified claim, so activation works for the whole register rather than
+    // only for members somebody registered by hand); the decision service
+    // names AcmTicketService and AcmPersonService, which are already loaded
+    // above; the directory is standalone.
     require_once __DIR__ . '/src/Requests/AuthenticatorDirectory.php';
     require_once __DIR__ . '/src/Requests/AcmActivationRequestService.php';
     require_once __DIR__ . '/src/Requests/AcmClaimRefused.php';

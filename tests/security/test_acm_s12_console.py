@@ -563,3 +563,140 @@ class DetectorColumnContract(unittest.TestCase):
         # guardians live in member_guardians (sql/069); `members` has no
         # guardian_id, so reading it there yields null forever.
         self.assertIn("member_guardians", self.detector)
+
+
+class MemberCanActivateWithoutAPreRegisteredPerson(unittest.TestCase):
+    """The activation route must work for the whole register, not a subset.
+
+    WHY THIS EXISTS (production, Ref #868 follow-up)
+        Detection used to refuse a claim whose member had no acm_persons row
+        (`no_account`). The ONLY writer of that row was the manual
+        person_create in the persons console, and migration 079 creates the
+        table while explicitly leaving the register untouched -- no backfill
+        exists anywhere. So a member could match the register perfectly and
+        still be refused, forever, unless an officer had already registered
+        them by hand. Every member is registered and none have accounts by
+        default, so this refused most of the membership.
+    """
+
+    def setUp(self):
+        self.detector = strip_comments(read(ACM / "Requests" / "AcmActivationDetector.php"))
+        self.service = strip_comments(read(ACM / "Requests" / "AcmActivationRequestService.php"))
+        self.persons = strip_comments(read(ACM / "Identity" / "AcmPersonService.php"))
+
+    def test_missing_person_row_is_not_a_refusal(self):
+        # The NO_ACCOUNT constant may remain for the audit vocabulary, but the
+        # detector must not return it: a real member is RESOLVED.
+        body = self.detector.split("$personId = $this->personIdFor($member);")[1]
+        self.assertNotIn(
+            "self::NO_ACCOUNT", body.split("return [")[1] if "return [" in body else "",
+            "a missing person row must not refuse a registered member",
+        )
+        self.assertIn("self::RESOLVED", body)
+
+    def test_service_creates_the_person_link_for_a_resolved_claim(self):
+        self.assertIn("ensureForMember", self.service)
+        # It must key off the detected member, not off anything the caller sent.
+        self.assertIn("$detection['member_id']", self.service)
+
+    def test_person_link_is_idempotent_and_race_safe(self):
+        # Returns an existing row untouched; a concurrent claim converges on
+        # the winner instead of creating a second person for one member.
+        self.assertIn("public function ensureForMember", self.persons)
+        self.assertIn("personIdForMember", self.persons)
+        self.assertIn("catch (\\PDOException $race)", self.persons)
+
+    def test_person_row_is_derived_from_the_register(self):
+        # The register is the directory of people; the row is built from it
+        # rather than asking the member to retype what the school already has.
+        body = self.persons.split("public function ensureForMember")[1]
+        body = body.split("public function personIdForMember")[0]
+        for column in ("full_name_am", "father_name", "baptismal_name",
+                       "date_of_birth", "phone_primary", "member_id"):
+            self.assertIn(column, body, column)
+
+    def test_link_failure_never_turns_a_claim_into_a_refusal(self):
+        body = self.service.split("$personId = null;")[1].split("$phoneLast4")[0]
+        self.assertIn("catch (\\Throwable", body)
+
+
+class NonStringFieldsAreReportedNotSwallowed(unittest.TestCase):
+    """A number posted where text belongs is a client bug and must say so.
+
+    `acmStrictBody` coerced any non-string to '' silently, so a portal that
+    posted {"member_code": 17615} was told "Check the details you entered" --
+    pointing the member at their ID when the fault was the form. The 400 is
+    about the body's type, so it says nothing about whether the ID exists and
+    does not weaken the anti-enumeration rule.
+    """
+
+    def test_non_string_field_is_rejected_with_a_400(self):
+        route = strip_comments(read(ROOT / "api" / "v1" / "routes" / "acm.php"))
+        body = route.split("function acmStrictBody")[1].split("if (!($pdo instanceof PDO))")[0]
+        self.assertIn("must be text", body)
+        self.assertIn("400", body)
+        # The non-string branch must REJECT; it must not fall through to the
+        # default-assignment branch. (`$out[$key] = ''` is still correct for an
+        # ABSENT field -- optional fields keep defaulting -- so the assertion
+        # is about the wrong-value branch specifically.)
+        wrong_value = body.split("!is_string($value)")[1].split("$value === null")[0]
+        self.assertIn("err(", wrong_value)
+        self.assertNotIn("$out[$key]", wrong_value)
+
+    def test_absent_optional_field_still_defaults(self):
+        # null is not a type error: optional fields keep their '' default so
+        # existing clients that omit them are unaffected.
+        route = strip_comments(read(ROOT / "api" / "v1" / "routes" / "acm.php"))
+        body = route.split("function acmStrictBody")[1].split("if (!($pdo instanceof PDO))")[0]
+        self.assertIn("$value === null", body)
+
+
+class RefusalsAreVisibleToStaff(unittest.TestCase):
+    """recordRefusal() wrote a reason that nothing ever read.
+
+    The public response must stay reasonless (anti-enumeration), but the
+    OFFICE needs the reason: "no member has that ID" and "the first name does
+    not agree" are different fixes for the member standing in front of them.
+    """
+
+    def test_requests_page_reads_the_refusal_log(self):
+        page = read(ADMIN / "acm_requests.php")
+        self.assertIn("acm_request_refusals", page)
+        for kind in ("no_member", "name_mismatch", "ambiguous", "not_active"):
+            self.assertIn(kind, page, kind)
+
+    def test_missing_refusal_table_does_not_break_the_queue(self):
+        page = read(ADMIN / "acm_requests.php")
+        body = page.split("acm_request_refusals")[0]
+        self.assertIn("try {", body)
+
+
+class RegisterSearchReachesUnlinkedMembers(unittest.TestCase):
+    """The office must find a person the register knows but ACM does not.
+
+    Most members have a `members` row and no acm_persons row, so a search that
+    only queried acm_persons could not find the person whose paper file is on
+    the desk. The register is read on the same screen and feeds the existing,
+    audited "Register person" form -- no new write path.
+    """
+
+    def setUp(self):
+        self.page = read(ADMIN / "acm_person.php")
+
+    def test_search_falls_through_to_the_register(self):
+        self.assertIn("FROM members m", self.page)
+        self.assertIn("registerMatches", self.page)
+
+    def test_archived_members_are_excluded(self):
+        self.assertIn("m.status <> 'archived'", self.page)
+
+    def test_register_match_links_to_the_existing_audited_form(self):
+        # It prefills person_create; it does not invent a second writer.
+        self.assertIn("member_id=", self.page)
+        self.assertIn("person_create", self.page)
+
+    def test_register_query_does_not_reuse_a_named_placeholder(self):
+        # ATTR_EMULATE_PREPARES is false: :q repeated is HY093 at runtime.
+        block = self.page.split("FROM members m")[1].split("fetchAll")[0]
+        self.assertNotIn(":q ", block)
+        self.assertIn(":q1", block)
