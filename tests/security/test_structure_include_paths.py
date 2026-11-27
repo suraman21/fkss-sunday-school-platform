@@ -32,6 +32,20 @@ DYNAMIC_ALLOWLIST = {
     # Finite browser registry selects the handler; no request-supplied file path.
     "browser_page.php": 1,
     "admin/api_export_members.php": 1,
+    # 2026-11-27: Members App foundation. Three variable includes, each
+    # reviewed individually:
+    #   Config  - bootstrap requires config/app.php by absolute MEMBERS_ROOT
+    #             path; no request input, file is a fixed literal upstream.
+    #   View    - template path is validated against a slug regex and
+    #             canonicalised inside the views directory BEFORE the require,
+    #             so "../../etc/passwd" cannot reach it (proven by a test).
+    #   Connection - reuses the repository's existing config.php by absolute
+    #             REPO_ROOT path, guarded by is_file().
+    # A folder move breaks loudly (bootstrap fatal / is_file guard), never
+    # silently.
+    "members/app/Core/Config.php": 1,
+    "members/app/Http/Support/View.php": 1,
+    "members/app/Infrastructure/Database/Connection.php": 1,
     "admin/backend/reporting/ReportExportService.php": 1,
     # 2026-10-28: publication reuses central release loading; two redundant
     # variable includes were removed. Remaining root/core paths reviewed.
@@ -59,6 +73,15 @@ DYNAMIC_ALLOWLIST = {
     "api/v1/core/database.php": 4,
     "api/v1/index.php": 1,
     "api/v1/routes/attendance.php": 2,
+    # 2026-11-27: /learning and /my each load one optional service class by a
+    # repo-root anchored path, dirname(__DIR__, 3) . '/admin/backend/services/
+    # X.php', because composer's psr-4 map covers SSMS\Acm only and cannot
+    # autoload App\Services. The filename is a fixed literal, not request
+    # input; the require is guarded by is_file() and the caller re-checks
+    # class_exists() before use, so a folder move fails loudly with a 503
+    # rather than silently running without the service.
+    "api/v1/routes/learning.php": 1,
+    "api/v1/routes/my.php": 1,
     "backend/api/mezmur.php": 3,
     "backend/config/loader.php": 2,
     # 2026-11-13: 5th link is require_once $_telegramEnvPath — a
