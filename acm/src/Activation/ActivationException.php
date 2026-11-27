@@ -38,6 +38,11 @@ class ActivationException extends \InvalidArgumentException
     public const TICKET_STATE        = 'ticket_state';
     public const WEAK_PASSWORD       = 'weak_password';
     public const INVALID_REQUEST     = 'invalid_request';
+    // The ticket's person has no member code, so there is nothing to bind as
+    // the sign-in identifier. Distinct from TICKET_STATE because the member's
+    // action is different: this one needs the REGISTER fixed by the office,
+    // not a retry.
+    public const MEMBER_CODE_MISSING = 'member_code_missing';
     // S4 device vocabulary (design §D3.6/D4.2; DEVICE_CONFLICT is
     // the never-silent-overwrite verdict for a changed key).
     public const CHALLENGE_FAILED    = 'challenge_failed';

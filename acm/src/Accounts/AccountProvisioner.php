@@ -526,7 +526,15 @@ class AccountProvisioner
         return substr($email, 0, 100);
     }
 
-    private function memberCode(int $id): string
+    /**
+     * The register's member code, or '' when the member has none.
+     *
+     * Public because credential establishment must bind the SAME code this
+     * class uses to derive the username -- if the two ever read the code from
+     * different places, the account would be created under one identifier and
+     * authenticated by another.
+     */
+    public function memberCode(int $id): string
     {
         $stmt = $this->pdo->prepare('SELECT member_code FROM members WHERE id = :id LIMIT 1');
         $stmt->execute([':id' => $id]);

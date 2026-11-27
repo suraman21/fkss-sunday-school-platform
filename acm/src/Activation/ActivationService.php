@@ -860,7 +860,32 @@ class ActivationService implements ActivationServiceContract
                 ]);
                 $username = (string)$chosenUsername;
             } else {
-                $directory->registerMemberCode($userId, (string)$ticket['member_code']);
+                // THE MEMBER CODE IS NOT ON THE TICKET.
+                //
+                // `acm_activation_tickets` has no member_code column -- not in
+                // sql/079, and no migration adds one. $ticket comes from
+                // getForUpdate() = `SELECT * FROM acm_activation_tickets`, so
+                // `(string)$ticket['member_code']` was the empty string, and
+                // AuthenticatorDirectory::register() refuses an empty
+                // identifier with "That identifier cannot be used to sign in."
+                //
+                // The member code lives on the register, reachable through the
+                // ticket's member_id. Reading it from there is also the only
+                // correct source: the register owns the code, and it is the
+                // thing the member types to sign in.
+                $identifier = $this->memberCodeForTicket($ticket);
+                if ($identifier === '') {
+                    // Fail honestly rather than provisioning an account nobody
+                    // can sign in to. This used to be impossible to reach
+                    // because the empty string always threw first, with a
+                    // message that accused the identifier of being taken.
+                    throw new ActivationException(
+                        ActivationException::MEMBER_CODE_MISSING, 409,
+                        'This ticket has no member code to use as a sign-in identifier. '
+                        . 'Ask the office to check the member record.'
+                    );
+                }
+                $directory->registerMemberCode($userId, $identifier);
             }
             if ($username === null) {
                 throw new RuntimeException('Account was created but could not be reloaded.');
@@ -1664,6 +1689,22 @@ class ActivationService implements ActivationServiceContract
             'user_id' => (int)$row['user_id'],
             'operation' => 'staff_enroll',
         ];
+    }
+
+    /**
+     * The register's member_code for this ticket, or '' when there is none.
+     *
+     * `members` owns the code. A ticket carries member_id, not the code,
+     * because the register can correct it and a ticket must not hold a stale
+     * copy. Delegated to AccountProvisioner so the account's username and its
+     * sign-in identifier can never be derived from different sources.
+     *
+     * @param array<string,mixed> $ticket
+     */
+    private function memberCodeForTicket(array $ticket): string
+    {
+        $memberId = isset($ticket['member_id']) ? (int)$ticket['member_id'] : 0;
+        return $memberId > 0 ? trim($this->provisioner->memberCode($memberId)) : '';
     }
 
     private function grantByFingerprint(string $fingerprint): ?array
