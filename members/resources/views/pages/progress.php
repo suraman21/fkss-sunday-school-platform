@@ -1,13 +1,12 @@
 <?php
 /**
- * Progress page.
+ * progress page — placeholder until its feature lands.
+ * The feature registry in partials/placeholder.php decides what is said.
  */
 
 declare(strict_types=1);
 
 echo (new SSMS\Members\Http\Support\View())->render('partials/placeholder', [
-    'heading' => 'ውጤት · Progress',
-    'detail' => 'How far you have come, measured from your own completed work.',
-    'title' => 'ውጤት · Progress',
+    'feature' => 'progress',
     'active' => 'progress',
 ]);

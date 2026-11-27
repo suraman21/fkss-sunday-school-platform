@@ -52,6 +52,11 @@ $pages = [
     '/tasks' => 'pages/tasks',
     '/progress' => 'pages/progress',
     '/exam-prep' => 'pages/exam_prep',
+    // In the prototype these were first-class pages. They are registered here
+    // so the navigation cannot link to a 404, and so the feature list in
+    // partials/placeholder.php has a page for every entry.
+    '/assistant' => 'pages/assistant',
+    '/notifications' => 'pages/notifications',
     '/account' => 'pages/account',
 ];
 

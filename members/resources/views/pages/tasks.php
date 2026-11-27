@@ -1,13 +1,12 @@
 <?php
 /**
- * Tasks page.
+ * tasks page — placeholder until its feature lands.
+ * The feature registry in partials/placeholder.php decides what is said.
  */
 
 declare(strict_types=1);
 
 echo (new SSMS\Members\Http\Support\View())->render('partials/placeholder', [
-    'heading' => 'ተግባሮች · Tasks',
-    'detail' => 'Work your teachers have set, and what is still outstanding.',
-    'title' => 'ተግባሮች · Tasks',
+    'feature' => 'tasks',
     'active' => 'tasks',
 ]);

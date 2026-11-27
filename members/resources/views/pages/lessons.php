@@ -1,13 +1,12 @@
 <?php
 /**
- * Lessons page.
+ * lessons page — placeholder until its feature lands.
+ * The feature registry in partials/placeholder.php decides what is said.
  */
 
 declare(strict_types=1);
 
 echo (new SSMS\Members\Http\Support\View())->render('partials/placeholder', [
-    'heading' => 'ትምህርቶች · Lessons',
-    'detail' => 'Your subjects, units and lessons in the order the school sets them.',
-    'title' => 'ትምህርቶች · Lessons',
+    'feature' => 'lessons',
     'active' => 'lessons',
 ]);

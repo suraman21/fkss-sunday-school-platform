@@ -1,13 +1,12 @@
 <?php
 /**
- * Unit quiz page.
+ * quiz page — placeholder until its feature lands.
+ * The feature registry in partials/placeholder.php decides what is said.
  */
 
 declare(strict_types=1);
 
 echo (new SSMS\Members\Http\Support\View())->render('partials/placeholder', [
-    'heading' => 'ፈተና · Unit quiz',
-    'detail' => 'The quiz that unlocks the next unit in this subject.',
-    'title' => 'ፈተና · Unit quiz',
+    'feature' => 'quiz',
     'active' => 'lessons',
 ]);
