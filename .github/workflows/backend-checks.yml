@@ -291,6 +291,35 @@ jobs:
           fi
           echo "No tests skipped."
 
+      - name: PDO named placeholders (real MariaDB)
+        # The activation queue failed with "temporarily unavailable" and was
+        # cleared as a server problem, because the query passed under PDO_PGSQL
+        # in a local harness. It was a dialect problem: with
+        # ATTR_EMULATE_PREPARES => false, PDO rewrites each named parameter to
+        # its own positional '?', so a name used four times needs four values.
+        # Given one, MariaDB answers HY093 from execute(). PDO_PGSQL and
+        # PDO_SQLITE never complain, so only this engine can catch it.
+        #
+        # This runs the shipped services against the MariaDB service above and
+        # asserts both that the old statement shape really does fail here and
+        # that the fixed one returns rows. It creates and drops its own
+        # _pdoprobe_* tables and writes to nothing else.
+        env:
+          SSMS_DB_NAME: ssms_comm_e2e
+        run: |
+          set -uo pipefail
+          php tests/e2e/acm_named_placeholder_mariadb.php 2>&1 | tee /tmp/pdoprobe.out
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" -eq 3 ]; then
+            echo "::error::the named-placeholder proof could not run; it must not be skipped."
+            exit 1
+          fi
+          grep -q 'NAMED-PLACEHOLDER PROOF: PASS' /tmp/pdoprobe.out || {
+            echo "::error::the named-placeholder proof did not pass."
+            exit 1
+          }
+          [ "$rc" -eq 0 ] || exit 1
+
       - name: F-20 idempotency lifecycle (real MariaDB)
         # The "Create test databases" step above provisions ssms_idem_e2e and
         # its comment names this harness as the reason - but no step ever ran
