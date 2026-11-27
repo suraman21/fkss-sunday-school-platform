@@ -15,12 +15,25 @@
  * THE TWO PROPERTIES EVERY METHOD HERE PRESERVES
  *
  *   1. INDISTINGUISHABLE RESPONSES (anti-enumeration).
- *      submit() returns the same shape and the same status for a
- *      member code that exists, one that does not, and one whose
- *      name does not match. A caller must not be able to learn
- *      whether a member code is real by watching the response.
- *      There is deliberately no branch here that returns "not
- *      found".
+ *      S12 CHANGED THIS, DELIBERATELY, AND HERE IS WHY.
+ *
+ *      The original rule was: accept every well-formed claim and return
+ *      the same answer, so that a caller cannot learn whether a member
+ *      code is real. That protected the register but filled the review
+ *      queue with claims that could never be matched -- unregistered IDs
+ *      and wrong names became "pending review" items the office had to
+ *      dismiss one by one.
+ *
+ *      Detection now happens BEFORE the insert. A claim either resolves to
+ *      exactly one registered member whose name agrees, or it is refused
+ *      and NOTHING is written. See AcmActivationDetector.
+ *
+ *      The anti-enumeration property is preserved at the layer where it
+ *      belongs: the refusal carries no reason. `AcmClaimRefused` has a
+ *      single public message and an empty reason, the route maps every
+ *      kind to one wire response, and the reason survives only in the
+ *      server-side audit trail. A caller learns "refused", never "that ID
+ *      exists but the name is wrong".
  *
  *   2. EXACTLY-ONCE ROWS UNDER CONCURRENCY.
  *      Two identical requests landing in the same microsecond must
@@ -47,6 +60,7 @@ use InvalidArgumentException;
 use PDO;
 use PDOException;
 use RuntimeException;
+use SSMS\Acm\Identity\AmharicNameMatcher;
 
 final class AcmActivationRequestService
 {
@@ -129,6 +143,14 @@ final class AcmActivationRequestService
      * @return array{request_ref:string,created:bool}
      * @throws InvalidArgumentException on a malformed body (422 at the route)
      */
+    /**
+     * Accept a claim, but only if it resolves to a registered member.
+     *
+     * @throws InvalidArgumentException malformed input (a client bug)
+     * @throws AcmClaimRefused          well-formed but not a registered
+     *                                  member, or the name does not agree.
+     *                                  Carries NO reason for the caller.
+     */
     public function submit(array $input, ?string $originIp = null): array
     {
         $accountType = (string)($input['account_type'] ?? 'member');
@@ -142,9 +164,29 @@ final class AcmActivationRequestService
             throw new InvalidArgumentException('Enter your member ID number.');
         }
 
-        $nameKey = self::normalizeName((string)($input['full_name'] ?? ''));
-        if ($nameKey === '' || mb_strlen($nameKey) < 3 || mb_strlen($nameKey) > 120) {
-            throw new InvalidArgumentException('Enter your full name as registered.');
+        // The app now asks for the FIRST name only. `full_name` is still
+        // accepted (the shipped app sends it, and the API contract is not
+        // broken for existing clients); whichever arrives is reduced to the
+        // first word before comparison, because that is what the register is
+        // matched on.
+        $typedName = trim((string)($input['first_name'] ?? ($input['full_name'] ?? '')));
+        $firstName = AmharicNameMatcher::firstName($typedName);
+        if ($firstName === '' || mb_strlen($firstName) < 2 || mb_strlen($firstName) > 60) {
+            throw new InvalidArgumentException('Enter your first name as registered.');
+        }
+        $nameKey = self::normalizeName($typedName);
+        if ($nameKey === '') {
+            throw new InvalidArgumentException('Enter your first name as registered.');
+        }
+
+        // DETECT FIRST. No match means no request: a claim that cannot be
+        // resolved must not become work for the office.
+        $detector = new AcmActivationDetector($this->pdo);
+        $detection = $detector->detect($memberCode, $firstName, $accountType);
+        if ($detection['kind'] !== AcmActivationDetector::RESOLVED) {
+            // Audit the reason server-side only. The caller gets no reason.
+            $this->recordRefusal($memberCode, $accountType, $detection, $originIp);
+            throw new AcmClaimRefused($detection['kind']);
         }
 
         $phoneLast4 = self::lastFour(isset($input['phone']) ? (string)$input['phone'] : null);
@@ -166,6 +208,39 @@ final class AcmActivationRequestService
             // Lost the race (or a duplicate inside the collapse window).
             // Read the winner and collapse onto it.
             return $this->collapseOnto($dedupe);
+        }
+    }
+
+    /**
+     * Record WHY a claim was refused, for the office and the audit trail.
+     *
+     * Only the normalised member code and the refusal kind are stored -- not
+     * the typed name, not the phone. A refusal log that accumulates names
+     * typed by someone who guessed an ID would itself be a privacy problem,
+     * and the office does not need it: a refused claim creates no work.
+     *
+     * Failures here are swallowed. A refusal must never turn into a 500 and
+     * must never be the reason a claim is accepted.
+     */
+    private function recordRefusal(string $memberCode, string $accountType, array $detection, ?string $originIp): void
+    {
+        try {
+            $stmt = $this->pdo->prepare(
+                'INSERT INTO acm_request_refusals'
+                . ' (member_code, account_type, refusal_kind, match_kind, match_score, origin_ip)'
+                . ' VALUES (:code, :at, :kind, :match, :score, :ip)'
+            );
+            $stmt->execute([
+                ':code'  => substr($memberCode, 0, 40),
+                ':at'    => $accountType,
+                ':kind'  => (string)($detection['kind'] ?? 'unknown'),
+                ':match' => (string)($detection['match'] ?? 'none'),
+                ':score' => (float)($detection['score'] ?? 0.0),
+                ':ip'    => $originIp !== null && $originIp !== '' ? substr($originIp, 0, 45) : null,
+            ]);
+        } catch (\Throwable) {
+            // The refusals table is diagnostic. A deployment that has not
+            // applied migration 104 still refuses claims correctly.
         }
     }
 

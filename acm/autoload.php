@@ -46,6 +46,10 @@ if (!defined('SSMS_ACM_AUTOLOAD')) {
     require_once __DIR__ . '/src/Policy/AcmPolicy.php';
     require_once __DIR__ . '/src/Policy/PolicyAuthorizer.php';
     require_once __DIR__ . '/src/Identity/AcmPersonService.php';
+    // S12: Amharic homophone folding + grapheme distance. Before
+    // AcmPersonService uses it, because PersonService will delegate
+    // name comparison here (see the S12 design note).
+    require_once __DIR__ . '/src/Identity/AmharicNameMatcher.php';
     // S3 activation ceremony.
     require_once __DIR__ . '/src/Activation/CodeAlphabet.php';
     // S12: six-digit activation codes. The pair above still governs
@@ -71,5 +75,7 @@ if (!defined('SSMS_ACM_AUTOLOAD')) {
     // already loaded above; the directory is standalone.
     require_once __DIR__ . '/src/Requests/AuthenticatorDirectory.php';
     require_once __DIR__ . '/src/Requests/AcmActivationRequestService.php';
+    require_once __DIR__ . '/src/Requests/AcmClaimRefused.php';
+    require_once __DIR__ . '/src/Requests/AcmActivationDetector.php';
     require_once __DIR__ . '/src/Requests/AcmRequestDecisionService.php';
 }
