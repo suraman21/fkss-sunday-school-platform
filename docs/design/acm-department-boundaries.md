@@ -115,6 +115,37 @@ through `view()`, which joins the register live.
 never touched ACM has no anchor, and that is fine: every screen reads the register,
 and the anchor appears the moment an account action needs it.
 
+### D1b — `users` has `member_id` but must never gain `guardian_id`
+
+The asymmetry looks like an oversight. It is not.
+
+`users.member_id` **predates ACM** — `sql/012_runtime_schema_baseline.sql:101` adds it
+for the school side (teacher and education features join it). ACM never authorized off
+it: `apiParentGuardianId()` and `apiSelfMemberId()` both read `acm_persons`, because that
+table carries the account **status** alongside the link.
+
+Copying the guardian link onto `users` would look symmetric and would be a regression:
+`AccountProvisioner:75` writes `member_id = NULL` for parent accounts deliberately, and
+the parent resolver refuses unless the account row is `account_type='parent'` **and**
+`status='active'`. A `users.guardian_id` would survive suspension — undoing what
+`sql/089` exists to enforce. One account is revoked in one place.
+
+So the asymmetry stays. The guardian link is one join away, next to the status that
+gates it. Pinned by `NoUsersGuardianIdTests`.
+
+### D1c — One human, one account: a member who is also a parent holds one role
+
+`users.role` is a single `VARCHAR`, not a list, and `acm_person_accounts` is
+`UNIQUE(user_id)`. So a person who is both a member and a parent can hold only one
+account, and the resolver gated on `account_type` will admit only that half. The other
+link is simply unreachable for that login.
+
+This is not introduced here — it is what the schema already does — but it surfaces once
+parents are onboarded at scale, because a Sunday-school member who later registers their
+own child is the normal case, not the exotic one. Making it real needs a multi-role
+account model (a role-set, not a role string) and a decision about which surface such a
+user lands on. Recorded, not silently "fixed".
+
 ### D2 — There is nothing to reconcile
 
 Because no identity is copied, the four `members` write paths (HR registration, member
@@ -195,8 +226,9 @@ member is left without a projection when the manual form disappears.
    exists but sees zero children — the failure looks exactly like "the app is broken".
    Worth one query on the development database before onboarding parents:
    `SELECT COUNT(*) FROM member_guardians WHERE verified_by IS NOT NULL;`
-3. **No DB access here.** Every claim above is from schema and source, not from a
-   running server. The dry-run reports are the first real evidence.
-4. **This is a design.** Nothing in this PR changes runtime behaviour except the two
-   corrected comments. Implementation should be reviewed as its own change, in the
-   step order above.
+3. **One human, one account.** A member who is also a parent holds a single role and
+   can reach only that half of their data (D1c). Fixing it needs a multi-role account
+   model — a product decision, not a migration.
+4. **No DB access here.** Every claim above is from schema and source, not from a
+   running server. The live read is verified by unit-level stubs and by reading the
+   register queries, not by executing them against MariaDB.

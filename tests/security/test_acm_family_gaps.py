@@ -4,6 +4,8 @@ G3: ticket link-suggestions must query the real 069 columns
     (guardian_a/guardian_b), never the nonexistent guardian_id.
 G2: verification stamps only on explicit office decisions; auto paths
     stay NULL; 092 grandfathers office-created links only (zero DDL).
+G1 asymmetry: a parent resolves through acm_persons.guardian_id and a member
+    through acm_persons.member_id -- deliberately NOT users.guardian_id.
 """
 from pathlib import Path
 import re
@@ -146,3 +148,73 @@ class AcmFamilyGapsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NoUsersGuardianIdTests(unittest.TestCase):
+    """Why `users` has member_id but no guardian_id -- and must not get one.
+
+    HISTORY: `users.member_id` predates ACM. It was added by
+    sql/012_runtime_schema_baseline.sql for the SCHOOL side (teacher and
+    education features join it). ACM never used it for authorization: both
+    resolvers read acm_persons, because that is the table that also carries the
+    account STATUS.
+
+    THE TRAP THIS PREVENTS
+        A "member_id but no guardian_id" asymmetry looks like an oversight, so
+        the tempting fix is `ALTER TABLE users ADD COLUMN guardian_id`. But
+        AccountProvisioner:75 writes member_id as NULL for a parent account ON
+        PURPOSE, and apiParentGuardianId() refuses unless the account row is
+        account_type='parent' AND status='active'. Copying the guardian id onto
+        `users` would hand the resolver a link that survives suspension -- the
+        exact thing sql/089 exists to stop. Two places to revoke an account is
+        one place too many.
+
+    The asymmetry is therefore real but harmless: guardian_id lives on
+    acm_persons, one join away, next to the status that gates it.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        root = ROOT
+        cls.acl = (root / "api/v1/core/acl.php").read_text(encoding="utf-8")
+        cls.provisioner = (root / "acm/src/Accounts/AccountProvisioner.php").read_text(encoding="utf-8")
+        cls.baseline = (root / "sql/012_runtime_schema_baseline.sql").read_text(encoding="utf-8")
+
+    def test_users_member_id_is_legacy_school_schema_not_acm(self):
+        # It predates ACM: it is added in the runtime baseline, not in 079+.
+        self.assertIn("ADD COLUMN `member_id` INT UNSIGNED", self.baseline)
+        self.assertIn("ALTER TABLE `users`", self.baseline)
+
+    def test_parent_accounts_do_not_store_a_member_id(self):
+        # member_id is written only for member accounts; parents get NULL.
+        self.assertIn("$accountType === 'member' ? (int)$ticket['member_id'] : null", self.provisioner)
+
+    def test_both_resolvers_read_acm_persons_and_gate_on_status(self):
+        for fn in ("function apiParentGuardianId", "function apiSelfMemberId"):
+            body = self.acl[self.acl.index(fn):]
+            body = body[:body.index("\n}")]
+            self.assertIn("acm_person_accounts", body, fn)
+            self.assertIn("acm_persons", body, fn)
+            self.assertIn("status = 'active'", body, fn)
+
+    def test_no_resolver_authorizes_off_users_member_id(self):
+        """A resolver reading users.member_id would ignore suspension."""
+        for fn in ("function apiParentGuardianId", "function apiSelfMemberId"):
+            body = self.acl[self.acl.index(fn):]
+            body = body[:body.index("\n}")]
+            self.assertNotIn("FROM users", body, fn)
+            self.assertNotIn("users.member_id", body, fn)
+
+    def test_the_two_resolvers_are_mutually_exclusive_by_design(self):
+        """One role string, one account row -- so at most one resolves.
+
+        users.role is a single VARCHAR, not a list, and acm_person_accounts has
+        UNIQUE(user_id). A person who is both a member and a parent therefore
+        holds ONE account: either the guardian link or the member link is
+        reachable, never both. That is a product consequence, not a bug, and it
+        is recorded here so nobody discovers it from a support ticket.
+        """
+        self.assertIn("UNIQUE KEY `uniq_acm_pa_user` (`user_id`)",
+                      (ROOT / "sql/079_acm_p0_foundation.sql").read_text(encoding="utf-8"))
+        self.assertIn("AND pa.account_type = 'parent'", self.acl)
+        self.assertIn("AND pa.account_type = 'member'", self.acl)
