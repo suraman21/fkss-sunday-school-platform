@@ -42,7 +42,12 @@ class AcmPolicy
             // S3: 'cancel' aborts the ceremony (reason + cascade);
             // 'code' issue/view runs the D3.2 issuance panel.
             'ticket'   => ['create', 'view', 'claim', 'note', 'approve', 'reject', 'request_changes', 'cancel'],
-            'person'   => ['create', 'view', 'edit'],
+            // NO 'create'. HR is the only source of truth for who exists;
+            // ACM projects the register into acm_persons and then owns the
+            // ACCOUNT, not the person (docs/design/acm-department-boundaries.md).
+            // 'edit' stays: ACM annotates its own projection (ID document,
+            // notes) without touching the register.
+            'person'   => ['view', 'edit'],
             // S7: office suspends/reactivates member/parent
             // accounts (target-role guard lives in the service;
             // staff/officers stay in user administration).

@@ -235,10 +235,17 @@ class AcmPersonService
      *
      * SAFE TO CALL TWICE
      *   Returns an existing row untouched (never overwrites a person an
-     *   officer has edited). The UNIQUE key on acm_persons.member_id is what
-     *   settles a concurrent claim and a screenshot-both-submitted race; the
-     *   SELECT-before-INSERT is only the fast path, so two callers cannot
-     *   create two person rows for one member.
+     *   officer has edited).
+     *
+     *   HONEST LIMIT: `acm_persons.member_id` has a plain KEY, NOT a UNIQUE
+     *   key (sql/079), so the database does not stop a second row for the
+     *   same member. Two genuinely simultaneous first-claims for one member
+     *   can therefore both insert. The window is one statement wide and only
+     *   a first claim (afterwards the SELECT short-circuits), and a duplicate
+     *   person is recoverable -- `duplicates()` reports it and the office can
+     *   merge -- whereas a phantom UNIQUE key would have silently been no
+     *   protection at all. Migration 107 adds the real constraint once the
+     *   existing duplicates are dealt with.
      *
      * @param int $memberId members.id, already resolved by the detector
      * @param int $actorId  who caused it: 0 for the member themselves
@@ -299,14 +306,114 @@ class AcmPersonService
             ], $actorId);
             return (int)$created['id'];
         } catch (\PDOException $race) {
-            // Lost the race against a concurrent claim: the winner's row is
-            // the answer. Any other SQL failure is a real one and propagates.
+            // Reached once migration 107's unique key is present: the loser of
+            // a race adopts the winner's row. Before 107 there is no
+            // constraint to lose against, and the re-read below returns the
+            // row just inserted, so this branch simply never fires.
             $won = $this->personIdForMember($memberId);
             if ($won !== null) {
                 return $won;
             }
             throw $race;
         }
+    }
+
+    /**
+     * The person row for a registered guardian (a parent), created on first use.
+     *
+     * THE VERIFIED-LINK RULE IS INHERITED, ON PURPOSE.
+     *   apiParentCanSeeMember() only lets a parent see children whose
+     *   member_guardians row has verified_by set (api/v1/core/acl.php). A
+     *   parent account projected from an UNVERIFIED link would therefore sign
+     *   in and see no children at all -- a failure that looks exactly like "the
+     *   app is broken". So this refuses rather than projecting a parent whose
+     *   link HR has not verified; the console reports it so HR can stamp the
+     *   link, and the projection succeeds on the next attempt.
+     *
+     * Idempotent, same as ensureForMember(): an existing row is returned
+     * untouched so an officer's annotations are never overwritten.
+     *
+     * @throws InvalidArgumentException when the guardian has no verified child
+     */
+    public function ensureForGuardian(int $guardianId, int $actorId = 0): ?int
+    {
+        if ($guardianId <= 0) {
+            return null;
+        }
+        $existing = $this->personIdForGuardian($guardianId);
+        if ($existing !== null) {
+            return $existing;
+        }
+
+        $stmt = $this->pdo->prepare(
+            'SELECT id, display_name, phone_primary, phone_alt, city, sub_city,'
+            . ' woreda, mender, block_number, house, status'
+            . ' FROM guardians WHERE id = :id LIMIT 1'
+        );
+        $stmt->execute([':id' => $guardianId]);
+        $g = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!is_array($g)) {
+            return null;
+        }
+        if ((string)($g['status'] ?? '') !== 'active') {
+            // Merged/archived guardians are not people to sign in as; a merged
+            // one is reachable through the row it was merged into.
+            return null;
+        }
+
+        // Is there at least one child whose link an officer verified?
+        $verify = $this->pdo->prepare(
+            'SELECT COUNT(*) FROM member_guardians'
+            . ' WHERE guardian_id = :gid AND verified_by IS NOT NULL'
+        );
+        $verify->execute([':gid' => $guardianId]);
+        if ((int)$verify->fetchColumn() < 1) {
+            throw new InvalidArgumentException(
+                'This guardian has no verified child link yet. HR must confirm '
+                . 'the family link before a parent account can be issued.'
+            );
+        }
+
+        $name = trim((string)($g['display_name'] ?? ''));
+        if ($name === '') {
+            return null;
+        }
+        $phone = trim((string)($g['phone_primary'] ?? ''));
+        if ($phone === '') {
+            $phone = trim((string)($g['phone_alt'] ?? ''));
+        }
+
+        try {
+            $created = $this->create([
+                'full_name_am' => $name,
+                'phone'        => $phone,
+                'guardian_id'  => $guardianId,
+                // The address lives on the guardian, not the child; note it so
+                // an officer reading the person row knows where it came from.
+                'notes'        => 'Derived from the guardian register (verified family link).',
+            ], $actorId);
+            return (int)$created['id'];
+        } catch (\PDOException $race) {
+            $won = $this->personIdForGuardian($guardianId);
+            if ($won !== null) {
+                return $won;
+            }
+            throw $race;
+        }
+    }
+
+    /** acm_persons.id linked to this guardians.id, or null. */
+    public function personIdForGuardian(int $guardianId): ?int
+    {
+        if ($guardianId <= 0) {
+            return null;
+        }
+        $stmt = $this->pdo->prepare(
+            'SELECT id FROM acm_persons WHERE guardian_id = :gid ORDER BY id ASC LIMIT 1'
+        );
+        $stmt->execute([':gid' => $guardianId]);
+        $id = $stmt->fetchColumn();
+        return $id === false || $id === null ? null : (int)$id;
     }
 
     /** acm_persons.id linked to this members.id, or null. */

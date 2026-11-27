@@ -8,7 +8,6 @@
  *   GET  ?action=ticket&id=                          → full ticket detail
  *   GET  ?action=person_search&q=                    → person lookup
  *   GET  ?action=person&id=                          → person + accounts + tickets
- *   POST action=person_create                        → create person (office)
  *   POST action=person_update                        → edit person (office)
  *   POST action=ticket_create                       → submit ticket (office)
  *   POST action=claim | release | note               → queue ops
@@ -217,20 +216,56 @@ try {
             break;
         }
 
-        case 'person_create': {
+        // person_create is DELIBERATELY ABSENT.
+        //
+        // Registration's source of truth is HR, and HR only. This arm asked an
+        // officer to retype a human the register already held, which made a
+        // manual re-entry step the precondition for the whole self-service
+        // product -- a member with no acm_persons row could not activate at
+        // all. ACM's job is the ACCOUNT (activation, reset, suspension), the
+        // way edu_dept owns a student's classes without registering the
+        // student.
+        //
+        // The person row is now projected from the register on demand
+        // (AcmPersonService::ensureForMember). Removed rather than
+        // role-gated: a capability that no longer exists cannot be restored by
+        // granting a role, and this file's remaining person arms read and
+        // annotate an existing person instead of inventing one.
+        // See docs/design/acm-department-boundaries.md.
+
+        // person_resolve: find-or-project the person for a register row.
+        //
+        // This is what replaced person_create on the console. It takes a
+        // members.id (or guardians.id) that HR already owns, and returns the
+        // ACM person row for it -- creating it from the register if this is
+        // the first time ACM has needed that human. Idempotent, so clicking
+        // twice is harmless, and it never accepts typed identity data.
+        case 'person_resolve': {
             if ($method !== 'POST') {
                 acm_err('Method not allowed.', 405);
             }
-            if (!AcmPolicy::can($role, AcmPolicy::RES_PERSON, 'create')) {
+            if (!AcmPolicy::can($role, AcmPolicy::RES_PERSON, 'view')) {
                 acm_err('Access denied.', 403);
             }
-            $created = $persons->create($_POST, $actorId);
-            acm_audit($pdo, 'acm.person.created', [
-                'person_id' => $created['id'],
-                'has_member_link' => !empty($_POST['member_id']) ? 1 : 0,
-                'has_guardian_link' => !empty($_POST['guardian_id']) ? 1 : 0,
-            ], 'acm_person', (int)$created['id']);
-            acm_ok(['person' => $persons->find((int)$created['id'])]);
+            $linkMember = (int)($_POST['member_id'] ?? 0);
+            $linkGuardian = (int)($_POST['guardian_id'] ?? 0);
+            if ($linkMember <= 0 && $linkGuardian <= 0) {
+                acm_err('A member or guardian reference is required.', 422);
+            }
+            try {
+                $personId = $linkMember > 0
+                    ? $persons->ensureForMember($linkMember, $actorId)
+                    : $persons->ensureForGuardian($linkGuardian, $actorId);
+            } catch (InvalidArgumentException $e) {
+                acm_err($e->getMessage(), 422);
+            } catch (Throwable $e) {
+                reportInternalError('ACM person projection failed', $e);
+                acm_err('The person could not be prepared from the register.', 503);
+            }
+            if ($personId === null) {
+                acm_err('That register record could not be found.', 404);
+            }
+            acm_ok(['person' => $persons->find($personId)]);
             break;
         }
 
