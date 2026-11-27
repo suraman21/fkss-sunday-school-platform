@@ -348,6 +348,22 @@ MYSQL_ESCAPE_EXEMPT = {
 }
 
 
+def test_the_escape_clause_is_mysql_specific_by_design():
+    """Record WHY this is MySQL-only, so it is not "fixed" back to one.
+
+    PostgreSQL with standard_conforming_strings treats '\\\\' as two
+    characters and rejects it: SQLSTATE[22025] "invalid escape string". It
+    wants a single backslash. MySQL wants two.
+
+    Production is MySQL (config.php), so the code targets MySQL. The local
+    PostgreSQL harnesses translate the clause on the way in for exactly this
+    reason. Anyone who runs the suite under Postgres, sees 22025 and "fixes"
+    the clause back to a single backslash will silently break the console.
+    """
+    assert _escape_clauses("$sql = \"x LIKE :q ESCAPE '" + BS * 4 + "'\";") == [(1, 4)]
+    assert _escape_clauses("$sql = \"x LIKE :q ESCAPE '" + BS * 2 + "'\";") == [(1, 2)]
+
+
 def test_escape_clause_is_doubled_in_the_sql_text():
     """`ESCAPE '\\'` is an unterminated string and fails at prepare().
 
