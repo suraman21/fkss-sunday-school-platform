@@ -690,10 +690,12 @@ class RegisterSearchReachesUnlinkedMembers(unittest.TestCase):
     def test_archived_members_are_excluded(self):
         self.assertIn("m.status <> 'archived'", self.page)
 
-    def test_register_match_links_to_the_existing_audited_form(self):
-        # It prefills person_create; it does not invent a second writer.
-        self.assertIn("member_id=", self.page)
-        self.assertIn("person_create", self.page)
+    def test_register_match_projects_instead_of_registers(self):
+        # HR owns registration. The console projects the person from the
+        # register row and opens the account side; it never creates one.
+        self.assertIn("data-acm-resolve", self.page)
+        self.assertIn("person_resolve", self.page)
+        self.assertNotIn("person_create", self.page)
 
     def test_register_query_does_not_reuse_a_named_placeholder(self):
         # ATTR_EMULATE_PREPARES is false: :q repeated is HY093 at runtime.

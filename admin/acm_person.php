@@ -24,11 +24,7 @@ if (!in_array($role, AcmPolicy::consoleRoles(), true)) {
     exit;
 }
 
-$canCreate = AcmPolicy::can($role, 'person', 'create');
-// Set when the office arrived from a register match: the form starts from what
-// the register already knows, so they correct it rather than retype it.
-$prefill = null;
-$prefillMemberId = (int)($_GET['member_id'] ?? 0);
+$canView = AcmPolicy::can($role, 'person', 'view');
 $canEdit = AcmPolicy::can($role, 'person', 'edit');
 $canTicket = AcmPolicy::can($role, 'ticket', 'create');
 // S7: per-account suspend/reactivate (member/parent rows only;
@@ -44,8 +40,6 @@ $mode = 'search';
 $personId = (int)($_GET['id'] ?? 0);
 if ($personId > 0) {
     $mode = 'view';
-} elseif (!empty($_GET['new'])) {
-    $mode = 'new';
 }
 
 $results = [];
@@ -61,32 +55,15 @@ try {
     $persons = new AcmPersonService($pdo);
     $tickets = new AcmTicketService($pdo, $persons);
     $openCount = (int)($tickets->overviewStats($role, $actorId)['open'] ?? 0);
-    if ($mode === 'new' && $prefillMemberId > 0) {
-        $pf = $pdo->prepare(
-            'SELECT id, member_code, full_name_am, full_name_en, student_name,'
-            . ' baptismal_name, father_name, grandfather_name, gender, date_of_birth,'
-            . ' phone_primary, phone_number, status'
-            . ' FROM members WHERE id = :id LIMIT 1'
-        );
-        $pf->execute([':id' => $prefillMemberId]);
-        $row = $pf->fetch(PDO::FETCH_ASSOC);
-        // A blank Amharic name is not a valid prefill (the form requires it);
-        // fall back to the student name the register also holds.
-        if (is_array($row)) {
-            if (trim((string)($row['full_name_am'] ?? '')) === '') {
-                $row['full_name_am'] = (string)($row['student_name'] ?? '');
-            }
-            $prefill = $row;
-        }
-    }
     if ($mode === 'search' && $q !== '') {
         $results = $persons->search($q);
         // THE REGISTER IS THE DIRECTORY OF PEOPLE. Most members have a
         // `members` row and no acm_persons row yet, so a search that only
         // looks at acm_persons cannot find the person the office is holding a
-        // paper file for. This is a READ of the register, on the same screen:
-        // it shows what the register holds and offers the existing, audited
-        // "Register person" form prefilled from it. No new write path.
+        // paper file for. This is a READ of the register, on the same screen.
+        // Nothing here writes: "Open account record" projects the person from
+        // the register (person_resolve) and opens the account side. HR remains
+        // the only writer of who exists.
         $stmt = $pdo->prepare(
             'SELECT m.id, m.member_code, m.student_name, m.full_name_am,'
             . ' m.father_name, m.grandfather_name, m.baptismal_name, m.gender,'
@@ -116,6 +93,10 @@ try {
             echo 'Person was not found.';
             exit;
         }
+        // IDENTITY IS READ LIVE FROM THE REGISTER, not from this table.
+        // `$person` is the account anchor; `$view` is what the register says
+        // right now. See AcmPersonService::view().
+        $view = $persons->view($personId);
         $accounts = $persons->accounts($personId);
         $stmt = $pdo->prepare(
             'SELECT id, ticket_no, account_type, status, created_at FROM acm_activation_tickets'
@@ -130,7 +111,7 @@ try {
     $pageError = 'Person data is temporarily unavailable.';
 }
 
-acm_head($mode === 'view' ? 'Person' : ($mode === 'new' ? 'Register person' : 'Persons & accounts'));
+acm_head($mode === 'view' ? 'Person' : 'Persons & accounts');
 acm_chrome_open('persons', 'Persons & accounts', 'One human, independently managed accounts', $openCount);
 ?>
 <?php if ($pageError !== ''): ?>
@@ -148,20 +129,16 @@ acm_chrome_open('persons', 'Persons & accounts', 'One human, independently manag
             <a class="btn bo" href="/admin/acm_person.php">Clear</a>
         <?php endif; ?>
     </form>
-    <?php if ($canCreate): ?>
-        <span style="flex:1"></span>
-        <a class="btn bo" href="/admin/acm_person.php?new=1">
-            <i class="fa-solid fa-user-plus"></i> Register person
-        </a>
-    <?php endif; ?>
+    <?php /* No "Register person": HR owns registration. See
+             docs/design/acm-department-boundaries.md. */ ?>
 </div>
 <?php if ($q !== '' && !empty($registerMatches)): ?>
 <div class="cd">
     <div class="ct"><i class="fa-solid fa-book"></i> In the member register</div>
     <p style="font-size:.74rem;color:var(--dim);margin-bottom:.6rem">
-        These people are registered but do not all have an accounts-office record yet.
-        Someone with an account opens it; someone without one can be registered from
-        what the register already holds.
+        The register is HR's. People appear here automatically — nothing is registered
+        in this console. "Open account record" prepares the account side from what HR
+        already holds; it creates no person data and changes no register field.
     </p>
     <div class="tw"><table>
         <thead><tr><th>Code</th><th>Name</th><th>Father</th><th>Section</th><th>Status</th><th>Account</th><th></th></tr></thead>
@@ -191,8 +168,10 @@ acm_chrome_open('persons', 'Persons & accounts', 'One human, independently manag
                     <?php endif; ?>
                 </td>
                 <td>
-                    <?php if (!$hasPerson && $canCreate): ?>
-                        <a href="/admin/acm_person.php?new=1&amp;member_id=<?= (int)$rm['id'] ?>">Register</a>
+                    <?php if (!$hasPerson && $canView): ?>
+                        <button class="btn bp bs" data-acm-resolve="<?= (int)$rm['id'] ?>">
+                            Open account record
+                        </button>
                     <?php endif; ?>
                 </td>
             </tr>
@@ -216,21 +195,12 @@ acm_chrome_open('persons', 'Persons & accounts', 'One human, independently manag
         <i class="fa-solid fa-user-xmark"></i>
         <div class="v2-state-title">No person matches “<?= e($q) ?>”</div>
         <p>
-            The search covers name, father's name, phone and ID reference.
-            <?php if ($canCreate): ?>
-                If this person has never been registered, add them now — a
-                member cannot claim an activation without a person record.
-            <?php else: ?>
-                Only the Accounts Office can register a new person.
-            <?php endif; ?>
+            The search covers name, father's name, phone and ID reference, in
+            this console's records and in the member register. A person who is
+            not in either does not exist yet: HR registers members, and the
+            register reaches this console automatically.
         </p>
-        <?php if ($canCreate): ?>
-        <div class="v2-state-actions">
-            <a class="btn bp" href="/admin/acm_person.php?new=1">
-                <i class="fa-solid fa-user-plus"></i> Register person
-            </a>
-        </div>
-        <?php endif; ?>
+
     </div>
     <?php else: ?>
     <div class="tw"><table>
@@ -252,61 +222,110 @@ acm_chrome_open('persons', 'Persons & accounts', 'One human, independently manag
 </div>
 <?php endif; ?>
 
-<?php if ($mode === 'new'): ?>
-<div class="cd">
-    <div class="ct"><i class="fa-solid fa-user-plus"></i> Register person</div>
-    <?php if (!$canCreate): ?>
-    <div class="acm-alert warn">Only the Accounts Office can register persons.</div>
-    <?php else: ?>
-    <form id="acmPersonForm" class="acm-form" onsubmit="return false">
-        <?php if (is_array($prefill)): ?>
-        <div class="full acm-alert ok" style="margin-bottom:.2rem">
-            <i class="fa-solid fa-book"></i>
-            Started from the member register
-            (<span class="bg bg-info"><?= e((string)($prefill['member_code'] ?? '')) ?></span>).
-            Check the name before saving — the register is the source of truth.
-        </div>
-        <?php endif; ?>
-        <div><label class="flbl" for="f_am">Full name — Amharic *</label><input class="inp" id="f_am" name="full_name_am" required maxlength="150" value="<?= e((string)($prefill['full_name_am'] ?? '')) ?>"></div>
-        <div><label class="flbl" for="f_en">Full name — English</label><input class="inp" id="f_en" name="full_name_en" maxlength="150" value="<?= e((string)($prefill['full_name_en'] ?? '')) ?>"></div>
-        <div><label class="flbl" for="f_bap">Baptismal name</label><input class="inp" id="f_bap" name="baptismal_name" maxlength="150" value="<?= e((string)($prefill['baptismal_name'] ?? '')) ?>"></div>
-        <div><label class="flbl" for="f_father">Father name</label><input class="inp" id="f_father" name="father_name" maxlength="150" value="<?= e((string)($prefill['father_name'] ?? '')) ?>"></div>
-        <div><label class="flbl" for="f_gender">Gender</label><select class="inp" id="f_gender" name="gender"><option value="">—</option><option value="male"<?= ($prefill['gender'] ?? '') === 'male' ? ' selected' : '' ?>>Male</option><option value="female"<?= ($prefill['gender'] ?? '') === 'female' ? ' selected' : '' ?>>Female</option></select></div>
-        <div><label class="flbl" for="f_dob">Birth date (GC)</label><input class="inp" id="f_dob" name="date_of_birth" type="date" value="<?= e((string)($prefill['date_of_birth'] ?? '')) ?>"></div>
-        <div><label class="flbl" for="f_phone">Phone</label><input class="inp" id="f_phone" name="phone" maxlength="30" placeholder="09XXXXXXXX" value="<?= e((string)($prefill['phone_primary'] ?? $prefill['phone_number'] ?? '')) ?>"></div>
-        <div><label class="flbl" for="f_email">Email</label><input class="inp" id="f_email" name="email" type="email" maxlength="100"></div>
-        <div><label class="flbl" for="f_doctype">ID document type</label><input class="inp" id="f_doctype" name="id_doc_type" maxlength="40" placeholder="Kebele ID / Passport / …"></div>
-        <div><label class="flbl" for="f_docref">ID document ref</label><input class="inp" id="f_docref" name="id_doc_ref" maxlength="100"></div>
-        <div><label class="flbl" for="f_member">Linked member ID (members.id)</label><input class="inp" id="f_member" name="member_id" inputmode="numeric" placeholder="optional" value="<?= is_array($prefill) ? (int)($prefill['id'] ?? 0) : '' ?>"></div>
-        <div><label class="flbl" for="f_guardian">Linked guardian ID (guardians.id)</label><input class="inp" id="f_guardian" name="guardian_id" inputmode="numeric" placeholder="optional"></div>
-        <div class="full"><label class="flbl" for="f_notes">Notes</label><textarea class="inp" id="f_notes" name="notes" rows="2" maxlength="2000"></textarea></div>
-        <div class="acm-btn-row full"><button class="btn bp" id="acmPersonSave"><i class="fa-solid fa-floppy-disk"></i> Save person</button></div>
-    </form>
-    <?php endif; ?>
-</div>
-<?php endif; ?>
+<?php /* The register-person form is GONE, deliberately. HR is the only source
+         of truth for who exists; ACM projects the register and owns the account.
+         The console opens an account record from a register row instead.
+         See docs/design/acm-department-boundaries.md. */ ?>
 
 <?php if ($mode === 'view' && is_array($person)): ?>
+<?php
+// Everything identity-ish comes from $view, which is a live read of the
+// register. Nothing below reads a copied name, phone or section, because ACM
+// does not keep one.
+$vi = is_array($view) ? (array)$view['identity'] : [];
+$vk = is_array($view) ? (string)$view['kind'] : 'unknown';
+$vf = is_array($view) ? (array)($view['family'] ?? []) : [];
+$liveName = (string)($vi['full_name_am'] ?? $vi['display_name'] ?? '');
+$liveNameEn = (string)($vi['full_name_en'] ?? '');
+$isMember = $vk === 'member';
+?>
 <div class="acm-grid2">
     <div class="cd">
-        <div class="ct"><i class="fa-solid fa-id-card"></i> <span class="amharic"><?= e((string)($person['full_name_am'] ?? '')) ?></span></div>
+        <div class="ct"><i class="fa-solid fa-id-card"></i>
+            <span class="amharic"><?= e($liveName !== '' ? $liveName : 'Person #' . $personId) ?></span>
+            <?php if ($vk === 'guardian'): ?>
+                <span class="bg bg-p" style="margin-left:.4rem">parent</span>
+            <?php elseif ($isMember): ?>
+                <span class="bg bg-info" style="margin-left:.4rem">member</span>
+            <?php endif; ?>
+        </div>
+        <p style="font-size:.68rem;color:var(--dim);margin-bottom:.5rem">
+            Read live from the <?= $vk === 'guardian' ? 'guardian' : 'member' ?> register —
+            these fields are HR's and are not editable here.
+        </p>
         <dl class="acm-kv">
-            <dt>Name (EN)</dt><dd><?= e((string)($person['full_name_en'] ?? '—')) ?></dd>
-            <dt>Baptismal</dt><dd><?= e((string)($person['baptismal_name'] ?? '—')) ?></dd>
-            <dt>Father</dt><dd><?= e((string)($person['father_name'] ?? '—')) ?></dd>
-            <dt>Gender / DOB</dt><dd><?= e((string)($person['gender'] ?? '—')) ?> · <?= e((string)($person['date_of_birth'] ?? '—')) ?></dd>
-            <dt>Phone</dt><dd><?= e((string)($person['phone'] ?? '—')) ?></dd>
-            <dt>Email</dt><dd><?= e((string)($person['email'] ?? '—')) ?></dd>
-            <dt>ID document</dt><dd><?= e(trim((string)($person['id_doc_type'] ?? '') . ' ' . (string)($person['id_doc_ref'] ?? '')) ?: '—') ?></dd>
-            <dt>Links</dt><dd>member <?= !empty($person['member_id']) ? '#' . (int)$person['member_id'] : '—' ?> · guardian <?= !empty($person['guardian_id']) ? '#' . (int)$person['guardian_id'] : '—' ?></dd>
+            <?php if ($isMember): ?>
+            <dt>Member code</dt><dd><span class="bg bg-info"><?= e((string)($vi['member_code'] ?? '—')) ?></span></dd>
+            <dt>Name (EN)</dt><dd><?= e($liveNameEn !== '' ? $liveNameEn : '—') ?></dd>
+            <dt>Father / Grandfather</dt><dd><?= e((string)($vi['father_name'] ?? '—')) ?> · <?= e((string)($vi['grandfather_name'] ?? '—')) ?></dd>
+            <dt>Baptismal</dt><dd><?= e((string)($vi['baptismal_name'] ?? '—')) ?></dd>
+            <dt>Section / Level</dt><dd><?= e((string)($vi['current_section'] ?? '—')) ?> · <?= e((string)($vi['education_level'] ?? '—')) ?></dd>
+            <dt>Gender / Age</dt><dd><?= e((string)($vi['gender'] ?? '—')) ?> · <?= e((string)($vi['age'] ?? '—')) ?></dd>
+            <dt>Status</dt><dd><?= e((string)($vi['status'] ?? '—')) ?></dd>
+            <dt>Roles</dt><dd>
+                <?php
+                $flags = [];
+                foreach (['is_teacher' => 'teacher', 'is_staff' => 'staff', 'is_committee' => 'committee', 'is_volunteer' => 'volunteer'] as $col => $lbl) {
+                    if ((int)($vi[$col] ?? 0) === 1) { $flags[] = $lbl; }
+                }
+                echo $flags === [] ? '—' : e(implode(', ', $flags));
+                ?>
+            </dd>
+            <?php else: ?>
+            <dt>Name</dt><dd><?= e($liveName !== '' ? $liveName : '—') ?></dd>
+            <dt>Source</dt><dd><?= e((string)($vi['source'] ?? '—')) ?></dd>
+            <?php endif; ?>
+            <dt>Phone</dt><dd><?= e((string)($vi['phone_primary'] ?? $vi['phone_number'] ?? '—')) ?></dd>
+            <dt>Address</dt><dd><?= e(trim(implode(' · ', array_filter([
+                (string)($vi['city'] ?? ''), (string)($vi['sub_city'] ?? ''),
+                (string)($vi['woreda'] ?? ''),
+            ]))) ?: '—') ?></dd>
         </dl>
-        <?php if (!empty($dups['same_phone']) || !empty($dups['same_name_dob'])): ?>
-        <div class="acm-alert warn" style="margin-top:.7rem"><i class="fa-solid fa-triangle-exclamation"></i> Possible duplicates:
-            <?php foreach (array_merge($dups['same_phone'], $dups['same_name_dob']) as $dd): ?>
-            <a href="/admin/acm_person.php?id=<?= (int)$dd['id'] ?>">#<?= (int)$dd['id'] ?></a>
-            <?php endforeach; ?>
+        <?php if (!empty($vf['guardians'])): ?>
+        <div style="margin-top:.6rem">
+            <div class="acm-kv-label" style="font-size:.68rem;color:var(--dim);letter-spacing:.04em">FAMILY (HR-verified links)</div>
+            <table style="width:100%;font-size:.74rem;margin-top:.3rem">
+                <?php foreach ($vf['guardians'] as $gd): ?>
+                <tr>
+                    <td><?= e((string)($gd['display_name'] ?? '')) ?></td>
+                    <td style="color:var(--dim)"><?= e((string)($gd['relation'] ?? 'other')) ?></td>
+                    <td><?= e((string)($gd['phone_primary'] ?? '—')) ?></td>
+                    <td>
+                        <?php if (!empty($gd['verified_by'])): ?>
+                            <span class="bg bg-ok">verified</span>
+                        <?php else: ?>
+                            <span class="bg bg-w">HR has not verified</span>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </table>
+        </div>
+        <?php elseif (!empty($vf['children'])): ?>
+        <div style="margin-top:.6rem">
+            <div style="font-size:.68rem;color:var(--dim);letter-spacing:.04em">CHILDREN (HR-verified links)</div>
+            <table style="width:100%;font-size:.74rem;margin-top:.3rem">
+                <?php foreach ($vf['children'] as $ch): ?>
+                <tr>
+                    <td><span class="bg bg-info"><?= e((string)($ch['member_code'] ?? '')) ?></span></td>
+                    <td class="amharic"><?= e((string)($ch['full_name_am'] ?? $ch['student_name'] ?? '')) ?></td>
+                    <td style="color:var(--dim)"><?= e((string)($ch['current_section'] ?? '')) ?></td>
+                    <td>
+                        <?php if (!empty($ch['verified_by'])): ?>
+                            <span class="bg bg-ok">verified</span>
+                        <?php else: ?>
+                            <span class="bg bg-w">unverified</span>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </table>
         </div>
         <?php endif; ?>
+        <dl class="acm-kv" style="margin-top:.6rem">
+            <dt>ID document</dt><dd><?= e(trim((string)($person['id_doc_type'] ?? '') . ' ' . (string)($person['id_doc_ref'] ?? '')) ?: '—') ?></dd>
+            <dt>Anchor</dt><dd>person #<?= $personId ?><?= $isMember ? ' · member #' . (int)($person['member_id'] ?? 0) : ' · guardian #' . (int)($person['guardian_id'] ?? 0) ?></dd>
+        </dl>
     </div>
     <div class="cd">
         <div class="ct"><i class="fa-solid fa-key"></i> Accounts</div>
@@ -385,20 +404,21 @@ acm_chrome_open('persons', 'Persons & accounts', 'One human, independently manag
 
 <script>
 (function () {
-    var save = document.getElementById('acmPersonSave');
-    if (save) {
-        save.addEventListener('click', async function () {
-            var f = document.getElementById('acmPersonForm');
-            var fd = new FormData(f);
-            var params = {};
-            fd.forEach(function (v, k) { params[k] = v; });
-            save.disabled = true;
+    // "Open account record": project the person from the register, then open
+    // them. No identity data is sent -- only which register row is meant.
+    document.querySelectorAll('[data-acm-resolve]').forEach(function (btn) {
+        btn.addEventListener('click', async function () {
+            btn.disabled = true;
             try {
-                var d = await acmApi('person_create', params, 'POST');
+                var d = await acmApi('person_resolve',
+                    { member_id: btn.getAttribute('data-acm-resolve') }, 'POST');
                 window.location.href = '/admin/acm_person.php?id=' + d.person.id;
-            } catch (err) { acmToast(err.message || 'Save failed.', false); save.disabled = false; }
+            } catch (err) {
+                acmToast(err.message || 'Could not open the account record.', false);
+                btn.disabled = false;
+            }
         });
-    }
+    });
     document.querySelectorAll('[data-acm-lifecycle]').forEach(function (btn) {
         btn.addEventListener('click', async function () {
             var reason = document.getElementById('acmLifecycleReason');

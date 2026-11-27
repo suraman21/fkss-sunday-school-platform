@@ -118,9 +118,11 @@ def test_api_requires_session_role_csrf_and_policy():
 def test_api_exposes_p0_actions_only():
     s = read(API)
     for action in ("overview", "queue", "ticket", "person_search", "person",
-                   "person_create", "person_update", "ticket_create",
+                   "person_resolve", "person_update", "ticket_create",
                    "claim", "release", "note", "decide"):
         assert f"case '{action}':" in s, action
+    # Registration is HR's. ACM must not expose a person-creation arm.
+    assert "case 'person_create':" not in s
     assert "default:" in s
 
 
