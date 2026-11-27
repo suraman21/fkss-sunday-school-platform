@@ -31,6 +31,8 @@
  *   collapsed into one result, and the route has one message.
  */
 
+declare(strict_types=1);
+
 namespace SSMS\Acm\Requests;
 
 use PDO;

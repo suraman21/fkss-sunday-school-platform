@@ -18,6 +18,8 @@
  *   never swap them.
  */
 
+declare(strict_types=1);
+
 namespace SSMS\Acm\Requests;
 
 use RuntimeException;

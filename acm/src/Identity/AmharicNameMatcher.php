@@ -248,10 +248,23 @@ final class AmharicNameMatcher
         // full name -- "ሰላም" against "ሰላም ተስፋዬ". The officer still sees the
         // full record on the verification card before approving.
         if ($typedFirst !== '' && $typedFirst === $regFirst) {
+            // The fold made them equal, but that does NOT mean they are
+            // written the same. If the letters differ this is a homophone
+            // match, and saying "exact" here would be a small lie shown to
+            // the officer at the moment they decide to approve somebody.
+            // Report what is actually true; `agrees()` accepts both kinds,
+            // so the gate behaves the same either way.
+            if (self::eqi(self::firstName($typed), self::firstName($registered))) {
+                return [
+                    'score' => 1.0,
+                    'kind' => 'exact',
+                    'detail' => 'First name matches the registered name.',
+                ];
+            }
             return [
-                'score' => 1.0,
-                'kind' => 'exact',
-                'detail' => 'First name matches the registered name.',
+                'score' => 0.97,
+                'kind' => 'homophone',
+                'detail' => 'Same sounds, different letters (for example ሰ/ሠ).',
             ];
         }
         $dist = self::graphemeDistance($typedFirst, $regFirst);

@@ -130,6 +130,28 @@ acm_chrome_open('queue', (string)($ticket['ticket_no'] ?? 'Ticket'), 'Activation
 <div class="acm-alert err"><i class="fa-solid fa-triangle-exclamation"></i> <?= e($pageError) ?></div>
 <?php endif; ?>
 
+<?php if ($ticket === null): ?>
+<?php /* S12: without this, a ticket that failed to load still rendered every
+         card -- "Person —", "Birth date —", "No member record linked" -- which
+         reads as a ticket whose data is empty rather than a load that failed.
+         An officer could reasonably conclude the person has no details on
+         file. Render one honest state instead. */ ?>
+<div class="v2-state">
+    <i class="fa-solid fa-circle-question"></i>
+    <div class="v2-state-title">This ticket could not be opened</div>
+    <p>
+        <?= $pageError !== ''
+            ? 'The ticket is unavailable right now. Reload the page; if it keeps failing the server error log has the reason.'
+            : 'No ticket with that number exists. It may have been mistyped, or the link may be out of date.' ?>
+    </p>
+    <div class="v2-state-actions">
+        <a class="btn bp" href="/admin/acm_queue.php"><i class="fa-solid fa-inbox"></i> Back to the queue</a>
+        <a class="btn bo" href="/admin/acm_requests.php">Member requests</a>
+    </div>
+</div>
+<?php acm_chrome_close(); return; ?>
+<?php endif; ?>
+
 <div class="cd">
     <div class="ct"><i class="fa-solid fa-ticket"></i> <?= e((string)($ticket['ticket_no'] ?? '')) ?>
         <span class="bg <?= acm_status_bg($status) ?>"><?= e(str_replace('_', ' ', $status)) ?></span>

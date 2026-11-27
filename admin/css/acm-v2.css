@@ -1,0 +1,689 @@
+/**
+ * ACM console v2 — the S12 design layer.
+ * ---------------------------------------------------------------
+ * This file EXTENDS admin/css/acm.css; it does not replace it. Every token
+ * name and every legacy component class (.np .cd .ct .tw .inp .btn .bg-*)
+ * keeps working, because eight console pages and the ticket screen still
+ * use them and a redesign must not delete functionality (Constitution §30).
+ *
+ * DESIGN DECISIONS, WITH REASONS
+ *
+ * 1. Light-first, dark preserved.
+ *    An accounts office works in daylight, on shared machines, often on a
+ *    projector while explaining a case to a parent. Dark surfaces reflect and
+ *    photograph badly and cost legibility in that room. Light is the default;
+ *    the existing `wbws-theme` key still wins if the visitor chose dark, and
+ *    the toggle still works. Nothing is removed for people who preferred it.
+ *
+ * 2. Restrained surfaces, real elevation.
+ *    The previous layer had blurred glass panels, gradient buttons and a
+ *    drifting radial background. Those cost GPU on the low-end machines this
+ *    console runs on and communicate nothing. Surfaces are now flat, with one
+ *    border and one shadow step: elevation means "this is above the page",
+ *    not "this is decorative".
+ *
+ * 3. Density is a feature, decoration is not.
+ *    An officer scanning a queue needs rows per screen, not padding. Type is
+ *    small but line-height is generous; the table is the primary instrument
+ *    (Constitution §20: "tables are often better than cards for structured
+ *    comparison") and cards are reserved for the single-record view.
+ *
+ * 4. The verification card is the product.
+ *    The one thing this console must do well is let a person look at a
+ *    member's record and decide "same person" with confidence. So the record
+ *    gets the visual weight: a face-sized photo anchor, the name large, the
+ *    facts in a stable grid, and the decision controls immediately adjacent
+ *    (Fitts's Law / proximity: the action belongs to the thing it acts on).
+ *
+ * 5. Colour carries meaning, never decoration.
+ *    Every hue in this file maps to a state: green = verified/active,
+ *    amber = needs attention, red = refused/failed, blue = neutral action.
+ *    Status is also spelled out in text, so it survives colour blindness and
+ *    a black-and-white printout (Constitution §22).
+ *
+ * 6. Motion is feedback only.
+ *    Two durations, one easing, and a global reduced-motion opt-out.
+ */
+
+/* ============================================================
+   1. TOKENS — a coherent scale, light first
+   ============================================================ */
+:root,
+[data-theme="light"] {
+  /* Surface ladder: page < sunken < raised < overlay */
+  --v2-page: #f7f8fa;
+  --v2-sunken: #eef0f4;
+  --v2-raised: #ffffff;
+  --v2-overlay: #ffffff;
+
+  /* Ink */
+  --v2-ink: #10131a;
+  --v2-ink-2: #454b57;
+  --v2-ink-3: #6b7280;
+  --v2-ink-4: #9aa1ad;
+
+  /* Lines */
+  --v2-line: #e3e6ec;
+  --v2-line-strong: #cfd4dd;
+
+  /* Semantic */
+  --v2-accent: #1f6feb;
+  --v2-accent-ink: #ffffff;
+  --v2-accent-soft: #e8f0fe;
+  --v2-ok: #0f7b52;
+  --v2-ok-soft: #e6f5ee;
+  --v2-warn: #9a5b00;
+  --v2-warn-soft: #fdf3e2;
+  --v2-bad: #b42318;
+  --v2-bad-soft: #fdeceb;
+  --v2-info: #0b5c8a;
+  --v2-info-soft: #e7f3fa;
+
+  /* Elevation: two steps, both subtle */
+  --v2-shadow-1: 0 1px 2px rgba(16, 19, 26, .06), 0 1px 3px rgba(16, 19, 26, .04);
+  --v2-shadow-2: 0 4px 12px rgba(16, 19, 26, .08), 0 2px 4px rgba(16, 19, 26, .04);
+  --v2-ring: 0 0 0 3px rgba(31, 111, 235, .18);
+
+  /* Radius scale */
+  --v2-r-1: 6px;
+  --v2-r-2: 10px;
+  --v2-r-3: 14px;
+  --v2-r-pill: 999px;
+
+  /* Spacing scale — every gap in this file is one of these */
+  --v2-s1: 4px;
+  --v2-s2: 8px;
+  --v2-s3: 12px;
+  --v2-s4: 16px;
+  --v2-s5: 24px;
+  --v2-s6: 32px;
+  --v2-s7: 48px;
+
+  /* Type scale */
+  --v2-t-display: 1.5rem;
+  --v2-t-h1: 1.1875rem;
+  --v2-t-h2: .9375rem;
+  --v2-t-body: .8125rem;
+  --v2-t-small: .75rem;
+  --v2-t-micro: .6875rem;
+
+  /* Motion */
+  --v2-ease: cubic-bezier(.2, .7, .3, 1);
+  --v2-fast: 120ms;
+  --v2-base: 180ms;
+}
+
+[data-theme="dark"] {
+  --v2-page: #0b0d12;
+  --v2-sunken: #12151c;
+  --v2-raised: #171a22;
+  --v2-overlay: #1c2029;
+
+  --v2-ink: #f2f4f7;
+  --v2-ink-2: #b7bec9;
+  --v2-ink-3: #8b94a3;
+  --v2-ink-4: #6b7482;
+
+  --v2-line: #262b35;
+  --v2-line-strong: #333a46;
+
+  --v2-accent: #4c93f7;
+  --v2-accent-ink: #06101f;
+  --v2-accent-soft: #16233a;
+  --v2-ok: #3ecf8e;
+  --v2-ok-soft: #10251c;
+  --v2-warn: #e2a03f;
+  --v2-warn-soft: #241c0e;
+  --v2-bad: #f2777a;
+  --v2-bad-soft: #2a1416;
+  --v2-info: #5cb3e0;
+  --v2-info-soft: #0e1f29;
+
+  --v2-shadow-1: 0 1px 2px rgba(0, 0, 0, .4);
+  --v2-shadow-2: 0 6px 18px rgba(0, 0, 0, .45);
+  --v2-ring: 0 0 0 3px rgba(76, 147, 247, .25);
+}
+
+/* ============================================================
+   2. PAGE + TYPE — applied to the existing chrome
+   ============================================================ */
+body {
+  background: var(--v2-page);
+  color: var(--v2-ink-2);
+  font-feature-settings: "cv02", "cv03", "cv04";
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The drifting radial background is gone: it animated forever on every
+   page for no information, which is real battery on the machines this
+   runs on. */
+[data-theme="dark"] body::before { content: none; animation: none; }
+
+aside {
+  background: var(--v2-raised);
+  border-right: 1px solid var(--v2-line);
+  width: 244px;
+  padding: var(--v2-s4) var(--v2-s3);
+  gap: 2px;
+}
+
+.brand { border-bottom: 1px solid var(--v2-line); padding: 0 0 var(--v2-s3); margin-bottom: var(--v2-s2); }
+.brand-logo {
+  width: 34px; height: 34px; border-radius: var(--v2-r-2);
+  background: var(--v2-accent); color: var(--v2-accent-ink);
+  box-shadow: none; font-size: .82rem;
+}
+.brand-txt { font-size: .875rem; color: var(--v2-ink); letter-spacing: -.01em; }
+.brand-sub { font-size: var(--v2-t-micro); color: var(--v2-ink-4); letter-spacing: .01em; }
+
+.nt {
+  font-size: var(--v2-t-micro);
+  letter-spacing: .08em;
+  color: var(--v2-ink-4);
+  padding: var(--v2-s4) var(--v2-s3) var(--v2-s1);
+  font-weight: 600;
+}
+
+.np {
+  padding: 7px var(--v2-s3);
+  border-radius: var(--v2-r-1);
+  font-size: var(--v2-t-body);
+  gap: var(--v2-s3);
+  color: var(--v2-ink-2);
+  transition: background var(--v2-fast) var(--v2-ease), color var(--v2-fast) var(--v2-ease);
+}
+.np:hover { background: var(--v2-sunken); color: var(--v2-ink); }
+.np.active {
+  background: var(--v2-accent-soft);
+  color: var(--v2-accent);
+  border: 1px solid transparent;
+  font-weight: 600;
+}
+.np.active::before { content: none; }
+.np i { width: 16px; font-size: .78rem; }
+.np .badge {
+  background: var(--v2-accent); color: var(--v2-accent-ink);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--v2-t-micro); padding: 0 5px; min-width: 17px; line-height: 16px;
+}
+
+.uc { border-radius: var(--v2-r-2); background: var(--v2-sunken); border: 1px solid var(--v2-line); padding: var(--v2-s2); }
+.ua { width: 30px; height: 30px; background: var(--v2-accent); color: var(--v2-accent-ink); font-size: .72rem; }
+.un { font-size: var(--v2-t-small); color: var(--v2-ink); }
+.ur { font-size: var(--v2-t-micro); color: var(--v2-ink-4); }
+
+main { padding: var(--v2-s5) var(--v2-s5) var(--v2-s7); max-width: calc(100vw - 244px); }
+
+.topbar { margin-bottom: var(--v2-s5); gap: var(--v2-s3); align-items: flex-start; }
+.topbar-left h1 { font-size: var(--v2-t-h1); letter-spacing: -.015em; color: var(--v2-ink); font-weight: 650; }
+.topbar-left p { font-size: var(--v2-t-small); color: var(--v2-ink-3); margin-top: 2px; }
+
+.icon-btn {
+  width: 32px; height: 32px; border-radius: var(--v2-r-1);
+  border: 1px solid var(--v2-line); background: var(--v2-raised); color: var(--v2-ink-3);
+}
+.icon-btn:hover { border-color: var(--v2-line-strong); color: var(--v2-ink); background: var(--v2-sunken); }
+
+/* ============================================================
+   3. PRIMITIVES — buttons, inputs, badges
+   ============================================================ */
+.btn {
+  padding: 6px var(--v2-s3);
+  border-radius: var(--v2-r-1);
+  font-size: var(--v2-t-small);
+  font-weight: 600;
+  gap: 6px;
+  transition: background var(--v2-fast) var(--v2-ease),
+              border-color var(--v2-fast) var(--v2-ease),
+              color var(--v2-fast) var(--v2-ease),
+              box-shadow var(--v2-fast) var(--v2-ease);
+  line-height: 1.5;
+}
+.btn:focus-visible { outline: none; box-shadow: var(--v2-ring); }
+
+/* Primary: the one action that moves the work forward on this screen. */
+.bp {
+  background: var(--v2-accent); color: var(--v2-accent-ink);
+  box-shadow: var(--v2-shadow-1);
+}
+.bp:hover { background: color-mix(in srgb, var(--v2-accent) 88%, #000); transform: none; box-shadow: var(--v2-shadow-1); }
+
+/* Secondary: present but subordinate. */
+.bo { background: var(--v2-raised); border: 1px solid var(--v2-line); color: var(--v2-ink-2); }
+.bo:hover { border-color: var(--v2-line-strong); color: var(--v2-ink); background: var(--v2-sunken); }
+
+/* Destructive: only ever on a final action, never adjacent to primary. */
+.v2-danger { background: var(--v2-bad-soft);
+  border: 1px solid var(--v2-bad);
+  border-color: color-mix(in srgb, var(--v2-bad) 35%, transparent);
+  color: var(--v2-bad); }
+.v2-danger:hover { background: var(--v2-bad); color: #fff; border-color: var(--v2-bad); }
+
+.v2-ok { background: var(--v2-ok-soft);
+  border: 1px solid var(--v2-ok);
+  border-color: color-mix(in srgb, var(--v2-ok) 35%, transparent);
+  color: var(--v2-ok); }
+.v2-ok:hover { background: var(--v2-ok); color: #fff; }
+
+.bs { padding: 3px var(--v2-s2); font-size: var(--v2-t-micro); }
+
+.btn[disabled], .btn[aria-disabled="true"] { opacity: .5; pointer-events: none; }
+
+/* Loading state: the label stays, the button stops accepting input. */
+.btn.is-busy { position: relative; color: transparent; pointer-events: none; }
+.btn.is-busy::after {
+  content: ''; position: absolute; inset: 50% auto auto 50%;
+  width: 12px; height: 12px; margin: -6px 0 0 -6px;
+  border-radius: 50%; border: 2px solid currentColor; border-top-color: transparent;
+  color: #fff; animation: v2spin .7s linear infinite;
+}
+@keyframes v2spin { to { transform: rotate(360deg); } }
+
+.inp {
+  background: var(--v2-raised);
+  border: 1px solid var(--v2-line);
+  border-radius: var(--v2-r-1);
+  padding: 6px var(--v2-s3);
+  color: var(--v2-ink);
+  font-size: var(--v2-t-small);
+  min-height: 32px;
+}
+.inp:focus { border-color: var(--v2-accent); box-shadow: var(--v2-ring); }
+.inp::placeholder { color: var(--v2-ink-4); }
+
+.bg { border-radius: var(--v2-r-pill); font-size: var(--v2-t-micro); font-weight: 600; padding: 2px 8px; }
+.bg-ok { background: var(--v2-ok-soft); color: var(--v2-ok); }
+.bg-w { background: var(--v2-warn-soft); color: var(--v2-warn); }
+.bg-bad { background: var(--v2-bad-soft); color: var(--v2-bad); }
+.bg-info { background: var(--v2-info-soft); color: var(--v2-info); }
+.bg-p { background: var(--v2-accent-soft); color: var(--v2-accent); }
+.bg-n { background: var(--v2-sunken); color: var(--v2-ink-3); }
+
+.acm-alert { border-radius: var(--v2-r-2); font-size: var(--v2-t-small); padding: 10px var(--v2-s3); }
+.acm-alert.warn { background: var(--v2-warn-soft); border-color: var(--v2-warn);
+  border-color: color-mix(in srgb, var(--v2-warn) 30%, transparent); color: var(--v2-warn); }
+.acm-alert.err { background: var(--v2-bad-soft); border-color: var(--v2-bad);
+  border-color: color-mix(in srgb, var(--v2-bad) 30%, transparent); color: var(--v2-bad); }
+.acm-alert.ok { background: var(--v2-ok-soft); border-color: var(--v2-ok);
+  border-color: color-mix(in srgb, var(--v2-ok) 30%, transparent); color: var(--v2-ok); }
+
+/* ============================================================
+   4. CARDS AND TABLES
+   ============================================================ */
+.cd {
+  background: var(--v2-raised);
+  border: 1px solid var(--v2-line);
+  border-radius: var(--v2-r-3);
+  padding: var(--v2-s4);
+  margin-bottom: var(--v2-s3);
+  backdrop-filter: none;
+  box-shadow: var(--v2-shadow-1);
+}
+.cd::before { content: none; }
+.ct { font-size: var(--v2-t-h2); color: var(--v2-ink); margin-bottom: var(--v2-s3); font-weight: 600; }
+
+.tw { border: 1px solid var(--v2-line); border-radius: var(--v2-r-2); overflow: hidden; }
+.tw table { font-size: var(--v2-t-small); }
+.tw thead { background: var(--v2-sunken); }
+.tw th {
+  padding: var(--v2-s2) var(--v2-s3);
+  font-size: var(--v2-t-micro);
+  letter-spacing: .06em;
+  color: var(--v2-ink-3);
+  border-bottom: 1px solid var(--v2-line);
+}
+.tw td { padding: 10px var(--v2-s3); border-top: 1px solid var(--v2-line); color: var(--v2-ink-2); vertical-align: middle; }
+.tw tbody tr:first-child td { border-top: none; }
+.tw tr:hover td { background: var(--v2-sunken); }
+.tw a { color: var(--v2-accent); text-decoration: none; }
+.tw a:hover { text-decoration: underline; }
+
+/* Numerals in a data table must line up or the column cannot be scanned. */
+.tw td, [data-num] { font-variant-numeric: tabular-nums; }
+
+/* ============================================================
+   5. THE VERIFICATION CARD — the centre of this redesign
+   ============================================================ */
+.v2-verify {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: var(--v2-s5);
+  align-items: start;
+  margin-bottom: var(--v2-s5);
+}
+@media (max-width: 1080px) { .v2-verify { grid-template-columns: minmax(0, 1fr); } }
+
+.v2-card {
+  background: var(--v2-raised);
+  border: 1px solid var(--v2-line);
+  border-radius: var(--v2-r-3);
+  box-shadow: var(--v2-shadow-1);
+  overflow: hidden;
+}
+
+/* A status stripe across the top: the verdict is the first thing seen. */
+.v2-card-head {
+  transition: background var(--v2-base) var(--v2-ease);
+  display: flex; align-items: center; gap: var(--v2-s3);
+  padding: var(--v2-s3) var(--v2-s4);
+  border-bottom: 1px solid var(--v2-line);
+  background: var(--v2-sunken);
+}
+.v2-card-head.is-ok { background: var(--v2-ok-soft); border-bottom-color: var(--v2-ok);
+  border-bottom-color: color-mix(in srgb, var(--v2-ok) 22%, transparent); }
+.v2-card-head.is-warn { background: var(--v2-warn-soft); border-bottom-color: var(--v2-warn);
+  border-bottom-color: color-mix(in srgb, var(--v2-warn) 22%, transparent); }
+.v2-card-head.is-bad { background: var(--v2-bad-soft); border-bottom-color: var(--v2-bad);
+  border-bottom-color: color-mix(in srgb, var(--v2-bad) 22%, transparent); }
+
+.v2-card-body { padding: var(--v2-s4); }
+
+/* Identity block: photo + name, the two things a human verifies. */
+.v2-identity { display: flex; gap: var(--v2-s4); align-items: center; }
+.v2-photo {
+  width: 96px; height: 96px; flex: 0 0 96px;
+  border-radius: var(--v2-r-2);
+  background: var(--v2-sunken);
+  border: 1px solid var(--v2-line);
+  display: grid; place-items: center;
+  overflow: hidden;
+  color: var(--v2-ink-4);
+  font-size: 1.75rem;
+}
+.v2-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.v2-name {
+  font-size: var(--v2-t-display);
+  line-height: 1.2;
+  font-weight: 650;
+  color: var(--v2-ink);
+  letter-spacing: -.02em;
+}
+.v2-name-sub { font-size: var(--v2-t-body); color: var(--v2-ink-3); margin-top: 2px; }
+.v2-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: var(--v2-s2); }
+
+/* Fact grid: stable columns so the eye can compare two records. */
+.v2-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--v2-s3) var(--v2-s4);
+  margin-top: var(--v2-s4);
+  padding-top: var(--v2-s4);
+  border-top: 1px solid var(--v2-line);
+}
+.v2-fact { min-width: 0; }
+.v2-fact dt {
+  font-size: var(--v2-t-micro);
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--v2-ink-4);
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.v2-fact dd { font-size: var(--v2-t-body); color: var(--v2-ink); margin: 0; overflow-wrap: anywhere; }
+.v2-fact dd.is-missing { color: var(--v2-ink-4); font-style: italic; }
+
+/* The claim, as typed. Visually separated from the register above, because
+   conflating "what they typed" with "what we have" is the mistake that
+   produces a wrong approval. */
+.v2-claim {
+  border: 1px dashed var(--v2-line-strong);
+  border-radius: var(--v2-r-2);
+  padding: var(--v2-s3);
+  background: var(--v2-sunken);
+}
+.v2-claim-label {
+  font-size: var(--v2-t-micro);
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--v2-ink-4);
+  font-weight: 600;
+  margin-bottom: var(--v2-s2);
+  display: flex; align-items: center; gap: 6px;
+}
+.v2-claim-pair { display: flex; flex-wrap: wrap; gap: var(--v2-s4); }
+.v2-claim-k { font-size: var(--v2-t-micro); color: var(--v2-ink-4); }
+.v2-claim-v { font-size: var(--v2-t-body); color: var(--v2-ink); font-weight: 600; }
+
+/* Decision rail: the actions, grouped and ordered by consequence. */
+.v2-rail { position: sticky; top: var(--v2-s4); display: flex; flex-direction: column; gap: var(--v2-s3); }
+.v2-rail-card { background: var(--v2-raised); border: 1px solid var(--v2-line); border-radius: var(--v2-r-3); box-shadow: var(--v2-shadow-1); padding: var(--v2-s4); }
+/* The decision card is the one thing to act on, so it sits one step higher
+   than the record beside it (Von Restorff: one salient element per view). */
+.v2-rail > .v2-rail-card:first-child { box-shadow: var(--v2-shadow-2); }
+.v2-rail-title { font-size: var(--v2-t-h2); font-weight: 650; color: var(--v2-ink); margin-bottom: var(--v2-s1); }
+.v2-rail-hint { font-size: var(--v2-t-small); color: var(--v2-ink-3); margin-bottom: var(--v2-s3); }
+.v2-rail-actions { display: flex; flex-direction: column; gap: var(--v2-s2); }
+.v2-rail-actions .btn { justify-content: center; width: 100%; padding: 8px var(--v2-s3); }
+
+/* Match explanation: why the system thinks this is the person. */
+.v2-matchline {
+  display: flex; align-items: flex-start; gap: var(--v2-s2);
+  font-size: var(--v2-t-small);
+  padding: var(--v2-s2) var(--v2-s3);
+  border-radius: var(--v2-r-1);
+  background: var(--v2-sunken);
+  color: var(--v2-ink-2);
+}
+.v2-matchline.is-ok { background: var(--v2-ok-soft); color: var(--v2-ok); }
+.v2-matchline.is-warn { background: var(--v2-warn-soft); color: var(--v2-warn); }
+
+/* ============================================================
+   6. QUEUE ROWS — a list built for scanning, not for beauty
+   ============================================================ */
+.v2-list { display: flex; flex-direction: column; border: 1px solid var(--v2-line); border-radius: var(--v2-r-2); overflow: hidden; background: var(--v2-raised); }
+.v2-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1.6fr) minmax(0, 1fr) 96px 104px minmax(0, 1.2fr) 92px;
+  gap: var(--v2-s3);
+  align-items: center;
+  padding: var(--v2-s3) var(--v2-s4);
+  border-top: 1px solid var(--v2-line);
+  text-decoration: none;
+  color: inherit;
+  transition: background var(--v2-fast) var(--v2-ease);
+}
+.v2-row:first-child { border-top: none; }
+.v2-row:hover { background: var(--v2-sunken); text-decoration: none; }
+.v2-row:focus-visible { outline: none; box-shadow: inset var(--v2-ring); }
+@media (max-width: 1100px) {
+  .v2-row { grid-template-columns: 34px minmax(0, 1fr) 96px 92px; }
+  .v2-row .v2-col-hide { display: none; }
+}
+
+.v2-avatar {
+  width: 34px; height: 34px; border-radius: 50%;
+  background: var(--v2-accent-soft); color: var(--v2-accent);
+  display: grid; place-items: center;
+  font-size: var(--v2-t-small); font-weight: 650;
+  overflow: hidden;
+}
+.v2-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+.v2-row-name { font-size: var(--v2-t-body); font-weight: 600; color: var(--v2-ink); }
+.v2-row-meta { font-size: var(--v2-t-micro); color: var(--v2-ink-4); margin-top: 1px; }
+.v2-row-cell { font-size: var(--v2-t-small); color: var(--v2-ink-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v2-code {
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .06em;
+  font-size: var(--v2-t-small);
+  font-weight: 600;
+  color: var(--v2-ink);
+}
+
+/* ============================================================
+   7. STATUS TABS — one control, not two competing rows
+   ============================================================ */
+.v2-tabs {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--v2-sunken);
+  border: 1px solid var(--v2-line);
+  border-radius: var(--v2-r-2);
+  overflow-x: auto;
+  max-width: 100%;
+}
+.v2-tab {
+  padding: 5px var(--v2-s3);
+  border-radius: var(--v2-r-1);
+  font-size: var(--v2-t-small);
+  font-weight: 550;
+  color: var(--v2-ink-3);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background var(--v2-fast) var(--v2-ease), color var(--v2-fast) var(--v2-ease);
+}
+.v2-tab:hover { color: var(--v2-ink); background: var(--v2-raised); text-decoration: none; }
+.v2-tab[aria-current="page"] {
+  background: var(--v2-raised);
+  color: var(--v2-ink);
+  font-weight: 650;
+  box-shadow: var(--v2-shadow-1);
+}
+.v2-tab-count {
+  margin-left: 6px;
+  font-size: var(--v2-t-micro);
+  color: var(--v2-ink-4);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Search: the command bar of this console. */
+.v2-search {
+  display: flex; align-items: center; gap: var(--v2-s2);
+  background: var(--v2-raised);
+  border: 1px solid var(--v2-line);
+  border-radius: var(--v2-r-2);
+  padding: 3px 3px 3px var(--v2-s3);
+  min-width: 280px;
+  flex: 1;
+  max-width: 520px;
+  transition: border-color var(--v2-fast) var(--v2-ease), box-shadow var(--v2-fast) var(--v2-ease);
+}
+.v2-search:focus-within { border-color: var(--v2-accent); box-shadow: var(--v2-ring); }
+.v2-search i { color: var(--v2-ink-4); font-size: var(--v2-t-small); }
+.v2-search input {
+  flex: 1; border: none; background: none; outline: none;
+  color: var(--v2-ink); font-size: var(--v2-t-small);
+  font-family: inherit; min-height: 28px;
+  min-width: 0;
+}
+.v2-search input::placeholder { color: var(--v2-ink-4); }
+.v2-search .btn { flex: 0 0 auto; }
+
+.v2-toolbar { display: flex; gap: var(--v2-s3); align-items: center; flex-wrap: wrap; margin-bottom: var(--v2-s3); }
+
+/* ============================================================
+   8. EMPTY AND ERROR STATES
+   ============================================================ */
+.v2-state {
+  padding: var(--v2-s7) var(--v2-s5);
+  text-align: center;
+  color: var(--v2-ink-3);
+  font-size: var(--v2-t-body);
+}
+.v2-state i { font-size: 1.5rem; color: var(--v2-ink-4); display: block; margin-bottom: var(--v2-s3); }
+.v2-state-title { font-size: var(--v2-t-h2); font-weight: 650; color: var(--v2-ink); margin-bottom: var(--v2-s1); }
+.v2-state p { max-width: 46ch; margin: 0 auto var(--v2-s3); line-height: 1.55; }
+.v2-state-actions { display: flex; gap: var(--v2-s2); justify-content: center; flex-wrap: wrap; }
+
+/* ============================================================
+   9. TIMELINE — a record, read top to bottom
+   ============================================================ */
+.v2-timeline { list-style: none; margin: 0; padding: 0; }
+.v2-timeline li { position: relative; padding: 0 0 var(--v2-s3) var(--v2-s5); }
+.v2-timeline li::before {
+  content: ''; position: absolute; left: 5px; top: 6px;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--v2-line-strong);
+}
+.v2-timeline li::after {
+  content: ''; position: absolute; left: 8px; top: 16px; bottom: 0;
+  width: 1px; background: var(--v2-line);
+}
+.v2-timeline li:last-child { padding-bottom: 0; }
+.v2-timeline li:last-child::after { content: none; }
+.v2-timeline .v2-ev { font-size: var(--v2-t-small); color: var(--v2-ink); font-weight: 550; }
+.v2-timeline .v2-ev-meta { font-size: var(--v2-t-micro); color: var(--v2-ink-4); margin-top: 1px; }
+
+/* ============================================================
+   10. KEYBOARD + MOTION
+   ============================================================ */
+.v2-kbd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px; padding: 1px 4px;
+  border: 1px solid var(--v2-line-strong);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  color: var(--v2-ink-3);
+  background: var(--v2-raised);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
+}
+
+/* Focus is never invisible. The console is keyboard-operable end to end
+   because an officer taking a phone call has one hand. */
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--v2-accent);
+  outline-offset: 2px;
+}
+
+/* Screen-reader-only, for labels that must exist but not be seen. */
+.v2-sr {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* Skip link: visible only when focused. It exists so a keyboard user does
+   not have to tab through nine navigation items on every page. */
+.v2-skip {
+  position: absolute; left: -9999px; top: 8px; z-index: 200;
+  background: var(--v2-accent); color: var(--v2-accent-ink);
+  padding: 8px 14px; border-radius: var(--v2-r-1);
+  font-size: var(--v2-t-small); font-weight: 600; text-decoration: none;
+}
+.v2-skip:focus { left: 8px; }
+main:focus { outline: none; }
+
+/* ============================================================
+   11. STAT CARDS — four numbers, read as a set
+   ============================================================ */
+.sg { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--v2-s3); margin-bottom: var(--v2-s4); }
+.sc {
+  background: var(--v2-raised);
+  border: 1px solid var(--v2-line);
+  border-radius: var(--v2-r-2);
+  padding: var(--v2-s4);
+  backdrop-filter: none;
+  box-shadow: none;
+  transition: border-color var(--v2-fast) var(--v2-ease);
+}
+.sc::before { content: none; }
+.sc:hover { transform: none; box-shadow: none; border-color: var(--v2-line-strong); }
+.sc .ico {
+  width: 28px; height: 28px; border-radius: var(--v2-r-1);
+  display: grid; place-items: center;
+  font-size: .75rem; margin-bottom: var(--v2-s2);
+}
+.sc .val {
+  font-size: 1.75rem; font-weight: 650; color: var(--v2-ink);
+  letter-spacing: -.03em; line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.sc .lbl { font-size: var(--v2-t-micro); color: var(--v2-ink-3); margin-top: 2px; letter-spacing: .01em; }
+
+/* A stat that needs acting on gets a left edge, so "overdue" is not read as
+   just another number. */
+.sc.is-alert { border-left: 3px solid var(--v2-bad); }
+.sc.is-alert .val { color: var(--v2-bad); }
+
+.acm-overdue { color: var(--v2-bad); font-weight: 600; }
+.dim { color: var(--v2-ink-4); }
+.sub { font-size: var(--v2-t-small); color: var(--v2-ink-3); line-height: 1.55; }

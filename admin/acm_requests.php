@@ -1,35 +1,28 @@
 <?php
 /**
- * ACM S11 — Self-service activation requests.
+ * ACM S12 — Activation requests: the queue of member-initiated claims.
  * ------------------------------------------------------------
- * The queue a student's request lands in when they submit their ID
- * number on the public endpoint. Design:
- * docs/design/acm-self-service-activation.md §3.2.
+ * WHAT CHANGED FROM S11
+ *   S11 rendered five status tabs as separate button links, a search form,
+ *   and then a nine-column table whose every row ended in "Open". On a
+ *   working day the officer uses ONE tab (pending) and one action (verify),
+ *   so the page was mostly furniture.
  *
- * Roles: super_admin, accounts_office (AcmPolicy::RES_REQUEST).
+ *   Now: one segmented control for status, one search box, and a list built
+ *   for scanning — who, which ID, what they claimed, how long ago, and the
+ *   single action. The count per tab is shown, so the officer can see the
+ *   backlog without clicking through five tabs (recognition over recall).
  *
- * WHAT THIS SCREEN IS CAREFUL ABOUT
- *
- *   1. It never auto-matches. `candidates` is a suggestion list; the
- *      officer picks the person, and `match_basis` records whether the
- *      code and name actually agreed. A "manual" basis is visible in
- *      the detail panel because that is the case an audit needs to find.
- *
- *   2. Approval is a single POST. Everything after it — issuing the
- *      code, reading it to the student — happens in the existing
- *      ticket screen, which the response links to. This page does not
- *      duplicate the code ceremony.
- *
- *   3. It shows the repeat count. `request_count` > 1 means either a
- *      stuck student or someone probing; both deserve a look before
- *      approval.
+ * WHY THIS PAGE WAS UNSTYLED
+ *   It was missing acm_head(), so no stylesheet was ever linked. That is
+ *   fixed and guarded by tests/security/test_acm_console_layout.py.
  */
 define('ACM_BOOT', true);
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/acm_layout.php';
 require_once __DIR__ . '/../acm/autoload.php';
 
-use SSMS\Acm\Identity\AcmPersonService;
+use SSMS\Acm\Identity\AmharicNameMatcher;
 use SSMS\Acm\Policy\AcmPolicy;
 use SSMS\Acm\Requests\AcmActivationRequestService;
 
@@ -45,14 +38,10 @@ if (!in_array($role, AcmPolicy::consoleRoles(), true)) {
     exit;
 }
 
-$fStatus = (string)($_GET['status'] ?? 'pending_review');
-if (!in_array($fStatus, ['pending_review', 'approved', 'rejected', 'expired', 'canceled'], true)) {
+$fStatus = trim((string)($_GET['status'] ?? 'pending_review'));
+if ($fStatus === '') {
     $fStatus = 'pending_review';
 }
-// Lookup by the reference the member was given, or their ID number, name,
-// or the last digits of their phone. Without this the only way to find one
-// request was to scroll the status tabs -- and request_ref is the ONLY
-// string the member is handed, so it is the one an officer arrives with.
 $fQ = trim((string)($_GET['q'] ?? ''));
 if (mb_strlen($fQ) > 120) {
     $fQ = mb_substr($fQ, 0, 120);
@@ -61,149 +50,239 @@ $offset = max(0, (int)($_GET['offset'] ?? 0));
 $limit = 25;
 
 $rows = [];
+$counts = [];
 $pendingCount = 0;
 $pageError = '';
 try {
     $requests = new AcmActivationRequestService($pdo);
     $rows = $requests->queue($actorId, $fStatus, $limit, $offset, $fQ);
-    // The chrome badge means "work waiting", not "rows on this page".
-    // Asking for the pending count keeps it correct on every tab.
-    // Unfiltered and uncapped by the search: the badge means "work
-    // waiting", not "rows matching what I typed".
-    if ($fStatus === 'pending_review' && $fQ === '') {
-        $pendingCount = count($rows) + $offset;
-    } else {
-        $pendingCount = count($requests->queue($actorId, 'pending_review', 100, 0));
+    // Counts for every tab, so the backlog is visible without clicking.
+    // Unfiltered by the search on purpose: a badge means "work waiting",
+    // not "rows matching what I typed".
+    foreach (['pending_review', 'approved', 'rejected', 'expired', 'canceled'] as $s) {
+        $counts[$s] = count($requests->queue($actorId, $s, 100, 0));
     }
+    $pendingCount = $counts['pending_review'] ?? 0;
 } catch (\Throwable $e) {
     error_log('acm_requests_queue_failed');
     $pageError = 'The request queue could not be loaded.';
 }
 
-/** The only page where a request is approved or rejected. */
 $canDecide = AcmPolicy::can($role, AcmPolicy::RES_REQUEST, 'approve');
 $statusLabel = [
-    'pending_review' => 'Pending review',
+    'pending_review' => 'Pending',
     'approved' => 'Approved',
     'rejected' => 'Rejected',
     'expired' => 'Expired',
     'canceled' => 'Canceled',
 ];
 
+/** How long ago, in the officer's terms rather than a timestamp. */
+$ago = static function (string $ts): string {
+    $then = strtotime($ts);
+    if ($then === false) {
+        return $ts;
+    }
+    $mins = (int)floor((time() - $then) / 60);
+    if ($mins < 1) {
+        return 'just now';
+    }
+    if ($mins < 60) {
+        return $mins . ' min ago';
+    }
+    $hours = (int)floor($mins / 60);
+    if ($hours < 24) {
+        return $hours . ' hr' . ($hours === 1 ? '' : 's') . ' ago';
+    }
+    $days = (int)floor($hours / 24);
+    return $days . ' day' . ($days === 1 ? '' : 's') . ' ago';
+};
+
 acm_head('Activation requests');
-acm_chrome_open('requests', 'Activation requests', 'Self-service requests from members and parents', $pendingCount);
+acm_chrome_open(
+    'requests',
+    'Activation requests',
+    'Members asking for an account. Verify a person, then approve.',
+    $pendingCount,
+    'requests'
+);
 ?>
 
-<?php /* The heading and the one-liner are already in the chrome header
-         (acm_chrome_open takes both). Repeating them here printed
-         "Activation requests" twice on every visit. */ ?>
-<p class="sub">
-    A member submits their ID number from the member app or web; it lands here.
-    Approving creates the ticket — it does not issue the code. Open the ticket
-    afterwards to issue and read out the code.
-</p>
-
 <?php if ($pageError !== ''): ?>
-    <div class="acm-alert err"><i class="fa-solid fa-triangle-exclamation"></i>
-        <?= e($pageError) ?> Apply migration 099 if this is a new deployment.
+    <div class="acm-alert err">
+        <i class="fa-solid fa-triangle-exclamation"></i> <?= e($pageError) ?>
+        Apply migration 099 if this is a new deployment.
     </div>
 <?php endif; ?>
 
-<form method="get" class="acm-filterbar">
-    <?php /* The status tabs stay as links so they keep working without JS;
-             the search submits and carries the current tab with it. */ ?>
-    <?php foreach ($statusLabel as $key => $label): ?>
-        <a class="btn <?= $key === $fStatus ? '' : 'bo' ?>"
-           href="/admin/acm_requests.php?status=<?= urlencode($key) ?><?= $fQ !== '' ? '&amp;q=' . urlencode($fQ) : '' ?>">
-            <?= e($label) ?>
-        </a>
-    <?php endforeach; ?>
-    <input type="hidden" name="status" value="<?= e($fStatus) ?>">
-    <input class="inp" type="search" name="q" value="<?= e($fQ) ?>"
-           placeholder="Reference, ID number, name…" aria-label="Search requests">
-    <button class="btn bo" type="submit"><i class="fa-solid fa-magnifying-glass"></i> Search</button>
-    <?php if ($fQ !== ''): ?>
-        <a class="btn bo" href="/admin/acm_requests.php?status=<?= urlencode($fStatus) ?>">Clear</a>
-    <?php endif; ?>
-</form>
+<div class="v2-toolbar">
+    <nav class="v2-tabs" aria-label="Request status">
+        <?php foreach ($statusLabel as $key => $label): ?>
+            <a class="v2-tab"
+               href="/admin/acm_requests.php?status=<?= urlencode($key) ?><?= $fQ !== '' ? '&amp;q=' . urlencode($fQ) : '' ?>"
+               <?= $key === $fStatus ? 'aria-current="page"' : '' ?>>
+                <?= e($label) ?>
+                <?php if (isset($counts[$key])): ?>
+                    <span class="v2-tab-count"><?= (int)$counts[$key] ?></span>
+                <?php endif; ?>
+            </a>
+        <?php endforeach; ?>
+    </nav>
+
+    <form method="get" class="v2-search" role="search">
+        <input type="hidden" name="status" value="<?= e($fStatus) ?>">
+        <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+        <input type="search" name="q" value="<?= e($fQ) ?>"
+               placeholder="Reference, ID number, or name…"
+               aria-label="Search requests">
+        <button class="btn bp" type="submit">Search</button>
+        <?php if ($fQ !== ''): ?>
+            <a class="btn bo" href="/admin/acm_requests.php?status=<?= urlencode($fStatus) ?>">Clear</a>
+        <?php endif; ?>
+    </form>
+</div>
 
 <?php if ($rows === []): ?>
-    <div class="acm-empty">
-        <i class="fa-solid fa-inbox"></i>
-        <?php if ($fQ !== '') : ?>
-            <p>No <?= e(strtolower($statusLabel[$fStatus])) ?> requests match
-               &ldquo;<?= e($fQ) ?>&rdquo;. The search covers the reference, the
-               ID number given, the name, and the last four digits of the phone.
-               Try another status tab &mdash; the match may have been decided.</p>
-        <?php else: ?>
-            <p>No <?= e(strtolower($statusLabel[$fStatus])) ?> requests.</p>
-        <?php endif; ?>
-    </div>
+    <?php if ($pageError !== ''): ?>
+        <div class="v2-state">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            <div class="v2-state-title">The list is unknown, not empty</div>
+            <p>The queue failed to load. Reload the page; if it keeps failing the
+               server error log has the reason.</p>
+        </div>
+    <?php elseif ($fQ !== ''): ?>
+        <div class="v2-state">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <div class="v2-state-title">Nothing matches “<?= e($fQ) ?>”</div>
+            <p>
+                The search covers the request reference, the ID number given, the
+                name, and the last four digits of the phone. The request may also
+                have been decided already — try another status.
+            </p>
+            <div class="v2-state-actions">
+                <a class="btn bo" href="/admin/acm_requests.php?status=<?= urlencode($fStatus) ?>">
+                    Clear the search
+                </a>
+                <a class="btn bo" href="/admin/acm_requests.php?status=approved&amp;q=<?= urlencode($fQ) ?>">
+                    Look in approved
+                </a>
+            </div>
+        </div>
+    <?php elseif ($fStatus === 'pending_review'): ?>
+        <div class="v2-state">
+            <i class="fa-solid fa-circle-check" style="color:var(--v2-ok)"></i>
+            <div class="v2-state-title">Nothing waiting</div>
+            <p>Every request has been reviewed. New claims appear here as members
+               submit them from the app.</p>
+        </div>
+    <?php else: ?>
+        <div class="v2-state">
+            <i class="fa-solid fa-inbox"></i>
+            <div class="v2-state-title">No <?= e(strtolower($statusLabel[$fStatus] ?? 'matching')) ?> requests</div>
+            <p>Nothing in this status right now.</p>
+        </div>
+    <?php endif; ?>
 <?php else: ?>
-    <div class="tw"><table>
-        <thead>
-            <tr>
-                <th>Reference</th>
-                <th>Type</th>
-                <th>ID number given</th>
-                <th>Name given</th>
-                <th>Phone</th>
-                <th>Repeats</th>
-                <th>Received</th>
-                <th>Status</th>
-                <th></th>
-            </tr>
-        </thead>
-        <tbody>
+    <div class="v2-list" role="list">
         <?php foreach ($rows as $row): ?>
             <?php
+            $ref = (string)$row['request_ref'];
             $repeats = (int)($row['request_count'] ?? 1);
             $claimedBy = (int)($row['claimed_by'] ?? 0);
+            $name = (string)$row['name_key'];
+            $initial = $name !== '' ? mb_strtoupper(mb_substr($name, 0, 1)) : '?';
+            $status = (string)$row['status'];
             ?>
-            <tr>
-                <td><code><?= e((string)$row['request_ref']) ?></code></td>
-                <td><?= e((string)$row['account_type']) ?></td>
-                <td><strong><?= e((string)$row['member_code']) ?></strong></td>
-                <td><?= e((string)$row['name_key']) ?></td>
-                <td><?= $row['phone_last4'] !== null ? '…' . e((string)$row['phone_last4']) : '—' ?></td>
-                <td>
-                    <?php if ($repeats > 1): ?>
-                        <span class="bg bg-w" title="Identical submissions collapsed onto this request">
-                            <?= $repeats ?>&times;
-                        </span>
-                    <?php else: ?>
-                        <span class="dim">1</span>
-                    <?php endif; ?>
-                </td>
-                <td class="dim"><?= e((string)$row['created_at']) ?></td>
-                <td>
-                    <?php if ($claimedBy > 0 && $row['status'] === 'pending_review'): ?>
+            <a class="v2-row" role="listitem"
+               href="/admin/acm_request.php?id=<?= (int)$row['id'] ?>"
+               aria-label="Verify request <?= e($ref) ?>">
+                <div class="v2-avatar amharic" aria-hidden="true"><?= e($initial) ?></div>
+
+                <div style="min-width:0">
+                    <div class="v2-row-name amharic"><?= e($name) ?></div>
+                    <div class="v2-row-meta">
+                        <?= e(ucfirst((string)$row['account_type'])) ?>
+                        · <?= e($ago((string)$row['created_at'])) ?>
+                        <?php if ($repeats > 1): ?>
+                            · <span title="The same claim was submitted more than once"><?= $repeats ?>× resubmitted</span>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <div class="v2-row-cell v2-col-hide">
+                    <span class="v2-code"><?= e((string)$row['member_code']) ?></span>
+                </div>
+
+                <div class="v2-row-cell v2-col-hide">
+                    <span class="v2-code" style="letter-spacing:.04em;color:var(--v2-ink-3)">
+                        <?= e($ref) ?>
+                    </span>
+                </div>
+
+                <div>
+                    <?php if ($claimedBy > 0 && $status === 'pending_review'): ?>
                         <span class="bg bg-info">claimed</span>
                     <?php else: ?>
-                        <span class="bg <?= acm_status_bg((string)$row['status']) ?>">
-                            <?= e($statusLabel[(string)$row['status']] ?? (string)$row['status']) ?>
+                        <span class="bg <?= acm_status_bg($status) ?>">
+                            <?= e($statusLabel[$status] ?? str_replace('_', ' ', $status)) ?>
                         </span>
                     <?php endif; ?>
-                </td>
-                <td>
-                    <a class="btn bo" href="/admin/acm_request.php?id=<?= (int)$row['id'] ?>">
-                        <i class="fa-solid fa-arrow-right"></i> Open
-                    </a>
-                </td>
-            </tr>
-        <?php endforeach; ?>
-        </tbody>
-    </table></div>
+                </div>
 
-    <?php $qs = $_GET; ?>
-    <div class="acm-btn-row">
-        <?php if ($offset > 0): $qs['offset'] = max(0, $offset - $limit); ?>
-            <a class="btn bo" href="?<?= e(http_build_query($qs)) ?>"><i class="fa-solid fa-arrow-left"></i> Newer</a>
+                <div class="v2-row-cell v2-col-hide">
+                    <?php if ($row['phone_last4'] !== null): ?>
+                        <span class="dim" style="font-size:var(--v2-t-micro)">phone …<?= e((string)$row['phone_last4']) ?></span>
+                    <?php else: ?>
+                        <span class="dim" style="font-size:var(--v2-t-micro)">no phone</span>
+                    <?php endif; ?>
+                </div>
+
+                <div style="text-align:right">
+                    <?php if ($status === 'pending_review' && $canDecide): ?>
+                        <span class="btn bp bs">Verify <i class="fa-solid fa-arrow-right"></i></span>
+                    <?php else: ?>
+                        <span class="btn bo bs">Open</span>
+                    <?php endif; ?>
+                </div>
+            </a>
+        <?php endforeach; ?>
+    </div>
+
+    <?php
+    $total = isset($counts[$fStatus]) ? (int)$counts[$fStatus] : count($rows);
+    $hasMore = ($offset + $limit) < $total && count($rows) === $limit;
+    ?>
+    <div style="display:flex;align-items:center;gap:var(--v2-s3);margin-top:var(--v2-s3)">
+        <span style="font-size:var(--v2-t-micro);color:var(--v2-ink-4)">
+            Showing <?= count($rows) ?> of <?= $total ?>
+        </span>
+        <span style="flex:1"></span>
+        <?php if ($offset > 0): ?>
+            <a class="btn bo bs"
+               href="/admin/acm_requests.php?status=<?= urlencode($fStatus) ?>&amp;offset=<?= max(0, $offset - $limit) ?><?= $fQ !== '' ? '&amp;q=' . urlencode($fQ) : '' ?>">
+                <i class="fa-solid fa-chevron-left"></i> Previous
+            </a>
         <?php endif; ?>
-        <?php if (count($rows) === $limit): $qs['offset'] = $offset + $limit; ?>
-            <a class="btn bo" href="?<?= e(http_build_query($qs)) ?>">Older <i class="fa-solid fa-arrow-right"></i></a>
+        <?php if ($hasMore): ?>
+            <a class="btn bo bs"
+               href="/admin/acm_requests.php?status=<?= urlencode($fStatus) ?>&amp;offset=<?= $offset + $limit ?><?= $fQ !== '' ? '&amp;q=' . urlencode($fQ) : '' ?>">
+                Next <i class="fa-solid fa-chevron-right"></i>
+            </a>
         <?php endif; ?>
     </div>
 <?php endif; ?>
+
+<script>
+// "/" focuses the search box, the one keyboard affordance worth having on a
+// page whose whole job is finding one row.
+document.addEventListener('keydown', function (e) {
+    var tag = (e.target.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || e.metaKey || e.ctrlKey) { return; }
+    if (e.key === '/') {
+        var box = document.querySelector('.v2-search input[type="search"]');
+        if (box) { e.preventDefault(); box.focus(); }
+    }
+});
+</script>
 
 <?php acm_chrome_close(); ?>
