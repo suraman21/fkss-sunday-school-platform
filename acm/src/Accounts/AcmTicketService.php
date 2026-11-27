@@ -556,6 +556,28 @@ class AcmTicketService
         );
     }
 
+    /**
+     * Approve a ticket that was opened by an activation REQUEST.
+     *
+     * The officer decided on the request screen (AcmActivationRequestService
+     * -> AcmRequestDecisionService::approve). That decision IS the approval,
+     * so the ticket must land in an issuable state rather than waiting for a
+     * second one somewhere else -- which is exactly what used to happen:
+     * create() opens at `submitted`, nothing advanced it, and the console
+     * could then never issue a code ("This ticket is not awaiting a code").
+     *
+     * Uses the same guarded transition as decide(), so a ticket that is not
+     * actually open (concurrent cancel, cancel-after-approve) fails loudly
+     * instead of being forced into `approved`.
+     */
+    public function markApprovedByRequest(int $id, int $actorId, string $requestUuid = ''): void
+    {
+        $meta = $requestUuid !== '' ? ['request_uuid' => $requestUuid] : null;
+        $this->transition(
+            $id, self::DECIDABLE_STATUSES, 'approved', $actorId, 'approved', '', $meta
+        );
+    }
+
     public function markGrantVerified(int $id, array $meta): void
     {
         $this->transition($id, ['code_issued'], 'grant_verified', 0, 'grant_verified', '', $meta);
