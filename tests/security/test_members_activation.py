@@ -120,6 +120,177 @@ class TheIdempotencyKeyIsStablePerGrant(unittest.TestCase):
         self.assertNotIn("member_code + Date.now", self.js)
 
 
+class TheIdempotencyKeyIsWellFormed(unittest.TestCase):
+    """Stability is not enough: the server also validates the key's FORMAT.
+
+    THE BUG THIS FILE EXISTS FOR
+        makeIdempotencyKey() returned 32 bare hex characters, built by joining
+        hex bytes with no separators. ActivationService::establishCredentials
+        validates with
+
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+        so every activation was refused on the LAST step with 400
+        invalid_request -- shown to the member as "The request is invalid.",
+        after they had already chosen a password. The previous tests in this
+        file checked that the key was random and stable, which it was. Nobody
+        checked that it was a UUID.
+
+    These assertions read the shipped JavaScript rather than a copy, so a
+    future edit that drops the hyphens fails here instead of in the browser.
+    """
+
+    # The validator, taken verbatim from establishCredentials().
+    SERVER_UUID = re.compile(
+        r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I
+    )
+    # The fallback for browsers without crypto.getRandomValues must be valid
+    # too, or it is dead code that only fails on the one browser we cannot test.
+    UUID_TEMPLATE = '"{}-{}-{}-{}-{}"'
+
+    @classmethod
+    def setUpClass(cls):
+        cls.js = strip_js_comments(read(JS))
+        start = cls.js.index("function makeIdempotencyKey()")
+        # Slice by the next function definition, and tolerate the fallback
+        # being absent: the pre-fix file had none, and a missing function
+        # should fail a NAMED test, not blow up setUpClass for all four.
+        nxt = cls.js.find("function fallbackUuidV4()", start)
+        if nxt < 0:
+            nxt = cls.js.find("function bindRequest", start)
+        cls.generator = cls.js[start:nxt]
+        cls.fallback = ""
+        if "function fallbackUuidV4()" in cls.js:
+            fstart = cls.js.index("function fallbackUuidV4()")
+            cls.fallback = cls.js[fstart:cls.js.index("function bindRequest", fstart)]
+
+    def test_the_generator_joins_hex_into_five_groups(self):
+        # Four separators, five slices: 8-4-4-4-12.
+        self.assertEqual(self.generator.count('"-"'), 4,
+                         "a UUID has four hyphens; the key had none")
+
+    def test_the_generated_shape_matches_the_servers_regex(self):
+        """Build the string the generator would emit and validate it.
+
+        The generator is pure concatenation over 16 random bytes, so the shape
+        is fully determined by the slice boundaries. Reading them out of the
+        source is what makes this a real check rather than a copy of the
+        intended output.
+        """
+        slices = re.findall(r"hex\.slice\((\d+),\s*(\d+)\)|hex\.slice\((\d+)\)",
+                            self.generator)
+        self.assertTrue(slices, "expected the generator to slice a hex string")
+
+        # 16 bytes -> 32 hex chars; 8-4-4-4-12 consumes all 32.
+        self.assertIn("slice(0, 8)", self.generator)
+        self.assertIn("slice(8, 12)", self.generator)
+        self.assertIn("slice(12, 16)", self.generator)
+        self.assertIn("slice(16, 20)", self.generator)
+        self.assertIn("slice(20)", self.generator)
+
+        sample = "0123456789abcdef0123456789abcdef"
+        built = "-".join([sample[0:8], sample[8:12], sample[12:16],
+                          sample[16:20], sample[20:]])
+        self.assertTrue(self.SERVER_UUID.match(built),
+                        "8-4-4-4-12 over 32 hex chars must be a UUID: " + built)
+
+    def test_the_no_crypto_fallback_is_a_uuid_too(self):
+        self.assertNotEqual(
+            "", self.fallback,
+            "there must be a fallback for browsers without getRandomValues, "
+            "and it must be a well-formed UUID"
+        )
+        for slice_text in ("slice(0, 8)", "slice(8, 12)", "slice(12, 16)",
+                           "slice(16, 20)", "slice(20)"):
+            self.assertIn(slice_text, self.fallback,
+                          "the fallback key must have the same shape, or the "
+                          "one browser that reaches it cannot activate at all")
+
+    def test_the_joined_hex_is_never_returned_directly(self):
+        """The exact defect, stated precisely.
+
+        Joining 32 hex characters is fine -- both paths do it -- as long as the
+        RETURNED value is the grouped form. The bug was `return ...join("")`
+        handing back the bare 32-character string.
+        """
+        for name, body in (("crypto path", self.generator),
+                           ("fallback", self.fallback)):
+            # The defect was `return <expr>.join("")`: returning the bare
+            # 32-character string. Joining first and then grouping is correct,
+            # so the assertion has to be about the RETURN expression, not about
+            # the presence of join("").
+            self.assertNotRegex(
+                body,
+                r"return\s+\(\)[^;]*\.join\(|return\s+[A-Za-z_$][\w$.]*\.join\(",
+                name + " returns a joined string instead of the grouped UUID"
+            )
+            self.assertIn(
+                "return hex.slice(", body,
+                name + " must return the hyphenated form"
+            )
+
+
+class ServerErrorsSpeakTheReadersLanguage(unittest.TestCase):
+    """The API's fixed English strings are correct; showing them raw is not.
+
+    THE BUG THIS FILE EXISTS FOR
+        The activate page is Amharic (lang="am"), but a failed caller showed
+        the API's untranslated text:
+
+            "The request is invalid."
+
+        Every other message on that screen is bilingual -- `pick(am, en)` --
+        because the client owns presentation. The server must keep its single,
+        vague string (it is the anti-enumeration guarantee), but the client
+        has to speak it in the reader's language.
+
+    WHAT MUST NOT HAPPEN INSTEAD
+        Rewriting the message into something more specific. That would rebuild
+        the member-ID oracle the API removed. So the translation is keyed on
+        the machine `code` the server sends, never on its English prose, and an
+        unknown code falls back to the generic localized sentence rather than
+        echoing server text.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.js = strip_js_comments(read(JS))
+
+    def test_translation_is_keyed_on_the_machine_code_not_the_english_text(self):
+        self.assertIn("error.code", self.js,
+                      "the client must branch on the API's `code`, not its message")
+        self.assertNotIn('error.message === "', self.js,
+                         "matching on English prose breaks the moment the server "
+                         "rewords a message")
+
+    def test_known_codes_have_bilingual_copy(self):
+        for code in ("not_verified", "invalid_request", "rate_limited",
+                     "weak_password", "temporarily_unavailable",
+                     "activation_pending", "grant_invalid", "grant_expired",
+                     "grant_consumed", "grant_revoked", "code_invalid",
+                     "account_exists", "idempotent_conflict", "network_denied"):
+            self.assertRegex(
+                self.js, r"\b" + code + r"\s*:\s*\[",
+                "no localized copy for the server code " + code
+            )
+
+    def test_an_unknown_code_does_not_leak_server_prose(self):
+        # The generic branch must be our localized sentence, not error.message.
+        self.assertIn("pick(", self.js)
+        self.assertIn("serverMessage", self.js)
+
+    def test_the_anti_enumeration_copy_stays_vague(self):
+        """The localization must not say WHY it failed.
+
+        AUTOMATION PIN: whatever wording is chosen, it may not name a cause.
+        """
+        code = self.js.lower()
+        for forbidden in ("not found", "no such member", "unknown member",
+                          "not registered", "wrong name", "invalid member",
+                          "does not exist"):
+            self.assertNotIn(forbidden, code)
+
+
 class ThePageDoesNotRebuildTheOracle(unittest.TestCase):
     """The single most important property of this screen."""
 
@@ -127,10 +298,20 @@ class ThePageDoesNotRebuildTheOracle(unittest.TestCase):
     def _code():
         return strip_js_comments(read(JS))
 
-    def test_failures_show_the_servers_own_words(self):
-        # `error.message` comes from the API. Prefixing or rewriting it would
-        # reintroduce detail the server deliberately withheld.
-        self.assertIn("error.message", self._code())
+    def test_failures_are_not_reworded_reinterpreted_or_explained(self):
+        """The rule is "add no detail", not "echo the English".
+
+        This used to assert that `error.message` appeared in the source, as a
+        proxy for "the server decides the words". But that also required
+        printing the API's untranslated English on an Amharic page, and the
+        real invariant is narrower and stronger: whatever we show must come
+        from a fixed table keyed by the machine `code`, so the copy can never
+        describe WHY the call failed. See ServerErrorsSpeakTheReadersLanguage.
+        """
+        code = self._code()
+        self.assertIn("serverMessage(", code, "failures must route through one helper")
+        self.assertIn("SERVER_COPY[error.code]", code,
+                      "the mapping must be keyed on the server's machine code")
 
     def test_no_local_guessing_at_why_it_failed(self):
         code = self._code()
