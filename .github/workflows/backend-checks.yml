@@ -278,17 +278,27 @@ jobs:
           # green is a proof that never runs.
         run: |
           set -uo pipefail
+          # Echo failures as annotations. Job log blobs live on a host that is
+          # not always reachable, while annotations are served by api.github.com
+          # -- so a bare "exit code 1" would be undiagnosable from tooling.
+          report() {
+            while IFS= read -r line; do
+              [ -n "$line" ] && echo "::error::$line"
+            done < <(tail -n 40 /tmp/pdoprobe.out)
+          }
           php tests/e2e/acm_named_placeholder_mariadb.php 2>&1 | tee /tmp/pdoprobe.out
           rc=${PIPESTATUS[0]}
           if [ "$rc" -eq 3 ]; then
             echo "::error::the named-placeholder proof could not run; it must not be skipped."
+            report
             exit 1
           fi
-          grep -q 'NAMED-PLACEHOLDER PROOF: PASS' /tmp/pdoprobe.out || {
+          if ! grep -q 'NAMED-PLACEHOLDER PROOF: PASS' /tmp/pdoprobe.out; then
             echo "::error::the named-placeholder proof did not pass."
+            report
             exit 1
-          }
-          [ "$rc" -eq 0 ] || exit 1
+          fi
+          [ "$rc" -eq 0 ] || { report; exit 1; }
 
       - name: Run tests/security
         env:
