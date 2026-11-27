@@ -33,6 +33,7 @@ $nav = [
 /** Assembly-time version stamp: a new deploy busts the browser cache without
  *  anyone editing a query string by hand. */
 $assetVersion = (string)(@filemtime(MEMBERS_ROOT . '/public/assets/js/app.js') ?: 1);
+$learningVersion = (string)(@filemtime(MEMBERS_ROOT . '/public/assets/js/learning.js') ?: 1);
 ?>
 <!DOCTYPE html>
 <html lang="<?= $isAm ? 'am' : 'en' ?>">
@@ -45,7 +46,7 @@ $assetVersion = (string)(@filemtime(MEMBERS_ROOT . '/public/assets/js/app.js') ?
 <title><?= $title !== '' ? e($title) . ' · ' : '' ?>ፈለገ ቅዱሳን</title>
 <link rel="stylesheet" href="/members/public/assets/css/theme.css?v=<?= e($assetVersion) ?>">
 </head>
-<body>
+<body<?= !empty($requiresAuth) ? ' data-requires-auth="1"' : '' ?>>
 
 <?php if (!$chrome): ?>
 <header class="fk-header">
@@ -90,6 +91,10 @@ $assetVersion = (string)(@filemtime(MEMBERS_ROOT . '/public/assets/js/app.js') ?
 
 <div class="fk-toast" id="toast" role="status" aria-live="polite" hidden></div>
 
+<script src="/members/public/assets/js/api.js?v=<?= e($assetVersion) ?>" defer></script>
 <script src="/members/public/assets/js/app.js?v=<?= e($assetVersion) ?>" defer></script>
+<?php if (!empty($learningPage)): ?>
+<script src="/members/public/assets/js/learning.js?v=<?= e($learningVersion) ?>" defer></script>
+<?php endif; ?>
 </body>
 </html>

@@ -133,6 +133,9 @@ $routeMap = [
     'notifications' => 'notifications.php',
     'sync'          => 'sync.php',
     'timetable'     => 'timetable.php',
+    // Members App learning path. Self-only (member role reading its own work),
+    // so it sits under the same bearer auth as every other resource.
+    'learning'      => 'learning.php',
 ];
 
 // Check if resource exists

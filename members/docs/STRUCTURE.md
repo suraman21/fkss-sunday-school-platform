@@ -170,15 +170,88 @@ nobody reviewed. The guard was right and the code changed.
 
 ---
 
-## 7. What comes next
+## 7. Feature status
+
+Every unbuilt feature is an explicit **coming soon** page, driven by one
+registry (`resources/views/partials/placeholder.php`) that records a status and
+an OWNER per feature:
+
+- `owner: api` — waits on an endpoint
+- `owner: content` — waits on a human writing lesson text, quiz questions or
+  past papers
+
+That distinction is the difference between "blocked on me" and "blocked on the
+school", and it is shown on the page rather than buried in a commit message.
+
+| Feature | Status | Owner |
+|---|---|---|
+| Sign in / sign out | **live** | — |
+| Lessons list (`/members/lessons`) | **live** | — |
+| Lesson reader (`/members/lesson/{id}`) | **live** | — |
+| Quiz me | coming soon | content |
+| Tasks | coming soon | api |
+| Progress | coming soon | api |
+| Exam prep | coming soon | content |
+| Assistant | coming soon | api |
+| Announcements | coming soon | api |
+| Change password | **not possible yet** | ACM decision |
+
+### Why "change password" is not simply built
+
+The existing password-change endpoint (`admin/api_settings.php`) authenticates
+with a PHP session + CSRF and admits only staff roles that expose a dashboard. A
+member holds a bearer token and no PHP session, so it answers 401. Wiring this
+app to it would produce a 401 that looks like a bug. Adding a
+token-authenticated password change belongs to ACM, which owns credential
+lifecycle — so the page says to contact the office, which is true today.
+
+## 8. The learning API
+
+`GET  /api/v1/learning/path` — subjects → units → lessons, with per-lesson
+`open`/`completed` and a summary for the progress ring.
+`GET  /api/v1/learning/lessons/{id}` — one lesson, only if open to the caller.
+`POST /api/v1/learning/lessons/{id}/complete` — idempotent.
+
+**Self-only.** The member id is resolved from the token via `apiSelfMemberId()`
+and never accepted from the request — the same rule `GET /members/me` follows,
+because an id-taking route that admits the member role is an IDOR waiting for
+the next editor to forget the ownership check.
+
+**The server decides whether a lesson is open.** The `open` flag the list
+returns is a convenience; both the reader and the complete handler re-check it.
+A client that computed its own unlock state would be wrong the moment a teacher
+granted an unlock.
+
+### The unlock rules, and the one that surprised me
+
+From `docs/prototypes/member-app-2026-11-26/backend/api/learning.php`:
+
+1. Unit 1 is always open.
+2. Inside an open unit the first 2 lessons are open.
+3. Any later lesson needs a teacher unlock.
+4. **A later unit needs a teacher unlock, full stop** — `learning.php:123` is
+   `$u["open"] = $prevDone && $u["teacher_unlocked"]`. Finishing every lesson and
+   passing the quiz does *not* open the next unit.
+
+My first implementation let completed work open the next unit by itself, and a
+test expectation I had written from prose rather than code agreed with it. Two
+independent checks disagreed, I went to the prototype's source, and the source
+won. The rule is now pinned by a test whose docstring quotes the line.
+
+Also corrected: a unit with **no quiz** must count as quiz-satisfied
+(`!quiz_required || ...` in the prototype). Requiring a quiz that does not exist
+would freeze the course forever.
+
+## 9. What comes next
 
 | Step | Where | Why in this order |
 |---|---|---|
-| 1 | `/api/v1/learning` resource | the app needs a contract before it needs screens |
-| 2 | Unlock rules as a service | the prototype's rule set is considered and worth implementing exactly once |
-| 3 | Lessons list + reader pages | the first real feature end to end |
-| 4 | Progress + quiz | depends on 1–3 |
-| 5 | Tasks, exam prep | depend on content that does not exist yet |
+| 1 | Quiz endpoints + attempt grading | the content exists in schema; needs a teacher to write questions |
+| 2 | Progress page | reads what learning + quiz already record |
+| 3 | Teacher unlock console | the rules assume a human can unlock; today nobody can |
+| 4 | Tasks, exam prep | depend on content that does not exist yet |
 
-Step 1 is the gate: no page should be built against an API contract that has not
-been written down and tested.
+Step 3 is the real gap: the unlock rules are implemented, but **there is no
+screen for a teacher to grant an unlock**, so today unit 2 of every subject is
+reachable only by direct database edit. That is the next thing that blocks real
+use, not the quiz.
