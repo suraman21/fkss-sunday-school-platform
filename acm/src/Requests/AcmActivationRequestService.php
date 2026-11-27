@@ -280,24 +280,128 @@ final class AcmActivationRequestService
      * super_admin; unclaimed rows are visible to everyone with
      * request.view.
      *
+     * @param string $q Free-text lookup. Matches the reference the member
+     *                  was given, the ID number they claimed, their name, or
+     *                  the last digits of their phone. Empty means no filter.
      * @return array<int,array<string,mixed>>
      */
-    public function queue(int $viewerId, string $status = 'pending_review', int $limit = 25, int $offset = 0): array
-    {
+    public function queue(
+        int $viewerId,
+        string $status = 'pending_review',
+        int $limit = 25,
+        int $offset = 0,
+        string $q = ''
+    ): array {
         $limit = max(1, min($limit, 100));
         $offset = max(0, $offset);
+
+        $where = ['r.status = :st'];
+        $params = [':st' => $status];
+        $search = self::searchClause($q, $params);
+        if ($search !== '') {
+            $where[] = $search;
+        }
 
         $sql = 'SELECT r.id, r.request_ref, r.account_type, r.member_code, r.name_key,'
              . ' r.phone_last4, r.status, r.request_count, r.claimed_by, r.created_at,'
              . ' r.match_basis, r.person_id, r.ticket_id'
              . ' FROM acm_activation_requests r'
-             . ' WHERE r.status = :st'
+             . ' WHERE ' . implode(' AND ', $where)
              . ' ORDER BY r.created_at ASC, r.id ASC'
              . ' LIMIT ' . $limit . ' OFFSET ' . $offset;
         $stmt = $this->pdo->prepare($sql);
-        $stmt->execute([':st' => $status]);
+        $stmt->execute($params);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
         return is_array($rows) ? $rows : [];
+    }
+
+    /**
+     * The lookup an officer actually needs: "a student is at the desk with
+     * a reference".
+     *
+     * WHY THIS EXISTS. The reference (`request_ref`, 8 Crockford chars) is
+     * the ONLY thing the member is given when they submit, so it is the
+     * only string an officer can be handed. Before this, the requests page
+     * had no search at all and `AcmActivationRequestService::queue()`
+     * accepted no text filter, so finding one reference meant scrolling
+     * status tabs. The ticket queue cannot help either: it searches
+     * ticket number, name and phone, and never joins this table.
+     *
+     * WHAT IT MATCHES, AND IN WHICH CASE.
+     *   - request_ref: exact, upper-cased. The column is ascii_bin, so a
+     *     lower-case `mx7cvjnr` from a phone keyboard would NOT match it;
+     *     upper-casing the term is what makes the officer's typed input
+     *     work regardless of how the member wrote it down.
+     *   - member_code: prefix. Stored already normalized (upper-case,
+     *     alphanumerics only) by normalizeMemberCode().
+     *   - name_key: substring. Stored normalized (lower-case, punctuation
+     *     collapsed) by normalizeName(), so the term is normalized the
+     *     same way -- otherwise "Nahom Alemu" would never match the
+     *     stored "nahom alemu".
+     *   - phone_last4: prefix, because only the last four digits are
+     *     stored. A longer number is reduced to its last four.
+     *
+     * The term is escaped for LIKE before it is used, so `%` or `_` typed
+     * by an officer searches for those characters instead of matching
+     * everything.
+     *
+     * @param array<string,string> $params Receives the bound values.
+     */
+    private static function searchClause(string $q, array &$params): string
+    {
+        $q = trim($q);
+        if ($q === '' || mb_strlen($q) > 120) {
+            return '';
+        }
+
+        $clauses = [];
+
+        // The reference: exact, and case-insensitive on input because the
+        // column is not.
+        $params[':sq_ref'] = strtoupper($q);
+        $clauses[] = 'r.request_ref = :sq_ref';
+
+        // The ID number the member typed. Normalized the same way the
+        // column was written, so spaces/dashes in the officer's input do
+        // not prevent a match.
+        $codeNorm = self::normalizeMemberCode($q);
+        if ($codeNorm !== '') {
+            $params[':sq_code'] = self::escapeLike($codeNorm) . '%';
+            $clauses[] = "r.member_code LIKE :sq_code ESCAPE '\\'";
+        }
+
+        // The name. Normalized to match how name_key is stored.
+        $nameNorm = self::normalizeName($q);
+        if ($nameNorm !== '') {
+            $params[':sq_name'] = '%' . self::escapeLike($nameNorm) . '%';
+            $clauses[] = "r.name_key LIKE :sq_name ESCAPE '\\'";
+        }
+
+        // Last four digits only; a full number reduces to them.
+        //
+        // ONLY when the term is nothing but digits. The reference alphabet
+        // is alphanumeric, so a reference can end in four digits -- and
+        // `ZZZZ9999` was matching every row whose phone ends 9999. That is
+        // the worst kind of over-match here: the officer pastes the
+        // reference in front of the student, the first row looks plausible,
+        // and it belongs to somebody else. Restricting the phone branch to
+        // an all-digit term makes the clauses disjoint by shape, so a term
+        // containing letters can only match the reference, the ID number,
+        // or the name.
+        if (preg_match('/^\d+$/', $q) === 1) {
+            if (strlen($q) >= 4) {
+                $params[':sq_phone'] = substr($q, -4) . '%';
+                $clauses[] = "r.phone_last4 LIKE :sq_phone ESCAPE '\\'";
+            }
+        }
+
+        return '(' . implode(' OR ', $clauses) . ')';
+    }
+
+    /** Escape the LIKE wildcards so a typed `%` is a literal `%`. */
+    private static function escapeLike(string $value): string
+    {
+        return str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $value);
     }
 
     public function get(int $id): ?array

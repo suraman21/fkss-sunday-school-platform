@@ -193,3 +193,69 @@ def test_the_page_does_not_repeat_the_chrome_title(path, src):
             "acm_chrome_open(), so it appears twice on the page. Drop the h1, "
             "or make it carry information the topbar does not."
         )
+
+
+# ---------------------------------------------------------------- search
+def _request_service() -> str:
+    return _strip_comments(
+        (ROOT / "acm" / "src" / "Requests" / "AcmActivationRequestService.php")
+        .read_text(encoding="utf-8")
+    )
+
+
+def test_request_queue_accepts_a_search_term():
+    """The reference the member holds must be findable from the console.
+
+    `request_ref` is the only string handed to a member when they submit,
+    so it is what an officer arrives with. The page had no search at all
+    and queue() took no text filter, which is why one reference could only
+    be found by scrolling status tabs.
+    """
+    svc = _request_service()
+    sig = svc.split("public function queue(")[1].split(")", 1)[0]
+    assert "$q" in sig, "queue() must accept a search term"
+    body = svc.split("public function queue(")[1].split("\n    private static function", 1)[0]
+    assert "searchClause" in body, "queue() must apply the search term"
+    page = _strip_comments((ADMIN / "acm_requests.php").read_text(encoding="utf-8"))
+    assert "name=\"q\"" in page, "the requests page must render a search box"
+    assert "$fQ" in page
+
+
+def test_search_matches_the_reference_case_insensitively():
+    """The column is ascii_bin, so a lower-case reference would not match."""
+    svc = _request_service()
+    clause = svc.split("private static function searchClause(")[1]
+    assert "strtoupper($q)" in clause, (
+        "request_ref is an ascii_bin column; an officer typing a lower-case "
+        "reference from a phone screen would find nothing unless the term is "
+        "upper-cased"
+    )
+
+
+def test_search_escapes_like_wildcards():
+    """A typed % must be a character, not 'match everything'."""
+    svc = _request_service()
+    clause = svc.split("private static function searchClause(")[1]
+    assert "escapeLike(" in clause
+    assert "ESCAPE" in clause
+    esc = svc.split("private static function escapeLike(")[1].split("\n    }", 1)[0]
+    for ch in ("%", "_"):
+        assert f"'{ch}'" in esc, f"escapeLike() must escape {ch}"
+
+
+def test_phone_branch_only_fires_for_an_all_digit_term():
+    """A reference ending in four digits must not match on phone suffix.
+
+    `ZZZZ9999` matched every request whose phone ended 9999. The officer
+    pastes the reference in front of the student, the first row looks
+    plausible, and it belongs to somebody else.
+    """
+    svc = _request_service()
+    clause = svc.split("private static function searchClause(")[1]
+    phone_at = clause.index("sq_phone")
+    guard = clause[:phone_at]
+    assert "preg_match('/^\\\\d+$/" in guard or "preg_match('/^\\d+$/" in guard, (
+        "the phone clause must be guarded on the term being digits only; "
+        "the reference alphabet is alphanumeric, so a reference can end in "
+        "four digits and would otherwise match on phone suffix"
+    )

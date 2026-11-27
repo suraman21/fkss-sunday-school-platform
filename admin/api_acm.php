@@ -851,12 +851,19 @@ try {
             $requestService = new AcmActivationRequestService($pdo);
             $status = in_array((string)($_GET['status'] ?? ''), ['pending_review','approved','rejected','expired','canceled'], true)
                 ? (string)$_GET['status'] : 'pending_review';
+            // `q` mirrors the console page: reference, ID number given,
+            // name, or the last four digits of the phone.
+            $q = trim((string)($_GET['q'] ?? ''));
+            if (mb_strlen($q) > 120) {
+                $q = mb_substr($q, 0, 120);
+            }
             acm_ok([
                 'requests' => $requestService->queue(
                     $actorId,
                     $status,
                     max(1, min((int)($_GET['limit'] ?? 25), 100)),
-                    max(0, (int)($_GET['offset'] ?? 0))
+                    max(0, (int)($_GET['offset'] ?? 0)),
+                    $q
                 ),
                 'status' => $status,
             ]);
