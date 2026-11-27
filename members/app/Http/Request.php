@@ -65,15 +65,10 @@ final class Request
         } else {
             $uri = (string)($_SERVER['REQUEST_URI'] ?? '/');
             $path = (string)(parse_url($uri, PHP_URL_PATH) ?? '/');
-            // Strip the app's own mount prefix so routes are written relative
-            // to it ("/", "/lessons") and work under an Apache Alias.
-            $script = (string)($_SERVER['SCRIPT_NAME'] ?? '');
-            $base = rtrim(str_replace('\\', '/', dirname($script)), '/');
-            if ($base !== '' && $base !== '/' && str_starts_with($path, $base)) {
-                $path = substr($path, strlen($base));
-            }
-            if (str_ends_with($path, '/index.php')) {
-                $path = substr($path, 0, -strlen('index.php'));
+            $path = self::stripMountPrefix($path, (string)($_SERVER['SCRIPT_NAME'] ?? ''));
+            // /members/index.php/home -> /home, and a bare /index.php -> /
+            if (str_contains($path, '/index.php')) {
+                $path = str_replace('/index.php', '', $path);
             }
         }
 
@@ -92,6 +87,81 @@ final class Request
         $query = array_filter($_GET, 'is_string');
 
         return new self($method, '/' . trim($path, '/'), $query, $_POST, $headers, $_SERVER);
+    }
+
+    /**
+     * Remove the deployment mount prefix from a request path.
+     *
+     * WHY THIS IS NOT `dirname(SCRIPT_NAME)`
+     *   Apache sets SCRIPT_NAME to the path AFTER an internal rewrite. With
+     *   `members/.htaccess` sending /members/home to public/index.php, the
+     *   value is "/members/public/index.php". Taking dirname() of that yields
+     *   "/members/public" -- a prefix "/members/home" does not start with -- so
+     *   nothing was stripped and the router (which only knows "/home") matched
+     *   nothing. Every page 404'd at the one mount the app advertises.
+     *
+     *   MEASURED, not guessed: with the old code, a request for /members/home
+     *   resolved to the path "/members/home", served at
+     *   SCRIPT_NAME=/members/public/index.php.
+     *
+     * WHAT IS TRIED, IN ORDER
+     *   Every candidate is derived from SCRIPT_NAME and applied only on a
+     *   segment boundary, so "/membership" is never mistaken for "/members".
+     *   - the script's own directory, "/members/public"
+     *   - that directory without a trailing "public", "/members"
+     *   - the same two with a bare "/index.php" stripped, for a request that
+     *     arrives as /members/index.php/home
+     *
+     *   The longest matching candidate wins implicitly by trying specific
+     *   prefixes first. Unmatched paths are returned unchanged, so serving the
+     *   app at a document root (SCRIPT_NAME=/index.php) still works.
+     *
+     * THIS IS NOT TRUSTING THE CLIENT
+     *   Every candidate comes from SCRIPT_NAME, which is server-set. REQUEST_URI
+     *   is client-supplied but is only ever the string being trimmed. A hostile
+     *   "/members/../../etc" does not resolve to a route: the router matches
+     *   exact path patterns and the leading ".." survives the trim, so it 404s.
+     */
+    private static function stripMountPrefix(string $path, string $scriptName): string
+    {
+        $scriptName = str_replace('\\', '/', $scriptName);
+        if ($scriptName === '') {
+            return $path;
+        }
+
+        $dir = rtrim(dirname($scriptName), '/');
+        $candidates = [];
+
+        if ($dir !== '' && $dir !== '/' && $dir !== '.') {
+            $candidates[] = $dir;                       // /members/public
+            if (str_ends_with($dir, '/public')) {       // /members
+                $candidates[] = substr($dir, 0, -strlen('/public'));
+            }
+        }
+        if (str_ends_with($scriptName, '/index.php')) {
+            $trimmed = substr($scriptName, 0, -strlen('/index.php'));
+            if ($trimmed !== '') {
+                $candidates[] = $trimmed;               // /members/index.php -> /members
+            }
+        }
+
+        // Most specific first, deduplicated, empty never included.
+        $candidates = array_values(array_unique(array_filter(
+            $candidates,
+            static fn(string $c): bool => $c !== '' && $c !== '/'
+        )));
+        usort($candidates, static fn(string $a, string $b): int => strlen($b) <=> strlen($a));
+
+        foreach ($candidates as $base) {
+            if ($path === $base) {
+                return '/';
+            }
+            if (str_starts_with($path, $base . '/')) {
+                return substr($path, strlen($base));
+            }
+        }
+
+        return $path;
     }
 
     public function method(): string
