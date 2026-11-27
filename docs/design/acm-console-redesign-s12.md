@@ -227,4 +227,31 @@ than assumed.
 | `acm/src/Requests/AcmActivationDetector.php` | resolve exactly one member or refuse |
 | `acm/src/Requests/AcmClaimRefused.php` | one message for every refusal |
 | `sql/104_acm_detection_and_refusals.sql` | `acm_request_refusals` (no name, no FK) |
+| `admin/acm_staff_enroll.php` | staff enrollment: status segments, token revealed in the approved row |
+| `admin/acm_device_recovery.php` | recovery: person search, account list, reason dialog |
+| `admin/acm_person.php` | persons and accounts: command bar, honest empty states |
+| `admin/acm_office.php` | office mode and designations, in sentences |
+| `admin/acm_audit.php` | monthly audit: report, attestation, failure states |
+| `admin/acm_ticket.php` | ticket detail: evidence card, decision rail, code ceremony |
 | `tests/security/test_acm_s12_console.py` | pins the properties above |
+
+### Two defects this pass found, both invisible to a text-based test
+
+Both pages failed in a browser and passed every static check, which is worth
+recording because it is the shape of the defect rather than the instance:
+
+1. **`acm_office.php` and `acm_audit.php` never loaded.** They called `load()`
+   at the top level of their script, which the browser parses *before*
+   `acm_chrome_close()` emits `acmApi`/`acmToast`. The first line threw
+   `ReferenceError`, and the tables sat on "Loading…" for as long as anyone was
+   willing to look at them. A screenshot of a page stuck loading looks like a
+   slow server, not a bug.
+2. **A failed sidebar query was reported as a failed ticket.** On
+   `acm_ticket.php` and `acm_staff_enroll.php`, `overviewStats()` shared a
+   `try` block with the data the page exists to show, so one failing aggregate
+   put a red "temporarily unavailable" banner above a page that had loaded
+   perfectly.
+
+Both are now pinned: `TestScriptOrder` walks each page's script tracking brace
+depth, and `TestTicketPageCeremony` asserts that issuing a code never
+navigates.
