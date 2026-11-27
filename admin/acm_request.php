@@ -51,6 +51,7 @@ try {
 }
 if ($loadError !== '') {
     http_response_code(503);
+    acm_head('Request unavailable');
     acm_chrome_open('requests', 'Request unavailable', '', 0);
     echo '<div class="acm-alert err">' . e($loadError) . '</div>';
     acm_chrome_close();
@@ -58,6 +59,7 @@ if ($loadError !== '') {
 }
 if ($request === null) {
     http_response_code(404);
+    acm_head('Request not found');
     acm_chrome_open('requests', 'Request not found', '', 0);
     echo '<div class="acm-empty"><i class="fa-solid fa-circle-question"></i><p>No request with that id.</p></div>';
     acm_chrome_close();
@@ -85,6 +87,7 @@ $canApprove = AcmPolicy::can($role, AcmPolicy::RES_REQUEST, 'approve');
 $canReject = AcmPolicy::can($role, AcmPolicy::RES_REQUEST, 'reject');
 $isPending = $request['status'] === 'pending_review';
 
+acm_head('Activation request ' . (string)$request['request_ref']);
 acm_chrome_open('requests', 'Activation request ' . (string)$request['request_ref'], '', 0);
 ?>
 <div class="acm-btn-row" style="margin-bottom:1rem">

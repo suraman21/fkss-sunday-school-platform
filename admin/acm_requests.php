@@ -80,10 +80,13 @@ $statusLabel = [
     'canceled' => 'Canceled',
 ];
 
+acm_head('Activation requests');
 acm_chrome_open('requests', 'Activation requests', 'Self-service requests from members and parents', $pendingCount);
 ?>
 
-<h1 class="pg">Activation requests</h1>
+<?php /* The heading and the one-liner are already in the chrome header
+         (acm_chrome_open takes both). Repeating them here printed
+         "Activation requests" twice on every visit. */ ?>
 <p class="sub">
     A member submits their ID number from the member app or web; it lands here.
     Approving creates the ticket — it does not issue the code. Open the ticket
