@@ -313,7 +313,9 @@ try {
     $persons->search('Nahom');
     $requests->queue(1, 'pending_review', 25, 0, 'Nahom');
     $emitted = array_values(array_filter($recorder->log, fn($s) => str_contains($s, 'ESCAPE')));
-    ck('three search queries were captured from the services', count($emitted) === 3, (string)count($emitted));
+    // queue() issues two statements (a COUNT and the page), the person search
+    // one, the request search one.
+    ck('four search statements were captured from the services', count($emitted) === 4, (string)count($emitted));
 
     $escapeOk = 0;
     $placeholderOk = 0;
