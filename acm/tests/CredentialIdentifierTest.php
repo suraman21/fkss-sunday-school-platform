@@ -4,14 +4,14 @@
  *
  * THE BUG THIS FILE EXISTS FOR
  *   The member activation page failed on its final step with
- *   "The username is already in use" -- for a member who had never chosen a
- *   username. Reproduced under executed PHP:
+ *   "The username is already in use. Choose another." -- for a member who had
+ *   typed only a password. Reproduced under executed PHP:
  *
  *       $ticket['member_code']   (acm_activation_tickets has no such column)
  *         -> (string) null  ==  ''
  *         -> AuthenticatorDirectory::register()
  *         -> "That identifier cannot be used to sign in."
- *         -> api_acm.php maps EVERY InvalidArgumentException here to
+ *         -> api/acm.php maps every InvalidArgumentException here to
  *            err(..., 409, username_unavailable)
  *         -> the member is told their username is taken.
  *
@@ -25,7 +25,7 @@
  *   2. A ticket whose member has no code fails as `member_code_missing` -- the
  *      office-fixable case -- not with a message accusing the identifier of
  *      being taken.
- *   3. A chosen username still wins.
+ *   3. A chosen username still wins: the member's own choice is not overridden.
  */
 
 declare(strict_types=1);
@@ -50,14 +50,7 @@ require_once __DIR__ . '/../src/Requests/AuthenticatorDirectory.php';
 final class CredentialIdentifierTest extends TestCase
 {
     private const GRANT = 'GRANTTOKEN0123456789abcd';
-
-    /** Test-only accessor: the fake needs the same token the test sends. */
-    public static function grant(): string
-    {
-        return self::GRANT;
-    }
-
-    private const KEY   = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    private const IDEMPOTENCY_KEY = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
 
     private function service(CredentialFakePdo $pdo): ActivationService
     {
@@ -70,11 +63,13 @@ final class CredentialIdentifierTest extends TestCase
         $pdo = new CredentialFakePdo();
         $pdo->register[1] = 'C-27456';
 
-        $ref = $this->service($pdo)->establishCredentials(self::GRANT, 'password123', self::KEY, null);
+        $ref = $this->service($pdo)->establishCredentials(
+            self::GRANT, 'password123', self::IDEMPOTENCY_KEY, null
+        );
 
         // The account's username is DERIVED from the code by the provisioner
-        // ('m' + alphanumerics), so assert on the identifier rather than
-        // restating that derivation here.
+        // ('m' + alphanumerics), so assert on the identifier it was bound to
+        // rather than restating that derivation here.
         $this->assertSame('mc27456', $ref->username);
         // The authenticator row stores only a hash, so assert on that.
         $this->assertContains(
@@ -89,21 +84,22 @@ final class CredentialIdentifierTest extends TestCase
         );
     }
 
-    public function test_a_ticket_with_NO_member_code_fails_as_a_ticket_problem(): void
+    public function test_a_ticket_with_NO_member_code_fails_as_the_office_fixable_case(): void
     {
         // No register row for member_id: there is nothing to bind.
         $pdo = new CredentialFakePdo();
         $pdo->register = [];
 
         try {
-            $this->service($pdo)->establishCredentials(self::GRANT, 'password123', self::KEY, null);
+            $this->service($pdo)->establishCredentials(
+                self::GRANT, 'password123', self::IDEMPOTENCY_KEY, null
+            );
             $this->fail('expected a refusal');
         } catch (ActivationException $e) {
-            // Its own code, so the member is told to contact the office
-            // rather than to retry -- there is nothing they can retype.
             $this->assertSame('member_code_missing', $e->machineCode());
             $this->assertStringNotContainsString(
-                'already in use', $e->getMessage(),
+                'already in use',
+                $e->getMessage(),
                 'this bug told the member their username was taken'
             );
         }
@@ -117,7 +113,7 @@ final class CredentialIdentifierTest extends TestCase
         $pdo->register[1] = 'C-27456';
 
         $ref = $this->service($pdo)->establishCredentials(
-            self::GRANT, 'password123', self::KEY, 'shimels'
+            self::GRANT, 'password123', self::IDEMPOTENCY_KEY, 'shimels'
         );
 
         $this->assertSame('shimels', $ref->username);
@@ -136,6 +132,12 @@ final class CredentialIdentifierTest extends TestCase
  */
 final class CredentialFakePdo extends PDO
 {
+    /**
+     * Test-only: the fake must hash the same token the test sends, and the
+     * statement object cannot reach the test case's private constant.
+     */
+    public const GRANT_FOR_FAKE = 'GRANTTOKEN0123456789abcd';
+
     public int $depth = 0;
     public int $lastInsert = 77;
     public string $lastUsername = '';
@@ -223,7 +225,10 @@ final class CredentialFakeStmt
         if (str_contains($sql, 'FROM acm_activation_grants')) {
             $this->rows = [[
                 'id' => 5, 'ticket_id' => 900, 'operation' => 'activation',
-                'grant_hash' => password_hash(CredentialIdentifierTest::grant(), PASSWORD_DEFAULT),
+                'grant_hash' => password_hash(
+                    CredentialFakePdo::GRANT_FOR_FAKE,
+                    PASSWORD_DEFAULT
+                ),
                 'consumed_at' => null, 'revoked_at' => null, 'live' => 1,
             ]];
             return true;
@@ -243,7 +248,6 @@ final class CredentialFakeStmt
             return true;
         }
         if (str_contains($sql, 'INSERT INTO users')) {
-            $this->db->lastInsert = 77;
             $this->db->lastUsername = (string)($params[':u'] ?? '');
             return true;
         }
