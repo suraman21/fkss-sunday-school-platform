@@ -466,6 +466,10 @@ img { max-width: 100%; height: auto; }
 .fk-auth-main {
     flex: 1;
     display: flex;
+    /* COLUMN, not row. Without this the card and the footnote beneath it --
+       two children of a flex container -- lay out SIDE BY SIDE, which put the
+       footnote as stray text floating to the right of the card. */
+    flex-direction: column;
     justify-content: center;
     align-items: center;
     padding: 52px 16px 0;
