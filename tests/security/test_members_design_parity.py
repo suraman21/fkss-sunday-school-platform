@@ -105,6 +105,58 @@ class TheFramedCardIsThePrototypes(unittest.TestCase):
         )
 
 
+class TheAuthPageLaysOutAsOneColumn(unittest.TestCase):
+    """A flex container with two children laid them out SIDE BY SIDE.
+
+    .fk-auth-main holds the framed card AND the footnote beneath it. As a plain
+    `display:flex` row, the footnote rendered as stray text floating to the
+    right of the card -- visible in a screenshot from the running site, where
+    "ወደ መግቢያ ተመለስ" appeared stranded beside the card.
+
+    The prototype's .login-main is also a flex row, but it has only ONE child
+    (the container), so it never hit this. Ours has two, so the direction must
+    be explicit. This test exists because the bug was invisible to every value
+    comparison -- every colour and radius was correct.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.theme = read(THEME)
+
+    @staticmethod
+    def _block(css: str, selector: str) -> str:
+        start = css.index(selector + " {")
+        return css[start:css.index("}", start)]
+
+    def test_main_stacks_its_children_vertically(self):
+        block = self._block(self.theme, ".fk-auth-main")
+        self.assertIn("display: flex", block)
+        self.assertIn(
+            "flex-direction: column",
+            block,
+            "two children in a row-direction flex container render side by side",
+        )
+
+    def test_main_centres_both_children(self):
+        block = self._block(self.theme, ".fk-auth-main")
+        self.assertIn("align-items: center", block)
+
+    def test_the_pages_really_do_have_two_children(self):
+        """Guards the assumption above: if the footnote moves inside the card,
+        column direction stops being load-bearing and this test should be
+        re-read rather than silently kept."""
+        for page in (LOGIN, WELCOME):
+            source = read(page)
+            self.assertIn('class="fk-auth-card"', source)
+            self.assertIn('class="fk-auth-foot"', source)
+            self.assertLess(
+                source.index('class="fk-auth-card"'),
+                source.index('class="fk-auth-foot"'),
+                "the footnote is a sibling AFTER the card, which is what makes "
+                "flex-direction load-bearing",
+            )
+
+
 class TheTypographyIsThePrototypes(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

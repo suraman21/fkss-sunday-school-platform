@@ -105,6 +105,33 @@ final class AcmActivationDetector
         // names in both scripts, the section, class, birth date and the
         // Christian name the verification card shows.
         $rows = $this->memberRows($code);
+        if ($rows === [] && preg_match('/^[0-9]{5}$/', $code) === 1) {
+            // THE MEMBER TYPED ONLY THE DIGITS.
+            //
+            // Codes are allocated as letter + '-' + five digits ("B-24659",
+            // "C-27456"), and a bare tail is what many people read off a
+            // card or write on a form: they drop the category letter and the
+            // dash. Measured against a register holding "B-24659", typing
+            // "24659" answered `no_member` -- a real member, refused for
+            // shortening their own ID.
+            //
+            // The tail is only a PROBE, never a decision. If it matches more
+            // than one member (B-24659 and C-24659 can both exist), the
+            // typed name has to separate them below; if the name agrees with
+            // several, the ambiguity guard refuses instead of guessing. So
+            // this widens the search, never the acceptance.
+            //
+            // COST, stated honestly: RIGHT() cannot use an index on
+            // member_code, so this reads the register. It is gated three ways
+            // -- the exact lookup must already have missed, the entry must be
+            // exactly five digits, and the read is capped at 25 rows -- so it
+            // is paid by a mistyped or shortened code, not by every claim.
+            // The alternative (three exact lookups for A-/B-/C-) would use
+            // the index but would silently miss legacy rows stored with no
+            // letter at all, which this register is documented to contain.
+            // For a parish-sized table the scan is the cheaper mistake.
+            $rows = $this->memberRowsByTail($code);
+        }
         if ($rows === []) {
             return $empty;
         }
@@ -205,6 +232,36 @@ final class AcmActivationDetector
      */
     private function memberRows(string $code): array
     {
+        return $this->memberQuery('m.member_code = :code', [':code' => $code]);
+    }
+
+    /**
+     * Rows whose stored code ENDS with a bare five-digit tail.
+     *
+     * Only used when the exact lookup missed, and only for a digits-only
+     * entry, so the scan it costs is paid by the rare shortened-code claim
+     * rather than by every activation.
+     *
+     * @return list<array<string,mixed>>
+     */
+    private function memberRowsByTail(string $tail): array
+    {
+        return $this->memberQuery('RIGHT(m.member_code, 5) = :tail', [':tail' => $tail]);
+    }
+
+    /**
+     * The register read both lookups share, so the column list (and the
+     * photo probe) can never drift between them.
+     *
+     * $where is a SQL fragment supplied by the two callers above and is
+     * always a string literal from this file -- never request data. Values
+     * travel in $params, bound.
+     *
+     * @param array<string,string> $params
+     * @return list<array<string,mixed>>
+     */
+    private function memberQuery(string $where, array $params): array
+    {
         $stmt = $this->pdo->prepare(
             'SELECT m.id, m.member_code, m.full_name_am, m.full_name_en, m.student_name,'
             . ' m.christian_name, m.baptismal_name, m.father_name, m.grandfather_name,'
@@ -225,10 +282,10 @@ final class AcmActivationDetector
             . ' ' . ($this->membersColumnExists('student_photo_path')
                 ? 'm.student_photo_path AS photo_path'
                 : 'NULL AS photo_path')
-            . ' FROM members m WHERE m.member_code = :code'
+            . ' FROM members m WHERE ' . $where
             . ' ORDER BY m.id ASC LIMIT 25'
         );
-        $stmt->execute([':code' => $code]);
+        $stmt->execute($params);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
         return is_array($rows) ? $rows : [];
     }

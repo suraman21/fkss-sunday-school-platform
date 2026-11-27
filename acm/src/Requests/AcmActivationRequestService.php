@@ -87,7 +87,42 @@ final class AcmActivationRequestService
     /** Member code: uppercase, separators stripped ("M-0001" -> "M0001"). */
     public static function normalizeMemberCode(string $value): string
     {
-        return strtoupper((string)preg_replace('/[^A-Za-z0-9]/', '', trim($value)));
+        $code = strtoupper((string)preg_replace('/[^A-Za-z0-9]/', '', trim($value)));
+
+        // PUT THE HYPHEN BACK WHERE THE REGISTER HAS ONE.
+        //
+        // The register does not store a bare alphanumeric string. Codes are
+        // allocated as `$prefix . '-' . $tail` (IdentityCodeService::
+        // allocateWithPrefix) and written to `members.member_code` verbatim:
+        // "C-27456", "B-24659". Stripping the separator and returning
+        // "C27456" produced a value that matches NO row when compared with
+        // `member_code = :code`, so every member code in this format was
+        // refused as `no_member` -- whichever way the member typed it. That
+        // is what made activation impossible for the entire register.
+        //
+        // Measured before the fix, against a register holding "C-27456":
+        //     typed C-27456 -> normalized C27456 -> kind=no_member
+        //     typed C27456  -> normalized C27456 -> kind=no_member
+        //
+        // The alphanumeric form is still the KEY (dedupe hashes, the audit
+        // trail, comparison between two spellings of the same code), so the
+        // cleanup above stays. Only the returned representation changes.
+        //
+        // The shape is narrow on purpose. Category letters are A/B/C
+        // (MemberCategory::BY_LETTER) and the tail is always five digits
+        // (IdentityCodeService TAIL_MIN/TAIL_MAX), so "letter + 5 digits"
+        // is the one form that can be re-separated without guessing. A
+        // staff code has a longer alpha prefix and a legacy import may hold
+        // anything, so those keep the bare alphanumeric form, which the
+        // register itself also holds in those cases.
+        //
+        // Callers that need a LIKE pattern on the stored column get the
+        // hyphenated form too, which is now a correct prefix match.
+        if (preg_match('/^[A-Z][0-9]{5}$/', $code) === 1) {
+            return $code[0] . '-' . substr($code, 1);
+        }
+
+        return $code;
     }
 
     /**
