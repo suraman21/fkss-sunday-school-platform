@@ -635,13 +635,37 @@ acm_chrome_open(
         btn.setAttribute('aria-busy', on ? 'true' : 'false');
     }
 
+    /* Approving and rejecting are not undoable, so each asks for a second
+       click. This replaces the browser's native confirmation, which the
+       console bans: it cannot say what the decision does, cannot name the
+       member, and blocks the tab. The ticket page already guards its own
+       decisions this way, so the two screens behave the same. */
+    function arm(btn, label) {
+        if (btn.getAttribute('data-armed') === '1') { return true; }
+        btn.setAttribute('data-armed', '1');
+        var orig = btn.innerHTML;
+        btn.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> ' + label;
+        btn._dt = setTimeout(function () {
+            btn.setAttribute('data-armed', '');
+            btn.innerHTML = orig;
+        }, 6000);
+        return false;
+    }
+    function disarm(btn) {
+        if (btn.getAttribute('data-armed') !== '1') { return; }
+        clearTimeout(btn._dt);
+        btn.setAttribute('data-armed', '');
+        if (btn._orig) { btn.innerHTML = btn._orig; }
+    }
+
     var approveButtons = document.querySelectorAll('.acm-approve');
     approveButtons.forEach(function (btn, index) {
         btn.addEventListener('click', async function () {
             var body = { id: btn.getAttribute('data-request'), person_id: btn.getAttribute('data-person') };
             if (btn.getAttribute('data-member')) { body.member_id = btn.getAttribute('data-member'); }
             if (btn.getAttribute('data-guardian')) { body.guardian_id = btn.getAttribute('data-guardian'); }
-            if (!confirm('Approve this request? This creates the activation ticket.')) { return; }
+            btn._orig = btn._orig || btn.innerHTML;
+            if (!arm(btn, 'Click again to approve')) { return; }
             busy(btn, true);
             try {
                 var d = await post('request_approve', body);
@@ -649,6 +673,7 @@ acm_chrome_open(
             } catch (e) {
                 acmToast(e.message, false);
                 busy(btn, false);
+                disarm(btn);
             }
         });
         // Keyboard: the first approve action is reachable with "a".
@@ -742,7 +767,8 @@ acm_chrome_open(
                 if (rejectReason) { rejectReason.focus(); }
                 return;
             }
-            if (!confirm('Reject this request?')) { return; }
+            rejectBtn._orig = rejectBtn._orig || rejectBtn.innerHTML;
+            if (!arm(rejectBtn, 'Click again to reject')) { return; }
             busy(rejectBtn, true);
             try {
                 await post('request_reject', { id: rejectBtn.getAttribute('data-request'), reason: reason });
@@ -750,6 +776,7 @@ acm_chrome_open(
             } catch (e) {
                 acmToast(e.message, false);
                 busy(rejectBtn, false);
+                disarm(rejectBtn);
             }
         });
     }

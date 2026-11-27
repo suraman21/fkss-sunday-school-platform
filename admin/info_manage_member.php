@@ -1349,7 +1349,8 @@ $mmRoles = [
                             <a class="mm-fam-btn" style="justify-content:center;padding:10px;color:#6d28d9;background:rgba(124,58,237,.1);border-color:rgba(124,58,237,.2);" href="/admin/dashboard.php?section=family&guardian=<?= (int)$g0['id'] ?>" onclick="return window.MemberNav ? MemberNav.manageFamily(<?= (int)$g0['id'] ?>) : true;"><i class="fas fa-people-roof"></i> Manage Family</a>
                             <?php endif; ?>
                             <?php if (in_array((string)($_SESSION['admin_role'] ?? ''), ['super_admin','school_admin','hr_dept','info_dept'], true)): ?>
-                            <button type="button" class="mm-fam-btn" style="justify-content:center;padding:10px;color:#7f1d1d;background:rgba(220,38,38,.08);border-color:rgba(220,38,38,.2);" onclick="if(confirm('Archive this member? They will move to Old Members Archive.')){archiveMember(<?= (int)$m['id'] ?>, <?= json_encode($fullName) ?>);}"><i class="fas fa-box-archive"></i> Archive Member</button>
+                            <button type="button" class="mm-fam-btn mm-archive-btn" aria-describedby="mmArchiveWarn" data-archive-id="<?= (int)$m['id'] ?>" data-archive-name="<?= e($fullName) ?>" style="justify-content:center;padding:10px;color:#7f1d1d;background:rgba(220,38,38,.08);border-color:rgba(220,38,38,.2);"><i class="fas fa-box-archive"></i> Archive Member</button>
+                            <div id="mmArchiveWarn" class="text-[11px] text-red-700 mt-1">Archiving moves this member to the Old Members Archive and takes them out of the active list.</div>
                             <?php endif; ?>
                         </div>
                     </div>
@@ -1713,9 +1714,42 @@ $mmRoles = [
     if (typeof window.openDocFullscreen !== 'function') {
         window.openDocFullscreen = function(url){ if (url) window.open(url,'_blank','noopener'); };
     }
+    /* Archiving is irreversible from this screen, so the visible buttons take
+       two clicks and the consequence is stated on the page (mmArchiveWarn)
+       instead of in a native confirmation, which the console bans. This
+       function is only the transport; the permission check is server-side. */
     if (typeof window.archiveMember !== 'function') {
-        window.archiveMember = function(){ alert('Archive action is available inside the dashboard.'); };
+        window.archiveMember = function(id, name){
+            if (!id) { return; }
+            var f = document.createElement('form');
+            f.method = 'POST';
+            f.action = '/admin/api_members.php';
+            function hid(n, v) { var i = document.createElement('input'); i.type = 'hidden'; i.name = n; i.value = v; f.appendChild(i); }
+            hid('action', 'archive_member');
+            hid('member_id', String(id));
+            var csrf = document.querySelector('meta[name="csrf-token"]');
+            hid('csrf_token', csrf ? csrf.content : '');
+            document.body.appendChild(f);
+            f.submit();
+        };
     }
+    /* Two-click arm for the visible per-member buttons. */
+    document.querySelectorAll('.mm-archive-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            if (btn.getAttribute('data-armed') === '1') {
+                clearTimeout(btn._dt);
+                window.archiveMember(btn.getAttribute('data-archive-id'), btn.getAttribute('data-archive-name'));
+                return;
+            }
+            btn.setAttribute('data-armed', '1');
+            var orig = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-triangle-exclamation"></i> Click again to archive';
+            btn._dt = setTimeout(function () {
+                btn.setAttribute('data-armed', '');
+                btn.innerHTML = orig;
+            }, 6000);
+        });
+    });
     window.switchManageTab('preview');
 })();
 </script>

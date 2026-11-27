@@ -36,11 +36,6 @@ final class PhotoDevicePairing
             || !preg_match('/^[a-f0-9\-]{32,64}$/D', $deviceId)) {
             return null;
         }
-        // Ensure the pairing table exists (defense in depth: migration
-        // 097 creates it at deploy; this self-heals if the migration
-        // hasn't run yet on a given host).
-        self::ensureTable($conn);
-
         try {
         // Existing key?
         $stmt = $conn->prepare(
@@ -153,7 +148,6 @@ final class PhotoDevicePairing
         string $deviceId,
     ): ?string {
         if ($operatorId <= 0 || $deviceId === '') return null;
-        self::ensureTable($conn);
         try {
         $stmt = $conn->prepare(
             'SELECT hmac_key_hex FROM photo_device_identities
@@ -169,22 +163,34 @@ final class PhotoDevicePairing
         }
     }
 
-    private static bool $tableChecked = false;
+    /**
+     * WHY THIS CLASS NO LONGER BUILDS ITS OWN TABLE.
+     *
+     * This class used to self-heal a missing pairing table by executing DDL
+     * from the request path. A request path must never create schema:
+     *
+     *   - it needs CREATE rights in production, which is exactly the
+     *     privilege a compromised request handler must not hold;
+     *   - two concurrent uploads race to create the same table, and the loser
+     *     gets an error in the middle of a member's photo import;
+     *   - the runtime DDL had already drifted from migration 097 (INTEGER
+     *     versus INT UNSIGNED, no collation on the unique key), so the
+     *     "self-healed" table was not the table the migration specifies.
+     *
+     * migration 097 creates the table at deploy. If it has not run,
+     * photoDevicePairingUnavailable() says so once, plainly, instead of
+     * silently forking the schema.
+     */
+    private static bool $warnedMissingTable = false;
 
-    private static function ensureTable(mysqli $conn): void {
-        if (self::$tableChecked) return;
-        @$conn->query(
-            'CREATE TABLE IF NOT EXISTS photo_device_identities (
-              id                INTEGER PRIMARY KEY AUTO_INCREMENT,
-              operator_admin_id INTEGER NOT NULL,
-              device_id         VARCHAR(64) NOT NULL,
-              hmac_key_hex      CHAR(64) NOT NULL,
-              first_seen_at     DATETIME NOT NULL,
-              last_seen_at      DATETIME NOT NULL,
-              UNIQUE KEY uq_photo_device (operator_admin_id, device_id),
-              KEY idx_photo_device_device (device_id)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    private static function photoDevicePairingUnavailable(): void
+    {
+        if (self::$warnedMissingTable) return;
+        self::$warnedMissingTable = true;
+        error_log(
+            'photo_device_identities is missing; apply migration '
+            . '097_photo_device_pairing.sql. Signatures are not recorded '
+            . 'until it is applied.'
         );
-        self::$tableChecked = true;
     }
 }

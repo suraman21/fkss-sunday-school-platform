@@ -59,6 +59,10 @@ Statuses below apply only to the stated review depth. “Pending” means not ye
 | [material/material_home.dart](../../Mobile/wbws_flutter_app/lib/screens/material/material_home.dart) | Website-only notice source reviewed; shared notification control remains pending | [Materials](MATERIALS.md) |
 | [members/member_detail_screen.dart](../../Mobile/wbws_flutter_app/lib/screens/members/member_detail_screen.dart) | Pending source/action trace | Not yet written |
 | [members/member_list_screen.dart](../../Mobile/wbws_flutter_app/lib/screens/members/member_list_screen.dart) | Pending source/action trace | Not yet written |
+| [members/member_photo_capture_screen.dart](../../Mobile/wbws_flutter_app/lib/screens/members/member_photo_capture_screen.dart) | Pending source/action trace | Not yet written |
+| [members/photo_batch_capture_screen.dart](../../Mobile/wbws_flutter_app/lib/screens/members/photo_batch_capture_screen.dart) | Pending source/action trace | Not yet written |
+| [members/photo_camera_screen.dart](../../Mobile/wbws_flutter_app/lib/screens/members/photo_camera_screen.dart) | Pending source/action trace | Not yet written |
+| [members/photo_sync_panel.dart](../../Mobile/wbws_flutter_app/lib/screens/members/photo_sync_panel.dart) | Pending source/action trace | Not yet written |
 | [mezmur/mezmur_analytics.dart](../../Mobile/wbws_flutter_app/lib/screens/mezmur/mezmur_analytics.dart) | Pending source/action trace | Not yet written |
 | [mezmur/mezmur_attendance.dart](../../Mobile/wbws_flutter_app/lib/screens/mezmur/mezmur_attendance.dart) | Pending source/action trace | Not yet written |
 | [mezmur/mezmur_categories.dart](../../Mobile/wbws_flutter_app/lib/screens/mezmur/mezmur_categories.dart) | Pending source/action trace | Not yet written |

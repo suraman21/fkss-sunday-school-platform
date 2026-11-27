@@ -357,7 +357,7 @@ jobs:
           # Read those, and fall back to the summary line when a run failed in
           # a way that produced no FAILURES section at all (a collection error,
           # an interrupted run).
-          failing=$(grep -E '^_{3,} .* _{3,}$' /tmp/pytest.out \
+          failing=$(grep -E '^_+ .* _+$' /tmp/pytest.out \
                       | sed -E 's/^_+ //; s/ _+$//' | sort -u || true)
           summary=$(grep -E '^[0-9]+ (failed|passed|error)' /tmp/pytest.out | tail -1 || true)
           if [ -z "${failing}" ] && [ -n "${summary}" ]; then
@@ -369,6 +369,23 @@ jobs:
           fi
           if [ -n "${summary}" ]; then
             echo "::notice title=pytest summary::${summary}"
+          fi
+
+          # The NAMES alone send the next person back to a log they cannot
+          # read. Pair each failure with the line that actually decided it:
+          # the last non-empty line of its block, which is the assertion or
+          # the exception. Capped hard, because an annotation is not a log.
+          if [ -s /tmp/pytest.out ]; then
+            reasons=$(awk '
+              /^_+ .* _+$/ { if (name != "") print name " => " last; name=$0; last=""; next }
+              /^=+ (short test summary|FAILURES|=+$)/ { next }
+              /^[[:space:]]*$/ { next }
+              { if (name != "") last=$0 }
+              END { if (name != "") print name " => " last }
+            ' /tmp/pytest.out | sed -E 's/^_+ //; s/ _+//; s/[[:space:]]+/ /g' | cut -c1-300 | head -14 || true)
+            while IFS= read -r line; do
+              [ -n "${line}" ] && echo "::warning title=failure reason::${line}"
+            done <<< "${reasons}"
           fi
 
           exit "$rc"
