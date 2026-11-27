@@ -755,7 +755,13 @@ body { display:block; padding:0; background:var(--v2-page); }
   <button class="tab" id="themeBtn" type="button">Dark / light</button>
 </div>
 <div class="preview-bar" style="top:57px"><a class="tab" data-t="requests" href="#requests">Activation requests — the queue of member claims</a><a class="tab" data-t="req_match" href="#req_match">Verified</a><a class="tab" data-t="req_homophone" href="#req_homophone">Verified</a><a class="tab" data-t="req_nomatch" href="#req_nomatch">Refused</a><a class="tab" data-t="req_done">After approval</a>
-<a class="tab" data-t="queue" href="#queue">The office ticket queue</a></div>
+<a class="tab" data-t="queue" href="#queue">The office ticket queue</a>
+<a class="tab" data-t="se" href="#se">Staff enrollment</a>
+<a class="tab" data-t="dr" href="#dr">Device recovery</a>
+<a class="tab" data-t="office" href="#office">Office</a>
+<a class="tab" data-t="audit" href="#audit">Monthly audit</a>
+<a class="tab" data-t="ticket" href="#ticket">Ticket open</a>
+<a class="tab" data-t="ticket_done" href="#ticket_done">Ticket</a></div>
 <section id="requests" class="pane" data-title="Activation requests — the queue of member claims"><h2 class="paneh">Activation requests — the queue of member claims</h2><div class="frame"><main id="acmMain" tabindex="-1"><div class="topbar"><div class="topbar-left"><h1>Activation requests</h1><p>Members asking for an account. Verify a person, then approve.</p></div><div class="topbar-right"><button class="icon-btn" onclick="toggleTheme()" title="Toggle theme"><i class="fa-solid fa-sun" id="themeIcon"></i></button><a class="btn bo bs" href="/admin/dashboard.php"><i class="fa-solid fa-arrow-left"></i> Dashboard</a></div></div><div class="acm-mobnav"><a class="btn bo bs" href="/admin/acm_overview.php"><i class="fa-solid fa-gauge-high"></i> Overview</a><a class="btn bo bs" href="/admin/acm_queue.php"><i class="fa-solid fa-inbox"></i> Activation queue</a><a class="btn bp bs" href="/admin/acm_requests.php"><i class="fa-solid fa-user-clock"></i> Activation requests</a><a class="btn bo bs" href="/admin/acm_device_recovery.php"><i class="fa-solid fa-mobile-screen"></i> Device recovery</a><a class="btn bo bs" href="/admin/acm_person.php"><i class="fa-solid fa-users"></i> Persons & accounts</a><a class="btn bo bs" href="/admin/acm_staff_enroll.php"><i class="fa-solid fa-id-badge"></i> Staff enrollment</a><a class="btn bo bs" href="/admin/acm_office.php"><i class="fa-solid fa-building"></i> Office</a><a class="btn bo bs" href="/admin/acm_audit.php"><i class="fa-solid fa-file-shield"></i> Monthly audit</a></div>
 
 <div class="v2-toolbar">
@@ -2371,5 +2377,797 @@ document.getElementById('themeBtn').addEventListener('click', function () {
             </a>
         </div></main></div>
 </div></section>
+<section id="se" class="pane" data-title="Staff enrollment — token revealed in the row"><h2 class="paneh">Staff enrollment — token revealed in the row</h2><div class="frame"><main id="acmMain" tabindex="-1"><div class="topbar"><div class="topbar-left"><h1>Staff enrollment</h1><p>Verify the staffer, then approve. Approval mints a one-time enrollment token.</p></div><div class="topbar-right"><button class="icon-btn" onclick="toggleTheme()" title="Toggle theme"><i class="fa-solid fa-sun" id="themeIcon"></i></button><a class="btn bo bs" href="/admin/dashboard.php"><i class="fa-solid fa-arrow-left"></i> Dashboard</a></div></div><div class="acm-mobnav"><a class="btn bo bs" href="/admin/acm_overview.php"><i class="fa-solid fa-gauge-high"></i> Overview</a><a class="btn bo bs" href="/admin/acm_queue.php"><i class="fa-solid fa-inbox"></i> Activation queue</a><a class="btn bo bs" href="/admin/acm_requests.php"><i class="fa-solid fa-user-clock"></i> Activation requests</a><a class="btn bo bs" href="/admin/acm_device_recovery.php"><i class="fa-solid fa-mobile-screen"></i> Device recovery</a><a class="btn bo bs" href="/admin/acm_person.php"><i class="fa-solid fa-users"></i> Persons & accounts</a><a class="btn bp bs" href="/admin/acm_staff_enroll.php"><i class="fa-solid fa-id-badge"></i> Staff enrollment</a><a class="btn bo bs" href="/admin/acm_office.php"><i class="fa-solid fa-building"></i> Office</a><a class="btn bo bs" href="/admin/acm_audit.php"><i class="fa-solid fa-file-shield"></i> Monthly audit</a></div>
+
+<div class="v2-toolbar">
+    <nav class="v2-tabs" aria-label="Request status">
+                    <a class="v2-tab" href="/admin/acm_staff_enroll.php"
+               aria-current="page">
+                All                                    <span class="v2-tab-count">3</span>
+                            </a>
+                    <a class="v2-tab" href="/admin/acm_staff_enroll.php?status=requested"
+               >
+                Waiting                            </a>
+                    <a class="v2-tab" href="/admin/acm_staff_enroll.php?status=approved"
+               >
+                Approved                            </a>
+                    <a class="v2-tab" href="/admin/acm_staff_enroll.php?status=rejected"
+               >
+                Rejected                            </a>
+                    <a class="v2-tab" href="/admin/acm_staff_enroll.php?status=consumed"
+               >
+                Consumed                            </a>
+                    <a class="v2-tab" href="/admin/acm_staff_enroll.php?status=expired"
+               >
+                Expired                            </a>
+                    <a class="v2-tab" href="/admin/acm_staff_enroll.php?status=canceled"
+               >
+                Canceled                            </a>
+            </nav>
+    <span style="flex:1"></span>
+    <span style="font-size:var(--v2-t-micro);color:var(--v2-ink-4)">
+        4 requests    </span>
+</div>
+
+    <div class="v2-list" role="list">
+                                <div class="v2-row" role="listitem"
+                 style="grid-template-columns:34px minmax(0,1.7fr) minmax(0,1fr) 104px minmax(0,1fr) 190px">
+                <div class="v2-avatar" aria-hidden="true"></div>
+
+                <div style="min-width:0">
+                    <div class="v2-row-name">ሰላም ገበረ</div>
+                    <div class="v2-row-meta">
+                        @selam                        · #3                                                    · <span title="Maker–checker: you filed this request">filed by you</span>
+                                            </div>
+                </div>
+
+                <div class="v2-row-cell v2-col-hide">
+                    <span style="font-size:var(--v2-t-micro);color:var(--v2-ink-3)">Operation</span>
+                    <span class="v2-code" style="display:block;font-size:var(--v2-t-small)">
+                        enroll device                    </span>
+                </div>
+
+                <div>
+                    <span class="bg bg-w">
+                        Waiting                    </span>
+                                    </div>
+
+                <div class="v2-row-cell v2-col-hide">
+                    <span style="font-size:var(--v2-t-micro);color:var(--v2-ink-3)">Requested</span>
+                    <span style="display:block;font-size:var(--v2-t-small)">
+                        1 h ago                    </span>
+                </div>
+
+                <div style="text-align:right" id="acmAct-3">
+                                                                    <span class="bg bg-n" title="Maker–checker: another officer must decide"
+                              style="font-size:10px">Self-filed — another officer decides</span>
+                                    </div>
+            </div>
+                                <div class="v2-row" role="listitem"
+                 style="grid-template-columns:34px minmax(0,1.7fr) minmax(0,1fr) 104px minmax(0,1fr) 190px">
+                <div class="v2-avatar" aria-hidden="true">M</div>
+
+                <div style="min-width:0">
+                    <div class="v2-row-name">Marta Tesfaye</div>
+                    <div class="v2-row-meta">
+                        @marta.t                        · #1                                            </div>
+                </div>
+
+                <div class="v2-row-cell v2-col-hide">
+                    <span style="font-size:var(--v2-t-micro);color:var(--v2-ink-3)">Operation</span>
+                    <span class="v2-code" style="display:block;font-size:var(--v2-t-small)">
+                        enroll device                    </span>
+                </div>
+
+                <div>
+                    <span class="bg bg-w">
+                        Waiting                    </span>
+                                    </div>
+
+                <div class="v2-row-cell v2-col-hide">
+                    <span style="font-size:var(--v2-t-micro);color:var(--v2-ink-3)">Requested</span>
+                    <span style="display:block;font-size:var(--v2-t-small)">
+                        2 h ago                    </span>
+                </div>
+
+                <div style="text-align:right" id="acmAct-1"><div style="text-align:left"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--v2-ink-4);font-weight:600;margin-bottom:2px">ONE-TIME ENROLLMENT TOKEN — relay once</div><div class="v2-code" style="font-size:11px;word-break:break-all;color:var(--v2-ink)">ENR-7Q4M-2XKP-9TDL</div><div style="font-size:10px;color:var(--v2-ink-4);margin-top:2px">Expires 2026-11-28 12:00 · reloading masks it</div><button type="button" class="btn bo bs" style="margin-top:6px"><i class="fa-solid fa-copy"></i> Copy</button></div>
+                </div>
+
+                <div class="v2-row-cell v2-col-hide">
+                    <span style="font-size:var(--v2-t-micro);color:var(--v2-ink-3)">Operation</span>
+                    <span class="v2-code" style="display:block;font-size:var(--v2-t-small)">
+                        enroll device                    </span>
+                </div>
+
+                <div>
+                    <span class="bg bg-w">
+                        Waiting                    </span>
+                                    </div>
+
+                <div class="v2-row-cell v2-col-hide">
+                    <span style="font-size:var(--v2-t-micro);color:var(--v2-ink-3)">Requested</span>
+                    <span style="display:block;font-size:var(--v2-t-small)">
+                        2 d ago                    </span>
+                </div>
+
+                <div style="text-align:right" id="acmAct-2">
+                                            <button class="btn v2-ok bs" data-act="approved" data-id="2">
+                            <i class="fa-solid fa-check"></i> Approve
+                        </button>
+                        <button class="btn v2-danger bs" data-act="rejected" data-id="2">
+                            <i class="fa-solid fa-xmark"></i> Reject
+                        </button>
+                                    </div>
+            </div>
+                                <div class="v2-row" role="listitem"
+                 style="grid-template-columns:34px minmax(0,1.7fr) minmax(0,1fr) 104px minmax(0,1fr) 190px">
+                <div class="v2-avatar" aria-hidden="true">M</div>
+
+                <div style="min-width:0">
+                    <div class="v2-row-name">Marta Tesfaye</div>
+                    <div class="v2-row-meta">
+                        @marta.t                        · #4                                            </div>
+                </div>
+
+                <div class="v2-row-cell v2-col-hide">
+                    <span style="font-size:var(--v2-t-micro);color:var(--v2-ink-3)">Operation</span>
+                    <span class="v2-code" style="display:block;font-size:var(--v2-t-small)">
+                        enroll device                    </span>
+                </div>
+
+                <div>
+                    <span class="bg bg-ok">
+                        Approved                    </span>
+                                    </div>
+
+                <div class="v2-row-cell v2-col-hide">
+                    <span style="font-size:var(--v2-t-micro);color:var(--v2-ink-3)">Requested</span>
+                    <span style="display:block;font-size:var(--v2-t-small)">
+                        3 d ago                    </span>
+                </div>
+
+                <div style="text-align:right" id="acmAct-4">
+                                            <span class="dim" style="font-size:var(--v2-t-micro)">
+                            verified in person                        </span>
+                                    </div>
+            </div>
+            </div>
+
+    <div style="display:flex;align-items:center;gap:var(--v2-s3);margin-top:var(--v2-s3)">
+        <span style="font-size:var(--v2-t-micro);color:var(--v2-ink-4)">
+            Showing 1–4            of 4        </span>
+        <span style="flex:1"></span>
+                    </div>
+
+
+
+</main></div></section>
+<section id="dr" class="pane" data-title="Device recovery"><h2 class="paneh">Device recovery</h2><div class="frame"><main id="acmMain" tabindex="-1"><div class="topbar"><div class="topbar-left"><h1>Device recovery</h1><p>Replace a lost or replaced phone for an account that is already active</p></div><div class="topbar-right"><button class="icon-btn" onclick="toggleTheme()" title="Toggle theme"><i class="fa-solid fa-sun" id="themeIcon"></i></button><a class="btn bo bs" href="/admin/dashboard.php"><i class="fa-solid fa-arrow-left"></i> Dashboard</a></div></div><div class="acm-mobnav"><a class="btn bo bs" href="/admin/acm_overview.php"><i class="fa-solid fa-gauge-high"></i> Overview</a><a class="btn bo bs" href="/admin/acm_queue.php"><i class="fa-solid fa-inbox"></i> Activation queue</a><a class="btn bo bs" href="/admin/acm_requests.php"><i class="fa-solid fa-user-clock"></i> Activation requests</a><a class="btn bp bs" href="/admin/acm_device_recovery.php"><i class="fa-solid fa-mobile-screen"></i> Device recovery</a><a class="btn bo bs" href="/admin/acm_person.php"><i class="fa-solid fa-users"></i> Persons & accounts</a><a class="btn bo bs" href="/admin/acm_staff_enroll.php"><i class="fa-solid fa-id-badge"></i> Staff enrollment</a><a class="btn bo bs" href="/admin/acm_office.php"><i class="fa-solid fa-building"></i> Office</a><a class="btn bo bs" href="/admin/acm_audit.php"><i class="fa-solid fa-file-shield"></i> Monthly audit</a></div>
+<div class="v2-toolbar" style="margin-bottom:var(--v2-s4)">
+    <a class="btn bo" href="/admin/acm_queue.php">
+        <i class="fa-solid fa-arrow-left"></i> Activation queue
+    </a>
+    <span style="flex:1"></span>
+    <span class="bg bg-info" title="What this screen can and cannot do">
+        <i class="fa-solid fa-shield-halved"></i> cannot create an account, change a password, or issue an activation code
+    </span>
+</div>
+
+<form method="get" class="v2-search" role="search" style="max-width:640px;margin-bottom:var(--v2-s3)">
+    <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+    <input type="search" name="q" value="ናሆም"
+           placeholder="Search the person by name, phone, or ID document…"
+           aria-label="Search people">
+    <button class="btn bp" type="submit">Search</button>
+            <a class="btn bo" href="/admin/acm_device_recovery.php">Clear</a>
+    </form>
+
+
+
+        <div class="v2-card" style="margin-bottom:var(--v2-s3)">
+        <div class="v2-card-head is-ok">
+            <i class="fa-solid fa-circle-check"
+               style="color:var(--v2-ok)"></i>
+            <strong class="amharic" style="color:var(--v2-ink);font-size:var(--v2-t-small)">
+                ናሆም አለሙ ተስፋዬ            </strong>
+                            <span style="color:var(--v2-ink-3);font-size:var(--v2-t-small)">
+                    Nahom Alemu Tesfaye                </span>
+                        <span style="margin-left:auto;font-size:var(--v2-t-micro);color:var(--v2-ink-3)">
+                Person #1                · 1 active account            </span>
+        </div>
+
+        <div class="v2-card-body">
+                            <div class="v2-list">
+                                                                    <div class="v2-row" style="grid-template-columns:auto minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) auto">
+                            <span class="bg bg-p">member</span>
+                            <div style="min-width:0">
+                                <div class="v2-code" style="font-size:var(--v2-t-small)">
+                                    nahom.a                                </div>
+                                <div class="v2-row-meta">
+                                    linked 2026-01-04 10:00:00                                </div>
+                            </div>
+                            <div class="v2-row-cell v2-col-hide">
+                                <span style="font-size:var(--v2-t-micro);color:var(--v2-ink-3)">Last sign-in</span>
+                                <span style="display:block;font-size:var(--v2-t-small)">
+                                    never                                </span>
+                            </div>
+                            <div class="v2-row-cell v2-col-hide">
+                                <span class="bg bg-ok">active</span>
+                            </div>
+                            <div>
+                                <button class="btn bp bs acm-recover"
+                                        data-person="1"
+                                        data-type="member"
+                                        data-username="nahom.a"
+                                        data-name="ናሆም አለሙ ተስፋዬ">
+                                    <i class="fa-solid fa-mobile-screen"></i> Recover
+                                </button>
+                            </div>
+                        </div>
+                                    </div>
+                    </div>
+    </div>
+
+<!-- The reason is collected in a real dialog instead of window.prompt():
+     the audit trail needs a considered sentence, and prompt() cannot show
+     who the recovery is for or be styled, translated or keyboard-managed. -->
+<div id="acmRecoverDialog" hidden
+     style="position:fixed;inset:0;z-index:300;display:grid;place-items:center;
+            background:rgba(16,19,26,.45);padding:var(--v2-s4)">
+    <div class="v2-card" role="dialog" aria-modal="true" aria-labelledby="acmRecoverTitle"
+         style="max-width:520px;width:100%">
+        <div class="v2-card-head is-warn">
+            <i class="fa-solid fa-mobile-screen" style="color:var(--v2-warn)"></i>
+            <strong id="acmRecoverTitle" style="color:var(--v2-ink);font-size:var(--v2-t-small)">
+                Open a recovery ticket
+            </strong>
+        </div>
+        <div class="v2-card-body">
+            <p class="v2-rail-hint" style="margin-top:0">
+                For <strong class="amharic" id="acmRecoverWho">—</strong>.
+                This creates an auditable ticket; it does not yet change the device.
+            </p>
+            <label class="v2-claim-label" for="acmRecoverReason" style="margin-bottom:var(--v2-s1)">
+                Reason (recorded permanently)
+            </label>
+            <textarea class="inp" id="acmRecoverReason" rows="3" maxlength="2000"
+                      style="width:100%;resize:vertical"
+                      placeholder="e.g. Phone lost on 25 Nov; member present with their student ID."></textarea>
+            <div class="acm-alert err" id="acmRecoverErr" style="display:none;margin-top:var(--v2-s2)"></div>
+            <div class="v2-rail-actions" style="flex-direction:row;gap:var(--v2-s2);margin-top:var(--v2-s3)">
+                <button class="btn bp" id="acmRecoverGo" type="button">
+                    <i class="fa-solid fa-check"></i> Open the ticket
+                </button>
+                <button class="btn bo" id="acmRecoverCancel" type="button">Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+
+</main></div></section>
+<section id="office" class="pane" data-title="Office — mode and designations"><h2 class="paneh">Office — mode and designations</h2><div class="frame"><main id="acmMain" tabindex="-1"><div class="topbar"><div class="topbar-left"><h1>Office governance</h1><p>Modes, approvers and reviewers</p></div><div class="topbar-right"><button class="icon-btn" onclick="toggleTheme()" title="Toggle theme"><i class="fa-solid fa-sun" id="themeIcon"></i></button><a class="btn bo bs" href="/admin/dashboard.php"><i class="fa-solid fa-arrow-left"></i> Dashboard</a></div></div><div class="acm-mobnav"><a class="btn bo bs" href="/admin/acm_overview.php"><i class="fa-solid fa-gauge-high"></i> Overview</a><a class="btn bo bs" href="/admin/acm_queue.php"><i class="fa-solid fa-inbox"></i> Activation queue</a><a class="btn bo bs" href="/admin/acm_requests.php"><i class="fa-solid fa-user-clock"></i> Activation requests</a><a class="btn bo bs" href="/admin/acm_device_recovery.php"><i class="fa-solid fa-mobile-screen"></i> Device recovery</a><a class="btn bo bs" href="/admin/acm_person.php"><i class="fa-solid fa-users"></i> Persons & accounts</a><a class="btn bo bs" href="/admin/acm_staff_enroll.php"><i class="fa-solid fa-id-badge"></i> Staff enrollment</a><a class="btn bp bs" href="/admin/acm_office.php"><i class="fa-solid fa-building"></i> Office</a><a class="btn bo bs" href="/admin/acm_audit.php"><i class="fa-solid fa-file-shield"></i> Monthly audit</a></div><div class="cd">
+    <div class="ct"><i class="fa-solid fa-building"></i> Office mode <span class="bg bg-n" id="modeChip">…</span></div>
+    <div class="sub" id="modeMeaning" style="margin-bottom:var(--v2-s3)"></div>
+    <dl class="acm-kv">
+        <dt>Active officers</dt><dd id="officerCount">…</dd>
+        <dt>You are</dt><dd id="myDesignations">…</dd>
+    </dl>
+        <div style="font-size:.8rem;color:var(--dim);margin-top:.6rem">Only a Super Admin can switch the office mode.</div>
+        <div class="ct" style="margin-top:.8rem"><i class="fa-solid fa-clock-rotate-left"></i> Mode history</div>
+    <div class="tw"><table>
+        <thead><tr><th>Mode</th><th>Effective</th><th>Reason</th><th>Changed by</th><th>At</th></tr></thead>
+        <tbody id="modeHistory"><tr><td colspan="5">Loading…</td></tr></tbody>
+    </table></div>
+</div>
+
+<div class="acm-grid2">
+    <div class="cd">
+        <div class="ct"><i class="fa-solid fa-user-check"></i> Designated approvers</div>
+        <div class="tw"><table>
+            <thead><tr><th>User</th><th>Effective</th><th>Reason</th></tr></thead>
+            <tbody id="approverRows"><tr><td colspan="4">Loading…</td></tr></tbody>
+        </table></div>
+            </div>
+    <div class="cd">
+        <div class="ct"><i class="fa-solid fa-file-shield"></i> Independent reviewers</div>
+        <div class="tw"><table>
+            <thead><tr><th>User</th><th>Effective</th><th>Reason</th></tr></thead>
+            <tbody id="reviewerRows"><tr><td colspan="4">Loading…</td></tr></tbody>
+        </table></div>
+                <div style="font-size:.8rem;color:var(--dim);margin-top:.6rem">Only a Super Admin can designate reviewers.</div>
+            </div>
+</div>
+
+
+
+</main></div></section>
+<section id="audit" class="pane" data-title="Monthly audit"><h2 class="paneh">Monthly audit</h2><div class="frame"><main id="acmMain" tabindex="-1"><div class="topbar"><div class="topbar-left"><h1>Monthly audit</h1><p>Office accountability, attested</p></div><div class="topbar-right"><button class="icon-btn" onclick="toggleTheme()" title="Toggle theme"><i class="fa-solid fa-sun" id="themeIcon"></i></button><a class="btn bo bs" href="/admin/dashboard.php"><i class="fa-solid fa-arrow-left"></i> Dashboard</a></div></div><div class="acm-mobnav"><a class="btn bo bs" href="/admin/acm_overview.php"><i class="fa-solid fa-gauge-high"></i> Overview</a><a class="btn bo bs" href="/admin/acm_queue.php"><i class="fa-solid fa-inbox"></i> Activation queue</a><a class="btn bo bs" href="/admin/acm_requests.php"><i class="fa-solid fa-user-clock"></i> Activation requests</a><a class="btn bo bs" href="/admin/acm_device_recovery.php"><i class="fa-solid fa-mobile-screen"></i> Device recovery</a><a class="btn bo bs" href="/admin/acm_person.php"><i class="fa-solid fa-users"></i> Persons & accounts</a><a class="btn bo bs" href="/admin/acm_staff_enroll.php"><i class="fa-solid fa-id-badge"></i> Staff enrollment</a><a class="btn bo bs" href="/admin/acm_office.php"><i class="fa-solid fa-building"></i> Office</a><a class="btn bp bs" href="/admin/acm_audit.php"><i class="fa-solid fa-file-shield"></i> Monthly audit</a></div><div class="cd">
+    <div class="ct"><i class="fa-solid fa-file-shield"></i> Report <span class="bg bg-n" id="repMonth">2026-11</span></div>
+    <div class="v2-toolbar" style="margin-bottom:var(--v2-s3)">
+        <label class="v2-sr" for="f_month">Report month</label>
+        <input class="inp" id="f_month" type="month" value="2026-11">
+        <button class="btn bp" id="loadBtn" type="button">
+            <i class="fa-solid fa-rotate"></i> Load report
+        </button>
+        <span id="repState" style="font-size:var(--v2-t-micro);color:var(--v2-ink-4)"></span>
+    </div>
+    <dl class="acm-kv" style="margin-top:.6rem">
+        <dt>Period</dt><dd id="repPeriod">…</dd>
+        <dt>Generated</dt><dd id="repGen">…</dd>
+        <dt>Schema</dt><dd id="repSchema">…</dd>
+        <dt>Snapshot fingerprint</dt><dd><code id="repHash" style="font-size:.72rem;word-break:break-all">…</code></dd>
+    </dl>
+    <div class="sg" style="margin-top:.6rem">
+        <div class="sc"><div class="val" id="sumAudit">0</div><div class="lbl">Audit events</div></div>
+        <div class="sc"><div class="val" id="sumTicket">0</div><div class="lbl">Ticket events</div></div>
+        <div class="sc"><div class="val" id="sumModes">0</div><div class="lbl">Mode changes</div></div>
+        <div class="sc"><div class="val" id="sumSelf">0</div><div class="lbl">Self-approved</div></div>
+    </div>
+    <div id="truncWarn"></div>
+</div>
+
+<div class="cd">
+    <div class="ct"><i class="fa-solid fa-triangle-exclamation"></i> Self-approved decisions</div>
+    <div class="tw"><table>
+        <thead><tr><th>Ticket</th><th>Type</th><th>Decided by</th><th>At</th></tr></thead>
+        <tbody id="selfRows"><tr><td colspan="4">Loading…</td></tr></tbody>
+    </table></div>
+</div>
+
+<div class="cd">
+    <div class="ct"><i class="fa-solid fa-clock-rotate-left"></i> Audit events <span style="font-weight:400;font-size:.75rem">(first 200 shown)</span></div>
+    <div class="tw"><table>
+        <thead><tr><th>At</th><th>User</th><th>Action</th><th>Detail</th></tr></thead>
+        <tbody id="auditRows"><tr><td colspan="4">Loading…</td></tr></tbody>
+    </table></div>
+</div>
+
+<div class="acm-grid2">
+    <div class="cd">
+        <div class="ct"><i class="fa-solid fa-building"></i> Mode changes</div>
+        <div class="tw"><table>
+            <thead><tr><th>Mode</th><th>Effective</th><th>By</th><th>At</th></tr></thead>
+            <tbody id="modeRows"><tr><td colspan="4">Loading…</td></tr></tbody>
+        </table></div>
+        <div class="ct" style="margin-top:.8rem"><i class="fa-solid fa-pen-nib"></i> Attestations</div>
+        <div class="tw"><table>
+            <thead><tr><th>Kind</th><th>By</th><th>At</th><th>Note</th></tr></thead>
+            <tbody id="attRows"><tr><td colspan="4">Loading…</td></tr></tbody>
+        </table></div>
+    </div>
+    <div class="cd">
+        <div class="ct"><i class="fa-solid fa-stamp"></i> Attest this month</div>
+        <div id="attestGate">Checking reviewer status…</div>
+        <form id="attestForm" class="acm-form" onsubmit="return false" style="display:none">
+            <div class="full"><label class="flbl" for="att_note">Attestation note (required)</label>
+                <textarea class="inp" id="att_note" rows="3" maxlength="2000" required placeholder="What did you review? Any exceptions?"></textarea></div>
+            <div class="full"><button class="btn bp" id="attestBtn"><i class="fa-solid fa-stamp"></i> Attest snapshot</button></div>
+            <div class="full" style="font-size:.75rem;color:var(--dim)">Attesting approves this exact snapshot (fingerprint above). If new office activity lands first, you must regenerate and review again. Corrections append a new attestation; nothing is ever edited.</div>
+        </form>
+    </div>
+</div>
+
+
+</main></div></section>
+<section id="ticket" class="pane" data-title="Ticket — open, filed by this officer"><h2 class="paneh">Ticket — open, filed by this officer</h2><div class="frame"><main id="acmMain" tabindex="-1"><div class="topbar"><div class="topbar-left"><h1>T-2026-0042</h1><p>Activation review · Open</p></div><div class="topbar-right"><button class="icon-btn" onclick="toggleTheme()" title="Toggle theme"><i class="fa-solid fa-sun" id="themeIcon"></i></button><a class="btn bo bs" href="/admin/dashboard.php"><i class="fa-solid fa-arrow-left"></i> Dashboard</a></div></div><div class="acm-mobnav"><a class="btn bo bs" href="/admin/acm_overview.php"><i class="fa-solid fa-gauge-high"></i> Overview</a><a class="btn bp bs" href="/admin/acm_queue.php"><i class="fa-solid fa-inbox"></i> Activation queue</a><a class="btn bo bs" href="/admin/acm_requests.php"><i class="fa-solid fa-user-clock"></i> Activation requests</a><a class="btn bo bs" href="/admin/acm_device_recovery.php"><i class="fa-solid fa-mobile-screen"></i> Device recovery</a><a class="btn bo bs" href="/admin/acm_person.php"><i class="fa-solid fa-users"></i> Persons & accounts</a><a class="btn bo bs" href="/admin/acm_staff_enroll.php"><i class="fa-solid fa-id-badge"></i> Staff enrollment</a><a class="btn bo bs" href="/admin/acm_office.php"><i class="fa-solid fa-building"></i> Office</a><a class="btn bo bs" href="/admin/acm_audit.php"><i class="fa-solid fa-file-shield"></i> Monthly audit</a></div>
+
+
+<!-- ============ command bar: where this ticket stands, and what to do ============ -->
+<div class="v2-toolbar">
+    <a class="btn bo" href="/admin/acm_queue.php"><i class="fa-solid fa-arrow-left"></i> Queue</a>
+    <span class="bg bg-w">Open</span>
+    <span class="bg bg-n">Member account</span>
+    <span class="bg bg-n"
+          title="Maker-checker: the person who filed a ticket never decides it">
+        Separated mode
+    </span>
+            <span style="flex:1"></span>
+            <button class="btn bo" data-act="claim"><i class="fa-solid fa-hand"></i> Claim for review</button>
+        </div>
+
+
+<div class="v2-verify">
+
+    <!-- ---------------- LEFT: the evidence, as the register holds it ---------------- -->
+    <div style="display:flex;flex-direction:column;gap:var(--v2-s4);min-width:0">
+
+        <div class="v2-card">
+            <div class="v2-card-head">
+                <i class="fa-solid fa-id-card" style="color:var(--v2-ink-3)"></i>
+                <strong style="color:var(--v2-ink);font-size:var(--v2-t-small)">Person evidence</strong>
+                <a href="/admin/acm_person.php?id=1"
+                   style="margin-left:auto;font-size:var(--v2-t-micro);color:var(--v2-accent);text-decoration:none">
+                    Open the person <i class="fa-solid fa-arrow-right"></i>
+                </a>
+            </div>
+            <div class="v2-card-body">
+                <div class="v2-identity">
+                    <div class="v2-photo"><i class="fa-solid fa-user"></i></div>
+                    <div style="min-width:0">
+                        <div class="v2-name amharic">ናሆም አለሙ ተስፋዬ</div>
+                                                    <div class="v2-name-sub">Nahom Alemu Tesfaye</div>
+                                                <div class="v2-chips">
+                            <span class="bg bg-n">member</span>
+                                                            <span class="bg bg-n">
+                                    <i class="fa-solid fa-clock"></i> in 4 days                                </span>
+                                                    </div>
+                    </div>
+                </div>
+                <dl class="v2-facts">
+                    <div class="v2-fact"><dt>Father</dt><dd>Alemu Tesfaye</dd></div><div class="v2-fact"><dt>Phone</dt><dd>0911224321</dd></div><div class="v2-fact"><dt>Email</dt><dd class="is-missing">not on file</dd></div><div class="v2-fact"><dt>Birth date</dt><dd class="is-missing">not on file</dd></div><div class="v2-fact"><dt>ID document</dt><dd>national id ET-4491902</dd></div><div class="v2-fact"><dt>Filed by</dt><dd>2026-11-21 09:12:00</dd></div>                </dl>
+            </div>
+        </div>
+
+                <div class="v2-card">
+            <div class="v2-card-head">
+                <i class="fa-solid fa-link" style="color:var(--v2-ink-3)"></i>
+                <strong style="color:var(--v2-ink);font-size:var(--v2-t-small)">Linked records</strong>
+            </div>
+            <div class="v2-card-body">
+                                    <dl class="v2-facts" style="margin-top:0;padding-top:0;border-top:none">
+                        <div class="v2-fact"><dt>Member</dt><dd class="amharic">
+                            ናሆም አለሙ ተስፋዬ                            (Nahom A)</dd></div>
+                        <div class="v2-fact"><dt>Code</dt><dd class="v2-code">
+                            79714                            · Sunday school</dd></div>
+                        <div class="v2-fact"><dt>Section</dt><dd>
+                            Section B                            · Grade 7</dd></div>
+                        <div class="v2-fact"><dt>Baptismal name</dt><dd class="amharic">
+                            ገብርኤል</dd></div>
+                    </dl>
+                                                    <div style="margin-top:var(--v2-s3);font-size:var(--v2-t-small);color:var(--v2-ink-4)">
+                        No guardian record linked.
+                    </div>
+                            </div>
+        </div>
+
+        
+        <!-- ---------------- the ceremony: code, devices ---------------- -->
+        
+                <div class="v2-card">
+            <div class="v2-card-head">
+                <i class="fa-solid fa-mobile-screen" style="color:var(--v2-ink-3)"></i>
+                <strong style="color:var(--v2-ink);font-size:var(--v2-t-small)">Registered devices</strong>
+            </div>
+                            <div class="tw" style="border:none;border-radius:0">
+                    <table>
+                        <thead><tr><th>Device</th><th>Fingerprint</th><th>Last seen</th><th></th></tr></thead>
+                        <tbody>
+                                                    <tr>
+                                <td>
+                                    Pixel 7                                    <span class="bg bg-ok">
+                                        active                                    </span>
+                                                                    </td>
+                                <td class="v2-code" style="font-size:var(--v2-t-micro)">
+                                    aa:bb:cc...                                    · ES256                                </td>
+                                <td style="font-size:var(--v2-t-micro);color:var(--v2-ink-3)">
+                                    2026-11-25 20:14:00                                </td>
+                                <td style="text-align:right">
+                                                                            <button class="btn v2-danger bs" data-revoke="dev-7f3a">
+                                            Revoke
+                                        </button>
+                                                                    </td>
+                            </tr>
+                                                    <tr>
+                                <td>
+                                    Old Redmi                                    <span class="bg bg-bad">
+                                        revoked                                    </span>
+                                                                    </td>
+                                <td class="v2-code" style="font-size:var(--v2-t-micro)">
+                                    11:22:33...                                    · ES256                                </td>
+                                <td style="font-size:var(--v2-t-micro);color:var(--v2-ink-3)">
+                                    2026-06-02 08:00:00                                </td>
+                                <td style="text-align:right">
+                                                                    </td>
+                            </tr>
+                                                </tbody>
+                    </table>
+                </div>
+                <div class="v2-card-body" style="padding-top:0">
+                    <input class="inp" id="acmRevokeReason" maxlength="2000"
+                           placeholder="Why is this device being revoked?" style="width:100%"
+                           aria-label="Revoke reason">
+                </div>
+                    </div>
+        
+        <div class="v2-card">
+            <div class="v2-card-head">
+                <i class="fa-solid fa-clock-rotate-left" style="color:var(--v2-ink-3)"></i>
+                <strong style="color:var(--v2-ink);font-size:var(--v2-t-small)">Timeline</strong>
+            </div>
+            <div class="v2-card-body">
+                                <ul class="v2-timeline">
+                                        <li>
+                        <div class="v2-ev">submitted                                                    </div>
+                        <div class="v2-ev-meta">2026-11-21 09:12:00</div>
+                                                    <div style="font-size:var(--v2-t-small);color:var(--v2-ink-2);margin-top:2px">
+                                Walk-in at the office.                            </div>
+                                            </li>
+                                        <li>
+                        <div class="v2-ev">claimed                                                    </div>
+                        <div class="v2-ev-meta">2026-11-21 10:02:00</div>
+                                            </li>
+                                        <li>
+                        <div class="v2-ev">note                                                    </div>
+                        <div class="v2-ev-meta">2026-11-21 10:05:00</div>
+                                                    <div style="font-size:var(--v2-t-small);color:var(--v2-ink-2);margin-top:2px">
+                                Physical ID seen: ET-4491902.                            </div>
+                                            </li>
+                                    </ul>
+                            </div>
+        </div>
+
+    </div>
+
+    <!-- ---------------- RIGHT: what to do about it ---------------- -->
+    <div class="v2-rail">
+
+                <div class="v2-rail-card">
+            <div class="v2-rail-title">
+                Someone else decides            </div>
+            <p class="v2-rail-hint">
+                                    You filed this ticket, so someone else decides it. Claim and hand it over, or leave it for the designated reviewer.                            </p>
+
+            <label class="flbl" for="acmNote" style="font-size:var(--v2-t-micro);color:var(--v2-ink-3);text-transform:uppercase;letter-spacing:.07em;font-weight:600">
+                Note            </label>
+            <textarea class="inp" id="acmNote" rows="3" maxlength="2000"
+                      placeholder="What did you verify?" style="width:100%;margin-top:var(--v2-s1)"></textarea>
+
+            
+            <div class="v2-rail-actions" style="margin-top:var(--v2-s3)">
+                                                    <button class="btn bp" data-act="note">
+                        <i class="fa-solid fa-comment"></i> Add note
+                    </button>
+                            </div>
+        </div>
+        
+        <div class="v2-rail-card">
+            <div class="v2-rail-title" style="font-size:var(--v2-t-small)">Assignment</div>
+            <dl class="v2-facts" style="margin-top:var(--v2-s3);padding-top:0;border-top:none">
+                <div class="v2-fact"><dt>Assignee</dt>
+                    <dd class="is-missing">
+                        unclaimed</dd></div>
+                <div class="v2-fact"><dt>Filed</dt>
+                    <dd>2026-11-21 09:12:00</dd></div>
+                <div class="v2-fact"><dt>Deadline</dt>
+                    <dd class="">
+                        in 4 days</dd></div>
+                            </dl>
+        </div>
+
+    </div>
+</div>
+
+
+</main></div></section>
+<section id="ticket_done" class="pane" data-title="Ticket — code issued elsewhere, reference on the page"><h2 class="paneh">Ticket — code issued elsewhere, reference on the page</h2><div class="frame"><main id="acmMain" tabindex="-1"><div class="topbar"><div class="topbar-left"><h1>T-2026-0041</h1><p>Activation review · Approved</p></div><div class="topbar-right"><button class="icon-btn" onclick="toggleTheme()" title="Toggle theme"><i class="fa-solid fa-sun" id="themeIcon"></i></button><a class="btn bo bs" href="/admin/dashboard.php"><i class="fa-solid fa-arrow-left"></i> Dashboard</a></div></div><div class="acm-mobnav"><a class="btn bo bs" href="/admin/acm_overview.php"><i class="fa-solid fa-gauge-high"></i> Overview</a><a class="btn bp bs" href="/admin/acm_queue.php"><i class="fa-solid fa-inbox"></i> Activation queue</a><a class="btn bo bs" href="/admin/acm_requests.php"><i class="fa-solid fa-user-clock"></i> Activation requests</a><a class="btn bo bs" href="/admin/acm_device_recovery.php"><i class="fa-solid fa-mobile-screen"></i> Device recovery</a><a class="btn bo bs" href="/admin/acm_person.php"><i class="fa-solid fa-users"></i> Persons & accounts</a><a class="btn bo bs" href="/admin/acm_staff_enroll.php"><i class="fa-solid fa-id-badge"></i> Staff enrollment</a><a class="btn bo bs" href="/admin/acm_office.php"><i class="fa-solid fa-building"></i> Office</a><a class="btn bo bs" href="/admin/acm_audit.php"><i class="fa-solid fa-file-shield"></i> Monthly audit</a></div>
+
+
+<!-- ============ command bar: where this ticket stands, and what to do ============ -->
+<div class="v2-toolbar">
+    <a class="btn bo" href="/admin/acm_queue.php"><i class="fa-solid fa-arrow-left"></i> Queue</a>
+    <span class="bg bg-info">Approved</span>
+    <span class="bg bg-n">Member account</span>
+    <span class="bg bg-n"
+          title="Maker-checker: the person who filed a ticket never decides it">
+        Separated mode
+    </span>
+            <span style="flex:1"></span>
+        </div>
+
+
+<div class="v2-verify">
+
+    <!-- ---------------- LEFT: the evidence, as the register holds it ---------------- -->
+    <div style="display:flex;flex-direction:column;gap:var(--v2-s4);min-width:0">
+
+        <div class="v2-card">
+            <div class="v2-card-head">
+                <i class="fa-solid fa-id-card" style="color:var(--v2-ink-3)"></i>
+                <strong style="color:var(--v2-ink);font-size:var(--v2-t-small)">Person evidence</strong>
+                <a href="/admin/acm_person.php?id=1"
+                   style="margin-left:auto;font-size:var(--v2-t-micro);color:var(--v2-accent);text-decoration:none">
+                    Open the person <i class="fa-solid fa-arrow-right"></i>
+                </a>
+            </div>
+            <div class="v2-card-body">
+                <div class="v2-identity">
+                    <div class="v2-photo"><i class="fa-solid fa-user"></i></div>
+                    <div style="min-width:0">
+                        <div class="v2-name amharic">ናሆም አለሙ ተስፋዬ</div>
+                                                    <div class="v2-name-sub">Nahom Alemu Tesfaye</div>
+                                                <div class="v2-chips">
+                            <span class="bg bg-n">member</span>
+                                                    </div>
+                    </div>
+                </div>
+                <dl class="v2-facts">
+                    <div class="v2-fact"><dt>Father</dt><dd>Alemu Tesfaye</dd></div><div class="v2-fact"><dt>Phone</dt><dd>0911224321</dd></div><div class="v2-fact"><dt>Email</dt><dd class="is-missing">not on file</dd></div><div class="v2-fact"><dt>Birth date</dt><dd class="is-missing">not on file</dd></div><div class="v2-fact"><dt>ID document</dt><dd>national id ET-4491902</dd></div><div class="v2-fact"><dt>Filed by</dt><dd>2026-11-19 08:05:00</dd></div>                </dl>
+            </div>
+        </div>
+
+                <div class="v2-card">
+            <div class="v2-card-head">
+                <i class="fa-solid fa-link" style="color:var(--v2-ink-3)"></i>
+                <strong style="color:var(--v2-ink);font-size:var(--v2-t-small)">Linked records</strong>
+            </div>
+            <div class="v2-card-body">
+                                    <dl class="v2-facts" style="margin-top:0;padding-top:0;border-top:none">
+                        <div class="v2-fact"><dt>Member</dt><dd class="amharic">
+                            ናሆም አለሙ ተስፋዬ                            (Nahom A)</dd></div>
+                        <div class="v2-fact"><dt>Code</dt><dd class="v2-code">
+                            79714                            · Sunday school</dd></div>
+                        <div class="v2-fact"><dt>Section</dt><dd>
+                            Section B                            · Grade 7</dd></div>
+                        <div class="v2-fact"><dt>Baptismal name</dt><dd class="amharic">
+                            ገብርኤል</dd></div>
+                    </dl>
+                                                    <div style="margin-top:var(--v2-s3);font-size:var(--v2-t-small);color:var(--v2-ink-4)">
+                        No guardian record linked.
+                    </div>
+                            </div>
+        </div>
+
+        
+        <!-- ---------------- the ceremony: code, devices ---------------- -->
+                <div class="v2-card">
+            <div class="v2-card-head">
+                <i class="fa-solid fa-key" style="color:var(--v2-ink-3)"></i>
+                <strong style="color:var(--v2-ink);font-size:var(--v2-t-small)">Activation code</strong>
+                                    <span class="bg bg-ok" style="margin-left:auto">live</span>
+                            </div>
+            <div class="v2-card-body">
+                                                                                        <dl class="v2-facts" style="margin-top:0;padding-top:0;border-top:none">
+                        <div class="v2-fact">
+                            <dt>Code</dt>
+                            <dd class="v2-code">
+                                                                    six-digit one-time code
+                                                            </dd>
+                        </div>
+                        <div class="v2-fact">
+                            <dt>Expires</dt>
+                            <dd>2026-11-27 18:00:00                                                            </dd>
+                        </div>
+                        <div class="v2-fact">
+                            <dt>Attempts left</dt>
+                            <dd>
+                                                        5 of 5                                                            <div style="font-size:var(--v2-t-micro);color:var(--v2-ink-4)">
+                                    per ticket, across all issued codes
+                                </div>
+                                                        </dd>
+                        </div>
+                    </dl>
+                
+                
+                <div id="acmCodeOnce" class="acm-alert warn" style="display:none;margin-top:var(--v2-s3)"></div>
+
+                                <div class="v2-claim" style="margin-top:var(--v2-s3)">
+                    <div class="v2-claim-label">
+                        <i class="fa-solid fa-hashtag"></i> Read these two out together
+                    </div>
+                    <div style="display:flex;align-items:center;gap:var(--v2-s4);flex-wrap:wrap">
+                        <div>
+                            <div style="font-size:var(--v2-t-micro);color:var(--v2-ink-4)">Request reference</div>
+                            <div class="v2-code" style="font-size:var(--v2-t-h2);letter-spacing:.1em">
+                                KQ2WPD9A                            </div>
+                        </div>
+                        <div style="font-size:var(--v2-t-small);color:var(--v2-ink-3);max-width:24rem">
+                            The code is checked against this reference only, and works
+                            once. Without it the member cannot finish activation.
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="v2-toolbar" style="margin:var(--v2-s3) 0 0">
+                                            <select class="inp" id="acmIssuePurpose" aria-label="Code purpose" style="max-width:12rem">
+                            <option value="activation">Activation code</option>
+                            <option value="device_add">Add-a-device code</option>
+                            <option value="reset">Recovery code</option>
+                        </select>
+                        <button class="btn bp" id="acmIssueBtn">
+                            <i class="fa-solid fa-key"></i> Reissue code                        </button>
+                                        <span style="flex:1"></span>
+                                            <span style="font-size:var(--v2-t-micro);color:var(--v2-ink-4);max-width:26rem">
+                            <i class="fa-solid fa-eye"></i>
+                            The full code shows once — read it out in person, then it is
+                            masked forever. Reissuing kills the previous code.
+                        </span>
+                                    </div>
+
+                                <div class="v2-toolbar" style="margin:var(--v2-s3) 0 0;border-top:1px solid var(--v2-line);padding-top:var(--v2-s3)">
+                    <input class="inp" id="acmCancelReason" maxlength="2000"
+                           placeholder="Why is this ticket being canceled?" style="flex:1;min-width:12rem"
+                           aria-label="Cancel reason">
+                    <button class="btn v2-danger" id="acmCancelBtn">
+                        <i class="fa-solid fa-ban"></i> Cancel ticket
+                    </button>
+                </div>
+                            </div>
+        </div>
+        
+                <div class="v2-card">
+            <div class="v2-card-head">
+                <i class="fa-solid fa-mobile-screen" style="color:var(--v2-ink-3)"></i>
+                <strong style="color:var(--v2-ink);font-size:var(--v2-t-small)">Registered devices</strong>
+            </div>
+                            <div class="tw" style="border:none;border-radius:0">
+                    <table>
+                        <thead><tr><th>Device</th><th>Fingerprint</th><th>Last seen</th><th></th></tr></thead>
+                        <tbody>
+                                                    <tr>
+                                <td>
+                                    Pixel 7                                    <span class="bg bg-ok">
+                                        active                                    </span>
+                                                                    </td>
+                                <td class="v2-code" style="font-size:var(--v2-t-micro)">
+                                    aa:bb:cc...                                    · ES256                                </td>
+                                <td style="font-size:var(--v2-t-micro);color:var(--v2-ink-3)">
+                                    2026-11-25 20:14:00                                </td>
+                                <td style="text-align:right">
+                                                                            <button class="btn v2-danger bs" data-revoke="dev-7f3a">
+                                            Revoke
+                                        </button>
+                                                                    </td>
+                            </tr>
+                                                    <tr>
+                                <td>
+                                    Old Redmi                                    <span class="bg bg-bad">
+                                        revoked                                    </span>
+                                                                    </td>
+                                <td class="v2-code" style="font-size:var(--v2-t-micro)">
+                                    11:22:33...                                    · ES256                                </td>
+                                <td style="font-size:var(--v2-t-micro);color:var(--v2-ink-3)">
+                                    2026-06-02 08:00:00                                </td>
+                                <td style="text-align:right">
+                                                                    </td>
+                            </tr>
+                                                </tbody>
+                    </table>
+                </div>
+                <div class="v2-card-body" style="padding-top:0">
+                    <input class="inp" id="acmRevokeReason" maxlength="2000"
+                           placeholder="Why is this device being revoked?" style="width:100%"
+                           aria-label="Revoke reason">
+                </div>
+                    </div>
+        
+        <div class="v2-card">
+            <div class="v2-card-head">
+                <i class="fa-solid fa-clock-rotate-left" style="color:var(--v2-ink-3)"></i>
+                <strong style="color:var(--v2-ink);font-size:var(--v2-t-small)">Timeline</strong>
+            </div>
+            <div class="v2-card-body">
+                                    <div style="font-size:var(--v2-t-small);color:var(--v2-ink-4)">
+                        No events recorded on this ticket.
+                    </div>
+                            </div>
+        </div>
+
+    </div>
+
+    <!-- ---------------- RIGHT: what to do about it ---------------- -->
+    <div class="v2-rail">
+
+        
+        <div class="v2-rail-card">
+            <div class="v2-rail-title" style="font-size:var(--v2-t-small)">Assignment</div>
+            <dl class="v2-facts" style="margin-top:var(--v2-s3);padding-top:0;border-top:none">
+                <div class="v2-fact"><dt>Assignee</dt>
+                    <dd class="is-missing">
+                        unclaimed</dd></div>
+                <div class="v2-fact"><dt>Filed</dt>
+                    <dd>2026-11-19 08:05:00</dd></div>
+                <div class="v2-fact"><dt>Deadline</dt>
+                    <dd class="">
+                        closed — no deadline</dd></div>
+                            </dl>
+        </div>
+
+    </div>
+</div>
+
+
+</main></div></section>
 </body>
 </html>

@@ -58,8 +58,13 @@ STUDENT                    PLATFORM                         OFFICE
    |<-- access + refresh (device_bound: true)                 |
 ```
 
-Steps 6–10 exist today and work. Step 5 is the decision in §7. Steps 1–4, and
-the three recovery paths in §5, are the work.
+Steps 6–10 exist today and work. Steps 1–5 are built (S12): the code is read
+out **in the request card**, not on a separate page (see §7, D1) — the officer
+approves, the approve button becomes the ticket number, and the six-digit code
+appears beneath it with the request reference. Same `code_issue` path and the
+same show-once contract as the ticket page; the reference is shown with the
+code because verification is scoped to it. The three recovery paths in §5 are
+built too except SMS delivery (§11).
 
 ---
 
@@ -261,7 +266,7 @@ statement per block, no `FOREIGN KEY`, no JSON column type.
 
 | # | Question | My recommendation |
 |---|---|---|
-| **D1** | Code delivery: in person, or SMS/email? | **In person for v1.** Digital delivery merges the two factors. If SMS is wanted later, the code must be split: SMS carries the selector, the officer gives the secret — or vice versa. |
+| **D1** | Code delivery: in person, or SMS/email? | **In person for v1.** Digital delivery merges the two factors. If SMS is wanted later, the code must be split: SMS carries the selector, the officer gives the secret — or vice versa. **Decided and built:** in person, shown once **inline in the request card** (`acm_request.php`) so the officer never leaves the person they just verified. `acm_ticket.php` retains the identical show-once path for reissue, devices, notes, and cancel. |
 | **D2** | Is the public request endpoint wanted at all, or does the office keep creating tickets? | Build it, but **returning the same generic `202`** and requiring the office to match. Without it, a student who walks in with no ticket has no path. |
 | **D3** | Username: auto-generated `m<member_code>`, or chosen by the student? | **Keep auto-generated; let it be changed once after first login** (`PATCH /users/me` already allows it). Avoids a uniqueness UX and a squatting problem at activation time. |
 | **D4** | Should `members/me` be a new route, or `GET /members/{id}` relaxed for member-but-own? | **New route `/members/me`.** Relaxing an id-taking route invites an IDOR regression; a self route cannot be pointed at someone else by construction. |

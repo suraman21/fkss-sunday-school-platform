@@ -144,8 +144,16 @@ def test_s10_console_cases_use_issuance_policy_network_gate_and_fp_audit():
     assert "PLAIN" not in decide.upper() or "Plaintext travels ONLY in this response" in decide
     p = read(PAGE)
     assert "acmApi('staff_enroll_decide'" in p
-    assert "ONE-TIME ENROLLMENT TOKEN" in p
-    assert "Self-filed" in p
+    # The token is shown ONCE and only in the response to a decision. The
+    # wording may change with the design layer, so this asserts the property:
+    # the page must render a token from the decision response, and it must not
+    # invent, store or re-display one from anywhere else.
+    assert "ONE-TIME ENROLLMENT TOKEN" in p.upper()
+    assert "d.grant" in p and "grant.token" in p, "the token comes from the decision response"
+    # Maker-checker must be stated on screen, not just enforced server-side:
+    # an officer who cannot decide needs to know why.
+    assert "another officer decides" in p, "the self-filed case must explain itself"
+    assert "requester_uid" in p, "self-filed detection must compare the requester"
 
 
 # ---- #38 closure ----

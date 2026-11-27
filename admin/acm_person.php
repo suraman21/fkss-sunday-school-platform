@@ -87,19 +87,53 @@ acm_chrome_open('persons', 'Persons & accounts', 'One human, independently manag
 <?php endif; ?>
 
 <?php if ($mode === 'search'): ?>
-<form method="get" class="acm-filterbar">
-    <input class="inp" type="search" name="q" value="<?= e($q) ?>" placeholder="Name, phone, ID ref…" aria-label="Search persons" style="min-width:260px">
-    <button class="btn bo" type="submit"><i class="fa-solid fa-magnifying-glass"></i> Search</button>
+<div class="v2-toolbar">
+    <form method="get" class="v2-search" role="search">
+        <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+        <input type="search" name="q" value="<?= e($q) ?>"
+               placeholder="Name, phone, or ID reference…" aria-label="Search persons">
+        <button class="btn bp" type="submit">Search</button>
+        <?php if ($q !== ''): ?>
+            <a class="btn bo" href="/admin/acm_person.php">Clear</a>
+        <?php endif; ?>
+    </form>
     <?php if ($canCreate): ?>
-    <a class="btn bp" href="/admin/acm_person.php?new=1"><i class="fa-solid fa-user-plus"></i> Register person</a>
+        <span style="flex:1"></span>
+        <a class="btn bo" href="/admin/acm_person.php?new=1">
+            <i class="fa-solid fa-user-plus"></i> Register person
+        </a>
     <?php endif; ?>
-</form>
+</div>
 <div class="cd">
     <div class="ct"><i class="fa-solid fa-users"></i> Results</div>
     <?php if ($q === ''): ?>
-    <div class="acm-empty"><i class="fa-solid fa-magnifying-glass"></i> Search by name, phone or ID reference to begin.</div>
+    <div class="v2-state">
+        <i class="fa-solid fa-magnifying-glass"></i>
+        <div class="v2-state-title">Find a person</div>
+        <p>The search covers the Amharic and English name, the father's name,
+           the phone number, and the ID document reference.</p>
+    </div>
     <?php elseif (empty($results)): ?>
-    <div class="acm-empty"><i class="fa-solid fa-user-xmark"></i> No persons match. <?= $canCreate ? 'Register one with the button above.' : '' ?></div>
+    <div class="v2-state">
+        <i class="fa-solid fa-user-xmark"></i>
+        <div class="v2-state-title">No person matches “<?= e($q) ?>”</div>
+        <p>
+            The search covers name, father's name, phone and ID reference.
+            <?php if ($canCreate): ?>
+                If this person has never been registered, add them now — a
+                member cannot claim an activation without a person record.
+            <?php else: ?>
+                Only the Accounts Office can register a new person.
+            <?php endif; ?>
+        </p>
+        <?php if ($canCreate): ?>
+        <div class="v2-state-actions">
+            <a class="btn bp" href="/admin/acm_person.php?new=1">
+                <i class="fa-solid fa-user-plus"></i> Register person
+            </a>
+        </div>
+        <?php endif; ?>
+    </div>
     <?php else: ?>
     <div class="tw"><table>
         <thead><tr><th>Name</th><th>Father</th><th>Phone</th><th>Member</th><th>Guardian</th><th></th></tr></thead>

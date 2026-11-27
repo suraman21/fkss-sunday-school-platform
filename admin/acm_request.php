@@ -24,8 +24,22 @@
  *   the person finally chosen, so an approval that did not rely on the code
  *   and the name is visible in the audit trail as `manual`.
  *
- * APPROVAL CREATES THE TICKET, NOT THE CODE. Issuing and reading out the
- * code stays in acm_ticket.php, which has the single show-once path.
+ * APPROVAL CREATES THE TICKET, THEN REVEALS THE CODE IN PLACE.
+ *   The officer is standing next to the member. Sending them to another page
+ *   to collect a code — and leaving this one behind, losing the request they
+ *   had just verified — costs a navigation and the thread of the work, so
+ *   the ceremony happens here: approve (request_approve) returns the ticket,
+ *   the approve button becomes the ticket number, and code_issue renders the
+ *   six-digit code in the same card with the request reference beside it.
+ *
+ *   It is the same server path as acm_ticket.php — the same code_issue case,
+ *   the same show-once contract: the response carries `display` exactly once
+ *   and later reads return the masked selector. Nothing new is trusted, it
+ *   is only shown where the decision was made. The full ticket (devices,
+ *   notes, cancel, reissue) stays one click away for the cases that need it.
+ *
+ *   The reference travels with the code because verification is scoped to
+ *   it: a code on its own activates nothing.
  */
 define('ACM_BOOT', true);
 require_once __DIR__ . '/config.php';

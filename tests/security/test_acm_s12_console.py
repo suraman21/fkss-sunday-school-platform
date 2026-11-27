@@ -384,3 +384,114 @@ class TestContrast:
                 "a filled semantic hover must use --v2-on-ok / --v2-on-bad, "
                 "not a hard-coded white"
             )
+
+
+class TestScriptOrder:
+    """Page scripts must not run before the shared helpers exist.
+
+    The console's helpers (acmApi, acmToast, acmCsrf) are emitted by
+    acm_chrome_close(), which runs at the END of each page. A page that
+    calls one of them at top level -- `load();` at the bottom of its own
+    IIFE -- executes BEFORE the definition has been parsed, so the call
+    throws ReferenceError and the page never fetches its data.
+
+    That is not theoretical: acm_office.php and acm_audit.php both did
+    exactly this. Their tables sat on "Loading…" forever in a real
+    browser, and no test noticed because the tests read source text
+    rather than executing it. This guard is static, so it catches the
+    shape; the browser check below is what actually proves behaviour.
+    """
+
+    PAGES = ["acm_office.php", "acm_audit.php", "acm_person.php",
+             "acm_queue.php", "acm_requests.php", "acm_request.php",
+             "acm_staff_enroll.php", "acm_device_recovery.php",
+             "acm_ticket.php"]
+
+    def test_no_top_level_helper_call_before_chrome_close(self):
+        """A helper called at the IIFE's top level runs before the definition.
+
+        Indentation alone cannot decide this: a call inside a function body
+        is deferred and safe. So walk the page script tracking brace depth,
+        and only flag a call made at depth 1 (inside the page IIFE but not
+        inside any function within it) -- that is the shape that throws.
+        """
+        for name in self.PAGES:
+            src = read(ADMIN / name)
+            close_at = src.index("acm_chrome_close()")
+            page_script = src[:close_at]
+
+            # Only look inside <script> blocks; markup mentions are harmless.
+            for block in re.findall(r"<script[^>]*>([\s\S]*?)</script>", page_script):
+                body = re.sub(r"/\*[\s\S]*?\*/", "", block)
+                body = re.sub(r"(?m)//.*$", "", body)
+                depth = 0
+                for line in body.split("\n"):
+                    stripped = line.strip()
+                    if depth == 1 and stripped and not stripped.startswith("*"):
+                        for helper in ("acmApi(", "acmToast(", "acmCsrf("):
+                            if stripped.startswith(helper):
+                                raise AssertionError(
+                                    f"{name}: {helper} called at the top level of "
+                                    f"the page script, before acm_chrome_close() "
+                                    f"defines it. In a browser this throws "
+                                    f"ReferenceError and the page never loads its "
+                                    f"data. Line: {stripped!r}"
+                                )
+                    # function(){} bodies close on the same line often enough
+                    # that counting raw braces is the reliable measure here.
+                    depth += stripped.count("{") - stripped.count("}")
+
+
+class TestTicketPageCeremony:
+    """The ticket is the last page rebuilt, and the one place a code is read out.
+
+    Three things on it are load-bearing and were each broken in the S11 page:
+
+      1. issuing a code must NOT navigate. The code is returned once; a reload
+         destroys the only copy the officer will ever see.
+      2. the request reference has to be reachable from the ticket, because an
+         activation code is verified against a REQUEST, not a ticket. The
+         request card shows it at issue time, but a reissue can happen weeks
+         later, from this page.
+      3. the reason guards are not decoration: reject and request-changes go
+         through `decide`, which records the note as the decision reason.
+    """
+
+    SRC = (ADMIN / "acm_ticket.php").read_text(encoding="utf-8")
+
+    def test_issuing_a_code_never_reloads_the_page(self):
+        src = self.SRC
+        issue = src.split("issueBtn.addEventListener", 1)[1]
+        issue = issue.split("var cancelBtn", 1)[0]
+        assert "code_issue" in issue
+        for forbidden in ("reloadSoon()", "location.reload()", "location.href"):
+            assert forbidden not in issue, (
+                "the issue handler navigates or reloads; the one-time code is "
+                "only ever returned in the issue response, so a reload loses it"
+            )
+
+    def test_the_request_reference_travels_with_the_code(self):
+        src = self.SRC
+        assert "acm_activation_requests WHERE ticket_id" in src, (
+            "the ticket page no longer looks up its request reference, so an "
+            "officer reissuing from here cannot tell the member what to pair "
+            "the digits with"
+        )
+        issue = src.split("issueBtn.addEventListener", 1)[1]
+        assert "ref" in issue and "request reference" in issue.lower(), (
+            "the issue message must give the reference alongside the code"
+        )
+
+    def test_reject_and_request_changes_require_a_written_reason(self):
+        src = self.SRC
+        assert "reasonRequired" in src
+        assert "'request_changes'" in src and "'reject'" in src, (
+            "a decision note is the audit's only record of why; a rejection "
+            "with no reason cannot be reviewed"
+        )
+
+    def test_missing_evidence_says_so_in_words(self):
+        src = self.SRC
+        assert "not on file" in src, (
+            "an empty fact cell must say 'not on file', not print a bare dash"
+        )
