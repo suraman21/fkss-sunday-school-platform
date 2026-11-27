@@ -236,8 +236,8 @@ class AcmTicketService
             // driver rewrites each :q to a positional '?' but execute()
             // only supplies one, so MySQL answers SQLSTATE[HY093]
             // "Invalid parameter number" and the whole page fails.
-            $where[] = '(t.ticket_no LIKE :q1 ESCAPE \'\\\' OR p.full_name_am LIKE :q2 ESCAPE \'\\\''
-                . ' OR p.full_name_en LIKE :q3 ESCAPE \'\\\' OR p.phone LIKE :q4 ESCAPE \'\\\')';
+            $where[] = '(t.ticket_no LIKE :q1 ESCAPE \'\\\\\' OR p.full_name_am LIKE :q2 ESCAPE \'\\\\\''
+                . ' OR p.full_name_en LIKE :q3 ESCAPE \'\\\\\' OR p.phone LIKE :q4 ESCAPE \'\\\\\')';
             $params[':q1'] = $params[':q2'] = $params[':q3'] = $params[':q4'] = $like;
         }
         if (!empty($filters['mine'])) {

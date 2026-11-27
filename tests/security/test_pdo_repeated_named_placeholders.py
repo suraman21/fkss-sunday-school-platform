@@ -264,3 +264,159 @@ def test_prepare_still_runs_natively():
 def test_the_three_known_queries_are_numbered(path, needle):
     src = (ROOT / path).read_text(encoding="utf-8", errors="replace")
     assert needle in src, f"{path} must keep numbered placeholders ({needle})"
+
+
+# ------------------------------------------------------- ESCAPE clause
+BS = chr(92)
+
+
+def _mask_php_comments(src: str) -> str:
+    """Blank out comments, preserving every offset and newline.
+
+    Deleting comments shifts every line number after them, which made an
+    earlier version of this scan report the wrong lines -- and a guard that
+    points at the wrong line is worse than silent.
+    """
+    chars = list(src)
+    i, n = 0, len(src)
+    while i < n:
+        if src.startswith("//", i) or (src[i] == "#" and not src.startswith("#[", i)):
+            j = src.find("\n", i)
+            j = n if j < 0 else j
+            for k in range(i, j):
+                chars[k] = " "
+            i = j
+            continue
+        if src.startswith("/*", i):
+            close = src.find("*/", i + 2)
+            end = n if close < 0 else close + 2
+            for k in range(i, end):
+                if chars[k] != "\n":
+                    chars[k] = " "
+            i = end
+            continue
+        if src[i] in "'\"":
+            q, j = src[i], i + 1
+            while j < n:
+                if src[j] == "\\":
+                    j += 2
+                    continue
+                if src[j] == q:
+                    break
+                j += 1
+            i = j + 1
+            continue
+        i += 1
+    return "".join(chars)
+
+
+def _escape_clauses(src: str) -> list[tuple[int, int]]:
+    """(line, backslashes in the escape value) for each LIKE ESCAPE clause.
+
+    Handles both PHP spellings of the clause, because the backslashes used to
+    escape the quotes are not part of the value:
+
+        "ESCAPE '\\\\'"     plain quotes,     four backslashes
+        'ESCAPE \\\'\\\\\\\\\\\''   escaped quotes,   four backslashes plus two for the quotes
+    """
+    src = _mask_php_comments(src)
+    out = []
+    for m in re.finditer(r"ESCAPE\s+", src):
+        i = m.end()
+        escaped_quotes = False
+        if i < len(src) and src[i] == BS:
+            escaped_quotes = True
+            i += 1
+        if i >= len(src) or src[i] != "'":
+            continue
+        i += 1
+        count = 0
+        while i < len(src) and src[i] == BS:
+            count += 1
+            i += 1
+        if escaped_quotes and count:
+            count -= 1  # the backslash that escapes the closing quote
+        out.append((src.count("\n", 0, m.start()) + 1, count))
+    return out
+
+
+# A backslash escape is only wrong for MySQL. The SQLite wordlist index in
+# MemberSearchService uses `ESCAPE '\'` legally: SQLite has no C-style
+# string escaping, so one backslash in the source is one backslash in the SQL.
+MYSQL_ESCAPE_EXEMPT = {
+    "admin/backend/services/MemberSearchService.php",
+}
+
+
+def test_escape_clause_is_doubled_in_the_sql_text():
+    """`ESCAPE '\\'` is an unterminated string and fails at prepare().
+
+    MySQL wants the escape character to be a single character, written as two
+    backslashes in the SQL text. Two backslashes in PHP source evaluate to
+    ONE -- verified at runtime -- which escapes the closing quote and makes
+    the statement an unterminated string: 1064, from prepare().
+
+    Four source backslashes evaluate to two. All four console search queries
+    had two, which is why the queue page, the person search and the staff
+    picker all failed on MySQL while passing on PostgreSQL.
+    """
+    offenders = []
+    for path in _php_sources():
+        rel = path.relative_to(ROOT).as_posix()
+        if rel in MYSQL_ESCAPE_EXEMPT:
+            continue
+        src = path.read_text(encoding="utf-8", errors="replace")
+        if "ESCAPE" not in src:
+            continue
+        for line, count in _escape_clauses(src):
+            if count not in (0, 4):
+                offenders.append(f"{rel}:{line} evaluates to {count} backslash(es), want 4")
+    assert offenders == [], (
+        "the ESCAPE clause must carry four backslashes in PHP source so the "
+        "SQL text has two:\n  " + "\n  ".join(offenders)
+    )
+
+
+def test_the_escape_scanner_sees_both_spellings():
+    """A guard that cannot read the code it guards is not a guard."""
+    bs = BS
+    plain_good = "<?php\n$a = \"x LIKE :q ESCAPE '" + bs * 4 + "'\";\n"
+    plain_bad = "<?php\n$a = \"x LIKE :q ESCAPE '" + bs * 2 + "'\";\n"
+    quoted_good = "<?php\n$a = 'x LIKE :q ESCAPE " + bs + "'" + bs * 4 + bs + "'" + "';\n"
+    quoted_bad = "<?php\n$a = 'x LIKE :q ESCAPE " + bs + "'" + bs * 2 + bs + "'" + "';\n"
+    assert [c for _, c in _escape_clauses(plain_good)] == [4]
+    assert [c for _, c in _escape_clauses(quoted_good)] == [4]
+    assert [c for _, c in _escape_clauses(plain_bad)] == [2]
+    assert [c for _, c in _escape_clauses(quoted_bad)] == [2]
+
+
+def test_comments_do_not_satisfy_the_escape_guard():
+    """A correct example in a comment must not mask a wrong clause."""
+    bs = BS
+    src = (
+        "<?php\n"
+        "// the right form is ESCAPE '" + bs * 4 + "'\n"
+        "$sql = \"x LIKE :q ESCAPE '" + bs * 2 + "'\";\n"
+    )
+    assert [c for _, c in _escape_clauses(src)] == [2]
+
+
+def test_like_values_escape_percent_with_one_escape_character():
+    """A literal % must be one backslash, not two.
+
+    With a single-character escape, two backslashes before a % is an escaped
+    backslash followed by a LIVE wildcard -- so a typed % still matched
+    everything. (The source was already correct here; this pins it.)
+    """
+    wrong = "'" + BS * 4 + "%'"
+    right = "'" + BS * 2 + "%'"
+    seen = 0
+    for path in _php_sources():
+        src = path.read_text(encoding="utf-8", errors="replace")
+        if "str_replace(['" + BS * 2 + "'" not in src:
+            continue
+        seen += 1
+        rel = path.relative_to(ROOT).as_posix()
+        assert wrong not in src, f"{rel} escapes % with two backslashes; a wildcard survives"
+        assert right in src, f"{rel} must escape % with one backslash ({right})"
+    assert seen >= 3, f"only {seen} LIKE-escape helpers found; the pattern moved"

@@ -469,8 +469,8 @@ try {
             $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], mb_substr($q, 0, 60)) . '%';
             $stmt = $pdo->prepare(
                 'SELECT id, username, full_name, role FROM users'
-                . " WHERE is_active = 1 AND (username LIKE :q1 ESCAPE '\\'"
-                . " OR full_name LIKE :q2 ESCAPE '\\') ORDER BY username ASC LIMIT 20"
+                . " WHERE is_active = 1 AND (username LIKE :q1 ESCAPE '\\\\'"
+                . " OR full_name LIKE :q2 ESCAPE '\\\\') ORDER BY username ASC LIMIT 20"
             );
             $stmt->execute([':q1' => $like, ':q2' => $like]);
             acm_ok(['users' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);

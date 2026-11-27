@@ -163,9 +163,9 @@ class AcmPersonService
         // ATTR_EMULATE_PREPARES to false), and the resulting HY093 made
         // every person search fail, not just the odd input.
         $sql = 'SELECT id, full_name_am, full_name_en, father_name, phone, email, member_id, guardian_id'
-            . ' FROM acm_persons WHERE full_name_am LIKE :q1 ESCAPE \'\\\''
-            . ' OR full_name_en LIKE :q2 ESCAPE \'\\\' OR father_name LIKE :q3 ESCAPE \'\\\''
-            . ' OR phone LIKE :q4 ESCAPE \'\\\' OR id_doc_ref LIKE :q5 ESCAPE \'\\\'';
+            . ' FROM acm_persons WHERE full_name_am LIKE :q1 ESCAPE \'\\\\\''
+            . ' OR full_name_en LIKE :q2 ESCAPE \'\\\\\' OR father_name LIKE :q3 ESCAPE \'\\\\\''
+            . ' OR phone LIKE :q4 ESCAPE \'\\\\\' OR id_doc_ref LIKE :q5 ESCAPE \'\\\\\'';
         $params = [':q1' => $like, ':q2' => $like, ':q3' => $like, ':q4' => $like, ':q5' => $like];
         if ($n9 !== null) {
             $sql .= ' OR phone_n9 = :n9';

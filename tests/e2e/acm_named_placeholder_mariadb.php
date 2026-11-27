@@ -1,44 +1,44 @@
 <?php
 /**
- * ACM search — the PDO named-placeholder proof, against real MariaDB.
+ * ACM search — MySQL/MariaDB dialect proof for the console search queries.
  * ---------------------------------------------------------------
  * WHY THIS EXISTS
- *   The activation queue reported "The queue is temporarily unavailable".
- *   The query looked fine, and it *was* fine on PostgreSQL, so the page was
- *   written off as a server-environment problem.
+ *   /admin/acm_queue.php reported "The queue is temporarily unavailable".
+ *   The query looked fine, and it *was* fine under PDO_PGSQL, so the page
+ *   was written off as a server-environment problem. Two real defects were
+ *   hiding behind that:
  *
- *   It was a dialect problem. Production opens PDO with
- *   ATTR_EMULATE_PREPARES => false, so the driver rewrites every named
- *   parameter to its own positional `?` and execute() supplies one value
- *   per *name*. A name used four times therefore needs four values; given
- *   one, MySQL/MariaDB answers SQLSTATE[HY093] "Invalid parameter number"
- *   -- raised from execute(), not prepare(), so reading the SQL shows
- *   nothing wrong. PDO_PGSQL rewrites differently and never complains,
- *   which is exactly why a Postgres harness cleared this.
+ *   1. NAMED PLACEHOLDER REUSE. config.php sets
+ *      ATTR_EMULATE_PREPARES => false, so PDO rewrites each named parameter
+ *      to its own positional '?'. A name used four times needs four values;
+ *      given one, the engine answers SQLSTATE[HY093] "Invalid parameter
+ *      number" -- from execute(), not prepare(). PDO_PGSQL rewrites
+ *      differently and never complains.
  *
- *   The same mistake had broken the console's person search (silently
- *   returning nothing for every term) and the staff picker.
+ *   2. A ONE-BACKSLASH ESCAPE CLAUSE. MySQL needs the escape character to be
+ *      a single character, written '\\' in the SQL text. Every LIKE search
+ *      in the console emitted '\', which escapes the closing quote: the
+ *      statement is an unterminated string and is rejected at prepare() with
+ *      1064. This one hits even when the placeholder count is right.
  *
- * WHAT THIS PROVES, ON A REAL MARIADB
- *   1. The OLD statement shape fails with HY093 -- the defect is real and
- *      reproduced in the engine that production runs.
- *   2. The NEW statement shape succeeds -- the fix is the fix, not a
- *      guess.
- *   3. Both `AcmTicketService::queue()` and `AcmPersonService::search()`
- *      actually return the right rows, so the fix did not merely stop
- *      throwing.
+ * WHAT THIS PROVES, ON A REAL MARIADB/MYSQL
+ *   1. the OLD statement shape fails here, with HY093 -- the defect is
+ *      reproduced in the engine production runs, not described;
+ *   2. the statement shape the services generate TODAY prepares and executes
+ *      here -- using the ESCAPE clause captured from the shipped code, so the
+ *      proof binds to the code rather than to a hand-copied duplicate;
+ *   3. every statement the four shipped services generate has no repeated
+ *      placeholder and a two-backslash ESCAPE;
+ *   4. if the ACM tables happen to be provisioned, the services run for real
+ *      against every filter combination the pages send.
  *
  * SAFETY
- *   Creates two `_pdoprobe_*` tables and drops them in a finally block.
- *   It never writes to an existing table, which is why it does not need
- *   the destructive-guard interlock. Refuses to run against a database
- *   name that is not clearly a test database.
+ *   Creates two `_pdoprobe_*` tables and drops them in a finally block. It
+ *   never writes to an existing table, so it does not need the destructive
+ *   interlock. It refuses a database name that is not clearly a test one.
  *
- * Usage:
- *   php tests/e2e/acm_named_placeholder_mariadb.php
- *   (reads .fkss_env.php for credentials, exactly like the other harnesses)
- *
- * Exit: 0 = every check passed, 1 = a check failed, 3 = cannot run here.
+ * Usage: php tests/e2e/acm_named_placeholder_mariadb.php
+ * Exit:  0 = every check passed, 1 = a check failed, 3 = cannot run here.
  */
 
 if (PHP_SAPI !== 'cli') {
@@ -61,6 +61,7 @@ require_once $root . '/acm/autoload.php';
 
 use SSMS\Acm\Accounts\AcmTicketService;
 use SSMS\Acm\Identity\AcmPersonService;
+use SSMS\Acm\Requests\AcmActivationRequestService;
 
 if (!in_array(DB_NAME, ['ssms_comm_e2e', 'ssms_e2e', 'ssms_test', 'ssms_smoke'], true)) {
     fwrite(STDERR, 'REFUSED: ' . DB_NAME . " is not a recognised test database.\n");
@@ -84,8 +85,19 @@ try {
     exit(3);
 }
 
+// A fatal error must not end the output mid-section: job logs are not always
+// readable from tooling, so the reason has to reach stdout.
+register_shutdown_function(static function (): void {
+    $err = error_get_last();
+    if ($err === null || !in_array($err['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
+        return;
+    }
+    echo "\nFATAL: {$err['message']}\n  in {$err['file']}:{$err['line']}\n";
+});
+
 $checks = 0;
 $failures = [];
+$notes = [];
 function ck(string $label, bool $ok, string $detail = ''): void
 {
     global $checks, $failures;
@@ -97,21 +109,110 @@ function ck(string $label, bool $ok, string $detail = ''): void
     $failures[] = $label . ($detail !== '' ? " -- {$detail}" : '');
     echo "  FAIL  {$label}" . ($detail !== '' ? "\n        {$detail}" : '') . "\n";
 }
+function note(string $line): void
+{
+    global $notes;
+    $notes[] = $line;
+    echo "  note  {$line}\n";
+}
 
-// A fatal error would otherwise stop the output mid-section with no
-// explanation -- and this harness runs where job logs are not always
-// readable, so the reason has to reach stdout.
-register_shutdown_function(static function (): void {
-    $err = error_get_last();
-    if ($err === null || !in_array($err['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
-        return;
+/**
+ * records the SQL a service sends, without needing the tables to exist.
+ */
+final class SqlRecorder extends PDO
+{
+    public array $log = [];
+
+    public function __construct(private PDO $inner)
+    {
     }
-    echo "\nFATAL: {$err['message']}\n  in {$err['file']}:{$err['line']}\n";
-});
 
-echo "MariaDB: " . $pdo->query('SELECT VERSION()')->fetchColumn() . "\n";
-echo 'emulate_prepares: '
-    . var_export($pdo->getAttribute(PDO::ATTR_EMULATE_PREPARES), true) . "\n\n";
+    private function record(string $sql): void
+    {
+        $this->log[] = $sql;
+    }
+
+    #[ReturnTypeWillChange]
+    public function prepare(string $q, array $o = [])
+    {
+        $this->record($q);
+        return new SqlSink($q);
+    }
+
+    #[ReturnTypeWillChange]
+    public function query(string $q, ?int $m = null, mixed ...$a)
+    {
+        $this->record($q);
+        return new SqlSink($q);
+    }
+
+    #[ReturnTypeWillChange]
+    public function exec(string $q)
+    {
+        return $this->inner->exec($q);
+    }
+}
+final class SqlSink
+{
+    public function __construct(public string $sql)
+    {
+    }
+
+    public function execute($p = null): bool
+    {
+        return true;
+    }
+
+    public function fetchColumn()
+    {
+        return 0;
+    }
+
+    public function fetchAll($m = null): array
+    {
+        return [];
+    }
+
+    public function fetch($m = null)
+    {
+        return null;
+    }
+
+    public function rowCount(): int
+    {
+        return 0;
+    }
+}
+
+/** Backslash count between the quotes of the first ESCAPE clause (2 = correct). */
+function escape_backslashes(string $sql): ?int
+{
+    $pos = strpos($sql, "ESCAPE '");
+    if ($pos === false) {
+        return null;
+    }
+    $i = $pos + 8;
+    $n = 0;
+    while ($i < strlen($sql) && $sql[$i] !== "'") {
+        if ($sql[$i] === chr(92)) {
+            $n++;
+        }
+        $i++;
+    }
+    return $n;
+}
+
+function table_exists(PDO $pdo, string $name): bool
+{
+    $stmt = $pdo->prepare(
+        'SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?'
+    );
+    $stmt->execute([$name]);
+    return (int)$stmt->fetchColumn() > 0;
+}
+
+echo 'MariaDB: ' . $pdo->query('SELECT VERSION()')->fetchColumn() . "\n";
+echo 'emulate_prepares: ' . var_export($pdo->getAttribute(PDO::ATTR_EMULATE_PREPARES), true) . "\n\n";
 
 $pdo->exec('DROP TABLE IF EXISTS _pdoprobe_persons');
 $pdo->exec('DROP TABLE IF EXISTS _pdoprobe_tickets');
@@ -145,7 +246,6 @@ $pdo->exec(
 );
 
 try {
-    // ---------------------------------------------------------- seed
     $ins = $pdo->prepare(
         'INSERT INTO _pdoprobe_persons
           (full_name_am, full_name_en, father_name, phone, phone_n9, id_doc_ref)
@@ -159,14 +259,16 @@ try {
                 ('TKT-9002', 2, 'member', 'submitted', '2020-01-01 00:00:00', 1)"
     );
 
-    // ------------------------------------------------- 1. the defect
-    echo "== 1. the old shape, on this engine ==\n";
-    $old = 'SELECT COUNT(*) FROM _pdoprobe_tickets t JOIN _pdoprobe_persons p ON p.id = t.person_id'
-        . " WHERE (t.ticket_no LIKE :q ESCAPE '\\\\' OR p.full_name_am LIKE :q ESCAPE '\\\\'"
-        . " OR p.phone LIKE :q ESCAPE '\\\\')";
+    // ------------------------------------------------------ 1. the defects
+    echo "== 1. the old shapes, on this engine ==\n";
+
     $threw = '';
     try {
-        $stmt = $pdo->prepare($old);
+        $stmt = $pdo->prepare(
+            'SELECT COUNT(*) FROM _pdoprobe_tickets t JOIN _pdoprobe_persons p ON p.id = t.person_id'
+            . " WHERE (t.ticket_no LIKE :q ESCAPE '\\\\' OR p.full_name_am LIKE :q ESCAPE '\\\\'"
+            . " OR p.phone LIKE :q ESCAPE '\\\\')"
+        );
         $stmt->execute([':q' => '%Nahom%']);
         $stmt->fetchColumn();
     } catch (PDOException $e) {
@@ -180,77 +282,138 @@ try {
     );
     echo "        engine said: {$threw}\n";
 
-    // ---------------------------------------------- 2. the fix works
-    echo "\n== 2. the numbered shape, on this engine ==\n";
-    // Same four columns AcmTicketService::queue() actually searches --
-    // including full_name_en. An earlier version of this probe dropped that
-    // column and searched "Nahom" against the Amharic name, the phone and the
-    // ticket number, then reported "matched 0 rows" as a fix failure. The
-    // engine was right; the assertion was wrong.
-    $new = 'SELECT COUNT(*) FROM _pdoprobe_tickets t JOIN _pdoprobe_persons p ON p.id = t.person_id'
-        . " WHERE (t.ticket_no LIKE :q1 ESCAPE '\\\\' OR p.full_name_am LIKE :q2 ESCAPE '\\\\'"
-        . " OR p.full_name_en LIKE :q3 ESCAPE '\\\\' OR p.phone LIKE :q4 ESCAPE '\\\\')";
-    $ok = true;
-    $err = '';
+    $threw = '';
     try {
-        $stmt = $pdo->prepare($new);
-        $stmt->execute([':q1' => '%Nahom%', ':q2' => '%Nahom%', ':q3' => '%Nahom%', ':q4' => '%Nahom%']);
-        $n = (int)$stmt->fetchColumn();
-        $ok = ($n === 1);
-        $err = "matched {$n} rows";
+        // One backslash in the SQL text, which is what the code emitted.
+        $stmt = $pdo->prepare(
+            "SELECT COUNT(*) FROM _pdoprobe_persons WHERE phone LIKE :q1 ESCAPE '\\'"
+        );
+        $stmt->execute([':q1' => '%1%']);
+        $stmt->fetchColumn();
     } catch (PDOException $e) {
-        $ok = false;
-        $err = $e->getMessage();
+        $threw = $e->getMessage();
     }
-    ck('a numbered placeholder executes and finds the row', $ok, $err);
+    ck('a one-backslash ESCAPE clause is rejected', $threw !== '', 'no exception raised');
+    ck(
+        'the rejection is 1064 syntax error',
+        stripos($threw, '1064') !== false,
+        $threw ?: '(none)'
+    );
+    echo "        engine said: {$threw}\n";
 
-    // ------------------------------------- 3. the real services, as shipped
-    echo "\n== 3. the shipped services, against real MariaDB ==\n";
-    $persons = new AcmPersonService($pdo);
-    $svc = new AcmTicketService($pdo, $persons);
+    // ------------------------------------- 2. what the services emit today
+    echo "\n== 2. the shipped services' SQL, on this engine ==\n";
+    $recorder = new SqlRecorder($pdo);
+    $persons = new AcmPersonService($recorder);
+    $svc = new AcmTicketService($recorder, $persons);
+    $requests = new AcmActivationRequestService($recorder);
 
-    // Person search runs against acm_persons, which this probe leaves alone
-    // (it is the production table and the probe must not write to it), so
-    // the assertion is "the query executes and returns an array", not
-    // "returns rows".
-    $personOk = true;
-    $personErr = '';
-    try {
-        $rows = $persons->search('Nahom');
-        $personOk = is_array($rows);
-    } catch (Throwable $e) {
-        $personOk = false;
-        $personErr = get_class($e) . ': ' . $e->getMessage();
+    $recorder->log = [];
+    $svc->queue(['q' => 'Nahom'], 25, 0);
+    $persons->search('Nahom');
+    $requests->queue(1, 'pending_review', 25, 0, 'Nahom');
+    $emitted = array_values(array_filter($recorder->log, fn($s) => str_contains($s, 'ESCAPE')));
+    ck('three search queries were captured from the services', count($emitted) === 3, (string)count($emitted));
+
+    $escapeOk = 0;
+    $placeholderOk = 0;
+    foreach ($emitted as $i => $sql) {
+        $bs = escape_backslashes($sql);
+        if ($bs === 2) {
+            $escapeOk++;
+        } else {
+            echo "        query {$i}: ESCAPE has " . var_export($bs, true) . " backslash(es)\n";
+        }
+        preg_match_all('/:[a-z_][a-z0-9_]*\b/i', $sql, $m);
+        $dup = array_filter(array_count_values($m[0]), fn($c) => $c > 1);
+        if ($dup === []) {
+            $placeholderOk++;
+        } else {
+            echo "        query {$i}: repeated " . json_encode($dup) . "\n";
+        }
     }
-    ck('AcmPersonService::search() executes without HY093', $personOk, $personErr);
+    ck('every emitted ESCAPE clause has exactly two backslashes', $escapeOk === count($emitted), "{$escapeOk}/" . count($emitted));
+    ck('no emitted statement repeats a named placeholder', $placeholderOk === count($emitted), "{$placeholderOk}/" . count($emitted));
 
-    // The ticket queue is the page that reported the error. Its tables are
-    // real ones too, so this asserts it runs, not what it returns.
-    $queueOk = true;
-    $queueErr = '';
-    foreach ([['status' => ''], ['status' => ''], ['q' => 'Nahom'], ['q' => 'TKT-9001'],
-              ['q' => '%'], ['q' => '_'], ['q' => 'x', 'status' => 'submitted',
-              'account_type' => 'member', 'mine' => 1, 'overdue' => 1]] as $i => $filters) {
+    // Now execute the captured shape against the probe tables. The LIKE
+    // fragment is the services' own; only the table names differ, because
+    // the real ACM tables are not provisioned in this environment.
+    $svcSql = $emitted[0];
+    $fragment = '';
+    if (preg_match('/\(t\.ticket_no LIKE :q1.*?\)/s', $svcSql, $fm)) {
+        $fragment = $fm[0];
+    }
+    ck('the queue LIKE fragment was extracted from the emitted SQL', $fragment !== '');
+    if ($fragment !== '') {
+        $exec = 'SELECT COUNT(*) FROM _pdoprobe_tickets t JOIN _pdoprobe_persons p ON p.id = t.person_id WHERE '
+            . $fragment;
+        $ok = true;
+        $err = '';
+        $n = 0;
         try {
-            $r = $svc->queue($filters, 25, 0);
-            if (!is_array($r) || !isset($r['rows'], $r['total'])) {
-                $queueOk = false;
-                $queueErr = "filter set {$i} returned the wrong shape";
+            $stmt = $pdo->prepare($exec);
+            $stmt->execute([':q1' => '%Nahom%', ':q2' => '%Nahom%', ':q3' => '%Nahom%', ':q4' => '%Nahom%']);
+            $n = (int)$stmt->fetchColumn();
+        } catch (PDOException $e) {
+            $ok = false;
+            $err = $e->getMessage();
+        }
+        ck('the services\' own LIKE fragment prepares and executes', $ok, $err);
+        ck('and it still finds the matching row', $ok && $n === 1, "matched {$n}");
+    }
+
+    // ------------------------------------------- 3. the services, if possible
+    echo "\n== 3. the shipped services end to end ==\n";
+    $haveTables = table_exists($pdo, 'acm_persons') && table_exists($pdo, 'acm_activation_tickets');
+    if (!$haveTables) {
+        note('acm_persons / acm_activation_tickets are not provisioned in '
+            . DB_NAME . ', so the service methods cannot be executed here.');
+        note('Sections 1 and 2 still pin the engine behaviour and the emitted SQL.');
+        note('This also means no ACM service query runs against MySQL in CI today.');
+    } else {
+        $ok = true;
+        $err = '';
+        try {
+            $persons->search('Nahom');
+        } catch (Throwable $e) {
+            $ok = false;
+            $err = get_class($e) . ': ' . $e->getMessage();
+        }
+        ck('AcmPersonService::search() executes without error', $ok, $err);
+
+        $filterSets = [
+            ['status' => ''],
+            ['status' => 'submitted'],
+            ['q' => 'Nahom'],
+            ['q' => '%'],
+            ['q' => '_'],
+            ['q' => 'x', 'status' => 'submitted', 'account_type' => 'member', 'mine' => 1, 'overdue' => 1],
+        ];
+        $ok = true;
+        $err = '';
+        foreach ($filterSets as $i => $filters) {
+            try {
+                $r = $svc->queue($filters, 25, 0);
+                if (!is_array($r) || !isset($r['rows'], $r['total'])) {
+                    $ok = false;
+                    $err = "filter set {$i} returned the wrong shape";
+                }
+            } catch (Throwable $e) {
+                $ok = false;
+                $err = "filter set {$i}: " . get_class($e) . ': ' . $e->getMessage();
+                break;
             }
-        } catch (Throwable $e) {
-            $queueOk = false;
-            $queueErr = "filter set {$i}: " . get_class($e) . ': ' . $e->getMessage();
-            break;
         }
-    }
-    ck('AcmTicketService::queue() executes for every filter combination', $queueOk, $queueErr);
-    ck('overviewStats() executes (it runs on the same page)', (function () use ($svc) {
+        ck('AcmTicketService::queue() executes for every filter combination', $ok, $err);
+
+        $ok = true;
         try {
-            return isset($svc->overviewStats('super_admin', 1)['open']);
+            $svc->overviewStats('super_admin', 1);
         } catch (Throwable $e) {
-            return false;
+            $ok = false;
         }
-    })());
+        ck('overviewStats() executes (it runs on the same page)', $ok);
+    }
 } finally {
     $pdo->exec('DROP TABLE IF EXISTS _pdoprobe_tickets');
     $pdo->exec('DROP TABLE IF EXISTS _pdoprobe_persons');

@@ -367,14 +367,14 @@ final class AcmActivationRequestService
         $codeNorm = self::normalizeMemberCode($q);
         if ($codeNorm !== '') {
             $params[':sq_code'] = self::escapeLike($codeNorm) . '%';
-            $clauses[] = "r.member_code LIKE :sq_code ESCAPE '\\'";
+            $clauses[] = "r.member_code LIKE :sq_code ESCAPE '\\\\'";
         }
 
         // The name. Normalized to match how name_key is stored.
         $nameNorm = self::normalizeName($q);
         if ($nameNorm !== '') {
             $params[':sq_name'] = '%' . self::escapeLike($nameNorm) . '%';
-            $clauses[] = "r.name_key LIKE :sq_name ESCAPE '\\'";
+            $clauses[] = "r.name_key LIKE :sq_name ESCAPE '\\\\'";
         }
 
         // Last four digits only; a full number reduces to them.
@@ -391,7 +391,7 @@ final class AcmActivationRequestService
         if (preg_match('/^\d+$/', $q) === 1) {
             if (strlen($q) >= 4) {
                 $params[':sq_phone'] = substr($q, -4) . '%';
-                $clauses[] = "r.phone_last4 LIKE :sq_phone ESCAPE '\\'";
+                $clauses[] = "r.phone_last4 LIKE :sq_phone ESCAPE '\\\\'";
             }
         }
 
