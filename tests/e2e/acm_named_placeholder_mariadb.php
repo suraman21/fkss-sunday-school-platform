@@ -98,6 +98,17 @@ function ck(string $label, bool $ok, string $detail = ''): void
     echo "  FAIL  {$label}" . ($detail !== '' ? "\n        {$detail}" : '') . "\n";
 }
 
+// A fatal error would otherwise stop the output mid-section with no
+// explanation -- and this harness runs where job logs are not always
+// readable, so the reason has to reach stdout.
+register_shutdown_function(static function (): void {
+    $err = error_get_last();
+    if ($err === null || !in_array($err['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
+        return;
+    }
+    echo "\nFATAL: {$err['message']}\n  in {$err['file']}:{$err['line']}\n";
+});
+
 echo "MariaDB: " . $pdo->query('SELECT VERSION()')->fetchColumn() . "\n";
 echo 'emulate_prepares: '
     . var_export($pdo->getAttribute(PDO::ATTR_EMULATE_PREPARES), true) . "\n\n";

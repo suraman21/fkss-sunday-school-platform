@@ -284,12 +284,12 @@ jobs:
           set +e
           set -uo pipefail
 
+          # ONE annotation carrying the whole output. GitHub keeps only 10
+          # annotations per step, so the previous tail-per-line loop lost
+          # exactly the lines that mattered -- the failure was the last one.
           report() {
-            echo "::notice::harness output follows"
             if [ -s /tmp/pdoprobe.out ]; then
-              while IFS= read -r line; do
-                [ -n "$line" ] && echo "::error::${line}"
-              done < <(tail -n 30 /tmp/pdoprobe.out)
+              echo "::error::probe output: $(tr '\n' '|' < /tmp/pdoprobe.out | tail -c 5000)"
             else
               echo "::error::the harness produced no output at all"
             fi
