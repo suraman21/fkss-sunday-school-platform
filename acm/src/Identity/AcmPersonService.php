@@ -25,12 +25,29 @@ class AcmPersonService
         $b[6] = chr((ord($b[6]) & 0x0f) | 0x40);
         $b[8] = chr((ord($b[8]) & 0x3f) | 0x80);
         return sprintf(
-            '%08x-%04x-%04x-%04x-%012x',
+            '%08x-%04x-%04x-%04x-%04x%04x%04x',
             unpack('N', substr($b, 0, 4))[1],
             unpack('n', substr($b, 4, 2))[1],
             unpack('n', substr($b, 6, 2))[1],
             unpack('n', substr($b, 8, 2))[1],
-            unpack('N', substr($b, 10, 2))[1] * 4294967296 + unpack('N', substr($b, 12, 4))[1]
+            // The final group is 48 bits, emitted as three 16-bit groups.
+            //
+            // It used to be
+            //   unpack('N', substr($b, 10, 2))[1] * 4294967296
+            //       + unpack('N', substr($b, 12, 4))[1]
+            // which reads FOUR bytes starting at offset 10 when substr()
+            // supplies two. PHP raised "not enough input values", the term
+            // became 0, and multiplying by 2^32 zeroed the top half of the
+            // group -- so every ACM uuid ended 0000xxxxxxxx, losing a third
+            // of its entropy. Measured on five consecutive values: all five
+            // had that shape.
+            //
+            // Three 16-bit groups avoid 48-bit integer arithmetic entirely,
+            // which is not portable: on a 32-bit PHP build `$x << 32` is 0,
+            // so a shift-based repair would silently reproduce the same bug.
+            unpack('n', substr($b, 10, 2))[1],
+            unpack('n', substr($b, 12, 2))[1],
+            unpack('n', substr($b, 14, 2))[1]
         );
     }
 

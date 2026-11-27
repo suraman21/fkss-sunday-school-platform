@@ -134,7 +134,20 @@ class AcmTicketService
         }
 
         $evidence = $this->buildEvidence($person, $memberId, $guardianId);
-        $this->pdo->beginTransaction();
+        // JOIN A CALLER'S TRANSACTION IF ONE IS OPEN.
+        //
+        // This method used to call beginTransaction() unconditionally. Real
+        // PDO refuses a nested beginTransaction() with "There is already an
+        // active transaction", so any caller that had already opened one --
+        // AcmRequestDecisionService::approve(), which must, because it also
+        // compares-and-sets the request row -- died here. The PDOException is
+        // not an InvalidArgumentException, so the console API's specific
+        // catch missed it and answered a bare 500 "Service unavailable.".
+        // That is exactly what the officer saw when approving a request.
+        $ownTransaction = !$this->pdo->inTransaction();
+        if ($ownTransaction) {
+            $this->pdo->beginTransaction();
+        }
         try {
             $stmt = $this->pdo->prepare(
                 'INSERT INTO acm_activation_tickets (uuid, person_id, account_type, status,'
@@ -158,9 +171,15 @@ class AcmTicketService
             );
             $upd->execute([':no' => $ticketNo, ':id' => $id]);
             $this->addEvent($id, $submitterId, 'submitted', (string)($data['note'] ?? ''), null);
-            $this->pdo->commit();
+            if ($ownTransaction) {
+                $this->pdo->commit();
+            }
         } catch (\Throwable $e) {
-            $this->pdo->rollBack();
+            // Only the owner of the transaction may abort it. Rolling back a
+            // caller's transaction here would discard their work.
+            if ($ownTransaction && $this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
             throw $e;
         }
         $ticket = $this->get($id);
@@ -270,11 +289,17 @@ class AcmTicketService
 
     public function claim(int $id, int $userId): array
     {
-        $this->pdo->beginTransaction();
+        // Same ownership rule as create(): join, never nest.
+        $ownTransaction = !$this->pdo->inTransaction();
+        if ($ownTransaction) {
+            $this->pdo->beginTransaction();
+        }
         try {
             $ticket = $this->lockedTicket($id);
             if ($ticket['status'] === 'in_review' && (int)$ticket['assignee_id'] === $userId) {
-                $this->pdo->commit();
+                if ($ownTransaction) {
+                    $this->pdo->commit();
+                }
                 return $this->get($id);
             }
             if ($ticket['status'] !== 'submitted'
@@ -286,9 +311,13 @@ class AcmTicketService
             );
             $stmt->execute([':u' => $userId, ':id' => $id]);
             $this->addEvent($id, $userId, 'claimed', '', null);
-            $this->pdo->commit();
+            if ($ownTransaction) {
+                $this->pdo->commit();
+            }
         } catch (\Throwable $e) {
-            $this->pdo->rollBack();
+            if ($ownTransaction && $this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
             throw $e;
         }
         return $this->get($id);
@@ -296,7 +325,10 @@ class AcmTicketService
 
     public function release(int $id, int $userId, bool $isSuperAdmin): array
     {
-        $this->pdo->beginTransaction();
+        $ownTransaction = !$this->pdo->inTransaction();
+        if ($ownTransaction) {
+            $this->pdo->beginTransaction();
+        }
         try {
             $ticket = $this->lockedTicket($id);
             if ($ticket['status'] !== 'in_review') {
@@ -310,9 +342,13 @@ class AcmTicketService
             );
             $stmt->execute([':id' => $id]);
             $this->addEvent($id, $userId, 'released', '', null);
-            $this->pdo->commit();
+            if ($ownTransaction) {
+                $this->pdo->commit();
+            }
         } catch (\Throwable $e) {
-            $this->pdo->rollBack();
+            if ($ownTransaction && $this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
             throw $e;
         }
         return $this->get($id);
@@ -362,7 +398,10 @@ class AcmTicketService
             && (mb_strlen($note) < 3 || mb_strlen($note) > 2000)) {
             throw new InvalidArgumentException('A reason (3-2000 chars) is required.');
         }
-        $this->pdo->beginTransaction();
+        $ownTransaction = !$this->pdo->inTransaction();
+        if ($ownTransaction) {
+            $this->pdo->beginTransaction();
+        }
         try {
             $ticket = $this->lockedTicket($id);
             if (!in_array($ticket['status'], self::DECIDABLE_STATUSES, true)) {
@@ -438,9 +477,13 @@ class AcmTicketService
                 $stmt->execute([':st' => $status, ':u' => $userId, ':note' => $note, ':id' => $id]);
                 $this->addEvent($id, $userId, $event, $note, $selfApproved ? ['self_approved' => 1] : null);
             }
-            $this->pdo->commit();
+            if ($ownTransaction) {
+                $this->pdo->commit();
+            }
         } catch (\Throwable $e) {
-            $this->pdo->rollBack();
+            if ($ownTransaction && $this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
             throw $e;
         }
         return $this->get($id);
@@ -632,7 +675,10 @@ class AcmTicketService
             throw new InvalidArgumentException('A cancel reason (3-2000 chars) is required.');
         }
         $this->requireCeremonyTables();
-        $this->pdo->beginTransaction();
+        $ownTransaction = !$this->pdo->inTransaction();
+        if ($ownTransaction) {
+            $this->pdo->beginTransaction();
+        }
         try {
             $ticket = $this->lockedTicket($id);
             if (in_array($ticket['status'], self::TERMINAL_STATUSES, true)) {
@@ -645,9 +691,11 @@ class AcmTicketService
             $this->transition(
                 $id, self::CANCELABLE_STATUSES, 'canceled', $userId, 'canceled', $reason, null
             );
-            $this->pdo->commit();
+            if ($ownTransaction) {
+                $this->pdo->commit();
+            }
         } catch (\Throwable $e) {
-            if ($this->pdo->inTransaction()) {
+            if ($ownTransaction && $this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
             }
             throw $e;
