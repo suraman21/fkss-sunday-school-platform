@@ -230,9 +230,15 @@ class AcmTicketService
         $q = trim((string)($filters['q'] ?? ''));
         if ($q !== '') {
             $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], mb_substr($q, 0, 60)) . '%';
-            $where[] = '(t.ticket_no LIKE :q ESCAPE \'\\\' OR p.full_name_am LIKE :q ESCAPE \'\\\''
-                . ' OR p.full_name_en LIKE :q ESCAPE \'\\\' OR p.phone LIKE :q ESCAPE \'\\\')';
-            $params[':q'] = $like;
+            // One placeholder per occurrence, all bound to the same value.
+            // PDO cannot reuse a named parameter: with native prepares --
+            // and config.php sets ATTR_EMULATE_PREPARES to false -- the
+            // driver rewrites each :q to a positional '?' but execute()
+            // only supplies one, so MySQL answers SQLSTATE[HY093]
+            // "Invalid parameter number" and the whole page fails.
+            $where[] = '(t.ticket_no LIKE :q1 ESCAPE \'\\\' OR p.full_name_am LIKE :q2 ESCAPE \'\\\''
+                . ' OR p.full_name_en LIKE :q3 ESCAPE \'\\\' OR p.phone LIKE :q4 ESCAPE \'\\\')';
+            $params[':q1'] = $params[':q2'] = $params[':q3'] = $params[':q4'] = $like;
         }
         if (!empty($filters['mine'])) {
             $where[] = 't.assignee_id = :mine';

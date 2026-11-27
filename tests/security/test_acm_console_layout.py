@@ -259,3 +259,24 @@ def test_phone_branch_only_fires_for_an_all_digit_term():
         "the reference alphabet is alphanumeric, so a reference can end in "
         "four digits and would otherwise match on phone suffix"
     )
+
+
+def test_queue_does_not_render_a_load_failure_as_an_empty_list():
+    """"No tickets match these filters" must not stand in for an error.
+
+    The queue page catches Throwable and sets $pageError, but it still
+    rendered the empty state, so a query that never ran looked exactly
+    like a queue with nothing in it. That is how a hard PDO failure
+    (HY093) was read as "there is no work" for weeks.
+    """
+    src = _strip_comments((ADMIN / "acm_queue.php").read_text(encoding="utf-8"))
+    empty_at = src.index("No tickets match these filters")
+    guard_at = src.index("$pageError !== ''", src.index("acm_chrome_open("))
+    assert guard_at < empty_at, (
+        "the empty state must be guarded on $pageError, or a failed load "
+        "reads as an empty queue"
+    )
+    between = src[guard_at:empty_at]
+    assert "elseif" in between or "else" in between, (
+        "the empty state must be an elseif/else branch of the error check"
+    )
