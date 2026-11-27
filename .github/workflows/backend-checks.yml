@@ -327,6 +327,39 @@ jobs:
             2>&1 | tee /tmp/pytest.out
           rc="${PIPESTATUS[0]}"
           echo "pytest exit=${rc}"
+
+          # WHY THIS REPORT EXISTS
+          # This job failed on every run in visible history while the log
+          # endpoint returned EOF, so the only thing anyone could see was
+          # "Process completed with exit code 1". A red step that names its
+          # failures is fixable; one that says "exit code 1" is a permanent
+          # mystery. These annotations are the job explaining itself, and they
+          # survive even when the log download does not.
+          #
+          # GitHub keeps at most 10 annotations of one level per step, which
+          # is why the whole list goes into ONE annotation rather than one per
+          # failing test -- the same reason the PDO probe above uses `report`.
+          # pytest's `-q` has no short-summary block, so there is no
+          # `FAILED test::name` line to grep. The per-test headers in the
+          # FAILURES section are the only place the names appear:
+          #     _______ test_name[param] _______
+          # Read those, and fall back to the summary line when a run failed in
+          # a way that produced no FAILURES section at all (a collection error,
+          # an interrupted run).
+          failing=$(grep -E '^_{3,} .* _{3,}$' /tmp/pytest.out \
+                      | sed -E 's/^_+ //; s/ _+$//' | sort -u || true)
+          summary=$(grep -E '^[0-9]+ (failed|passed|error)' /tmp/pytest.out | tail -1 || true)
+          if [ -z "${failing}" ] && [ -n "${summary}" ]; then
+            failing="${summary}"
+          fi
+          if [ -n "${failing}" ]; then
+            count=$(printf '%s\n' "${failing}" | wc -l)
+            echo "::error title=${count} failing security check(s)::$(printf '%s\n' "${failing}" | head -40 | tr '\n' '|')"
+          fi
+          if [ -n "${summary}" ]; then
+            echo "::notice title=pytest summary::${summary}"
+          fi
+
           exit "$rc"
 
       - name: Fail if any test skipped
