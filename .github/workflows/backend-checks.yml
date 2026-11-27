@@ -276,29 +276,42 @@ jobs:
           # pre-existing failure on main, and a failed step skips every
           # later one. A proof that only runs when an unrelated suite is
           # green is a proof that never runs.
+        # NOTE ON THE SHELL: GitHub's default non-interactive shell runs with
+        # -e, so any non-zero command aborts the step. That killed the first
+        # two versions of this step before they could say anything, and the
+        # job reported only "exit code 1". Fail soft, then report explicitly.
         run: |
+          set +e
           set -uo pipefail
-          # Echo failures as annotations. Job log blobs live on a host that is
-          # not always reachable, while annotations are served by api.github.com
-          # -- so a bare "exit code 1" would be undiagnosable from tooling.
+
           report() {
-            while IFS= read -r line; do
-              [ -n "$line" ] && echo "::error::$line"
-            done < <(tail -n 40 /tmp/pdoprobe.out)
+            echo "::notice::harness output follows"
+            if [ -s /tmp/pdoprobe.out ]; then
+              while IFS= read -r line; do
+                [ -n "$line" ] && echo "::error::${line}"
+              done < <(tail -n 30 /tmp/pdoprobe.out)
+            else
+              echo "::error::the harness produced no output at all"
+            fi
           }
-          php tests/e2e/acm_named_placeholder_mariadb.php 2>&1 | tee /tmp/pdoprobe.out
-          rc=${PIPESTATUS[0]}
+
+          php -d display_errors=1 -d error_reporting=E_ALL \
+            tests/e2e/acm_named_placeholder_mariadb.php > /tmp/pdoprobe.out 2>&1
+          rc=$?
+          echo "::notice::harness exited ${rc}"
+          sed -n '1,40p' /tmp/pdoprobe.out
+
+          if [ "$rc" -eq 0 ] && grep -q 'NAMED-PLACEHOLDER PROOF: PASS' /tmp/pdoprobe.out; then
+            echo "proof passed"
+            exit 0
+          fi
           if [ "$rc" -eq 3 ]; then
-            echo "::error::the named-placeholder proof could not run; it must not be skipped."
-            report
-            exit 1
+            echo "::error::the proof could not run here; a skipped proof verifies nothing."
+          else
+            echo "::error::the named-placeholder proof did not pass (exit ${rc})."
           fi
-          if ! grep -q 'NAMED-PLACEHOLDER PROOF: PASS' /tmp/pdoprobe.out; then
-            echo "::error::the named-placeholder proof did not pass."
-            report
-            exit 1
-          fi
-          [ "$rc" -eq 0 ] || { report; exit 1; }
+          report
+          exit 1
 
       - name: Run tests/security
         env:
