@@ -292,7 +292,13 @@ final class PhotoUploadService
             if ($ownedTransaction) $conn->rollback();
             // Remove the moved file since we didn't commit.
             if (is_file($targetPath)) @unlink($targetPath);
-            return self::err(500, 'server_error', 'Photo could not be saved: ' . $e->getMessage());
+            // The client gets a correlation reference, never the driver text:
+            // a failed INSERT can carry the SQL statement, the table name and
+            // the parameter values, and this message goes to the API response.
+            $ref = function_exists('reportInternalError')
+                ? reportInternalError('Photo save failed', $e) : '';
+            return self::err(500, 'server_error',
+                'Photo could not be saved. Quote this reference if you need help: ' . $ref);
         }
     }
 
@@ -473,7 +479,10 @@ final class PhotoUploadService
         } catch (\Throwable $e) {
             $conn->rollback();
             if (is_file($targetPath)) @unlink($targetPath);
-            return self::err(500,'server_error','Photo could not be saved: '.$e->getMessage());
+            $ref = function_exists('reportInternalError')
+                ? reportInternalError('Photo save (airlock) failed', $e) : '';
+            return self::err(500,'server_error',
+                'Photo could not be saved. Quote this reference if you need help: '.$ref);
         }
     }
 

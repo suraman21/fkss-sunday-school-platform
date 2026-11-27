@@ -459,6 +459,26 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen>
   }
 
 
+  /// Announcements are broadcast, not per-user, so there is no per-row server
+  /// call: the read happens locally and the badge updates here. They used to
+  /// be untappable entirely -- a row showed a NEW badge and nothing could ever
+  /// clear it, which reads as a broken badge rather than an unread item.
+  Future<void> _markAnnouncementRead(Map<String, dynamic> a) async {
+    final id = (a['id'] as num?)?.toInt() ?? 0;
+    if (id <= 0 || a['is_unread'] != 1) return;
+    final optimistic = applyReadOptimistic(_announcements, id);
+    if (!optimistic.changed) return;
+    setState(() {
+      _announcements
+        ..clear()
+        ..addAll(optimistic.rows);
+    });
+    NotificationService.instance.decrement('announcements');
+    // P1-B: persist so the cleared state survives a restart and offline
+    // browsing; the next successful refresh reconciles from the server.
+    await _db.markCachedAnnouncementRead(id);
+  }
+
   Future<void> _markAll() async {
     final scope = _tabs.index == 1 ? 'announcements' : 'alerts';
     final res = await _api.markAllNotificationsRead(scope: scope);
@@ -831,7 +851,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen>
     final unread = a['is_unread'] == 1;
     final priority = (a['priority'] ?? 'normal') as String;
     final pinned = a['is_pinned'] == 1;
-    return Container(
+    final card = Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -905,6 +925,14 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen>
           ),
         ],
       ),
+    );
+    // Tapping clears the unread badge; a read announcement is not a link,
+    // so it stays inert rather than opening something that does not exist.
+    if (!unread) return card;
+    return InkWell(
+      onTap: () => _markAnnouncementRead(a),
+      borderRadius: BorderRadius.circular(16),
+      child: card,
     );
   }
 
