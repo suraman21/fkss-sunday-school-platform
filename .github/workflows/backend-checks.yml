@@ -534,6 +534,37 @@ jobs:
       - name: Run ACM PHPUnit suite
         run: ./vendor/bin/phpunit -c acm/phpunit.xml
 
+  members-phpunit:
+    name: Members app contracts (PHPUnit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          # The members app declares strict_types and uses 8.1+ syntax
+          # (str_contains/str_starts_with, readonly-ish patterns).
+          php-version: '8.4'
+          coverage: none
+
+      # vendor/ is tracked in this repository (tracked-vendor model) but
+      # vendor/bin/ is not, so phpunit is NOT present in a fresh checkout.
+      # Downloading the PHAR sidesteps that without touching the tracked tree,
+      # and without composer update rewriting composer.lock during a test run.
+      - name: Fetch PHPUnit
+        run: |
+          set -euo pipefail
+          curl -fsSL -o phpunit.phar https://phar.phpunit.de/phpunit-11.phar
+          php phpunit.phar --version
+
+      # members/tests/bootstrap.php loads the app's static autoloader
+      # (members/autoload.php) directly — the repository convention, an
+      # explicit manifest rather than an SPL resolver outside vendor/.
+      - name: Run members app contracts
+        run: php -d error_reporting=E_ALL phpunit.phar -c members/phpunit.xml
+
   migration-hygiene:
     name: Migration numbering
     runs-on: ubuntu-latest

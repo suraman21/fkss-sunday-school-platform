@@ -124,7 +124,36 @@ Two rules worth stating plainly:
 
 ---
 
-## 5. Running it
+## 5. Where it lives in production
+
+**`https://yoursite.com/members/`** — the folder is the web root, exactly like
+`/admin`. Document root stays the repository root; `members/.htaccess` denies the
+private tree (`app/`, `resources/`, `config/`, `sql/`) and dispatches everything
+else to `public/index.php`.
+
+| URL | Page |
+|---|---|
+| `/members/` | Welcome |
+| `/members/login` | Sign in |
+| `/members/home` | Dashboard |
+| `/members/lessons` | Lesson path |
+| `/members/profile`, `/attendance`, `/grades` | The member's own record |
+
+Every internal link and asset path is written `/members/...`, so that mount is
+the supported one; serving the app from a document root instead would break them.
+
+**The mount prefix is the fragile part.** Apache sets `SCRIPT_NAME` to the path
+*after* an internal rewrite, so under this mount it reads
+`/members/public/index.php` — not `/members/home`. The first implementation took
+`dirname()` of that, got `/members/public`, matched no prefix, and 404'd every
+page. `Request::stripMountPrefix()` now tries `/members/public`, `/members` and
+`/index.php` forms, each only on a `/` boundary, so `/membership` is never
+mistaken for `/members`. `members/tests/Unit/RequestPathTest.php` pins thirteen
+shapes; eight of them fail against the old code.
+
+---
+
+## 6. Running it
 
 ```bash
 # 1. Apply the ledger ONCE, by hand (phpMyAdmin). The runner refuses to
@@ -153,14 +182,14 @@ nobody reviewed. The guard was right and the code changed.
 
 ---
 
-## 6. Deliberate limitations (stated, not hidden)
+## 7. Deliberate limitations (stated, not hidden)
 
 1. **Feature pages are shells.** `/home`, `/lessons`, `/progress` render the
    real layout with an explicit "still being built" state. They are *not* filled
    with sample data — invented lessons are indistinguishable from a broken API,
    and would hide whether the contract is right.
-2. **Two API resources now exist, both in `api/v1/`.** `/learning` (§8) and
-   `/my` (§9). Neither lives in `members/`: the app consumes the platform's one
+2. **Two API resources now exist, both in `api/v1/`.** `/learning` (§9) and
+   `/my` (§10). Neither lives in `members/`: the app consumes the platform's one
    API surface, it does not grow a second one.
 3. **No runtime verification against MariaDB.** No PHP or MySQL was available
    while building this; correctness is established by parse checks and 41
@@ -171,7 +200,7 @@ nobody reviewed. The guard was right and the code changed.
 
 ---
 
-## 7. Feature status
+## 8. Feature status
 
 Every unbuilt feature is an explicit **coming soon** page, driven by one
 registry (`resources/views/partials/placeholder.php`) that records a status and
@@ -206,7 +235,7 @@ app to it would produce a 401 that looks like a bug. Adding a
 token-authenticated password change belongs to ACM, which owns credential
 lifecycle — so the page says to contact the office, which is true today.
 
-## 8. The learning API
+## 9. The learning API
 
 `GET  /api/v1/learning/path` — subjects → units → lessons, with per-lesson
 `open`/`completed` and a summary for the progress ring.
@@ -243,7 +272,7 @@ Also corrected: a unit with **no quiz** must count as quiz-satisfied
 (`!quiz_required || ...` in the prototype). Requiring a quiz that does not exist
 would freeze the course forever.
 
-## 9. The self-service API — `/api/v1/my`
+## 10. The self-service API — `/api/v1/my`
 
 Everything a member needs to see about *themselves*, in one resource that takes
 **no id at all**.
@@ -285,7 +314,7 @@ route now reads `parts[1]` and rejects a numeric segment rather than coercing it
 - Parents are **not** served by `/my`. A parent asking about a child goes through
   `apiParentCanSeeMember` on a different route, with its own verified-link rule.
 
-## 10. What comes next
+## 11. What comes next
 
 | Step | Where | Why in this order |
 |---|---|---|

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Members app — unit contracts.
+
+  WHY THIS EXISTS AT ALL
+    The /members mount bug (SCRIPT_NAME becomes /members/public/index.php after
+    the .htaccess rewrite) 404'd every page and was invisible to every static
+    check in the repository. Nothing ran this app's PHP. Now something does.
+
+  Bootstrap is members/bootstrap.php, not the app autoloader alone, because the
+  Request class reads constants defined there.
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/11.0/phpunit.xsd"
+         bootstrap="tests/bootstrap.php"
+         colors="false"
+         failOnWarning="true"
+         failOnDeprecation="true">
+  <testsuites>
+    <testsuite name="members">
+      <directory suffix="Test.php">tests/Unit</directory>
+    </testsuite>
+  </testsuites>
+  <source>
+    <include>
+      <directory>app</directory>
+    </include>
+  </source>
+</phpunit>
