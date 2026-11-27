@@ -136,6 +136,9 @@ $routeMap = [
     // Members App learning path. Self-only (member role reading its own work),
     // so it sits under the same bearer auth as every other resource.
     'learning'      => 'learning.php',
+    // The caller's OWN record: profile, department status, attendance, grades.
+    // Takes no id -- identity comes from the token (see routes/my.php).
+    'my'            => 'my.php',
 ];
 
 // Check if resource exists

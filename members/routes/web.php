@@ -57,6 +57,9 @@ $pages = [
     // partials/placeholder.php has a page for every entry.
     '/assistant' => 'pages/assistant',
     '/notifications' => 'pages/notifications',
+    '/profile' => 'pages/profile',
+    '/attendance' => 'pages/attendance',
+    '/grades' => 'pages/grades',
     '/account' => 'pages/account',
 ];
 

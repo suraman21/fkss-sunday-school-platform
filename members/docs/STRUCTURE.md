@@ -159,8 +159,9 @@ nobody reviewed. The guard was right and the code changed.
    real layout with an explicit "still being built" state. They are *not* filled
    with sample data — invented lessons are indistinguishable from a broken API,
    and would hide whether the contract is right.
-2. **No learning endpoints yet.** `/api/v1/learning` does not exist. It is the
-   next step, and it belongs in `api/v1/routes/learning.php` — not here.
+2. **Two API resources now exist, both in `api/v1/`.** `/learning` (§8) and
+   `/my` (§9). Neither lives in `members/`: the app consumes the platform's one
+   API surface, it does not grow a second one.
 3. **No runtime verification against MariaDB.** No PHP or MySQL was available
    while building this; correctness is established by parse checks and 41
    behavioural assertions run against an in-memory PHP runtime. The first real
@@ -242,7 +243,49 @@ Also corrected: a unit with **no quiz** must count as quiz-satisfied
 (`!quiz_required || ...` in the prototype). Requiring a quiz that does not exist
 would freeze the course forever.
 
-## 9. What comes next
+## 9. The self-service API — `/api/v1/my`
+
+Everything a member needs to see about *themselves*, in one resource that takes
+**no id at all**.
+
+| method | path | returns |
+|---|---|---|
+| GET | `/my/profile` | the caller's own record, contact + address, role flags, department status |
+| GET | `/my/attendance?days=90` | windowed history + counts and a percentage |
+| GET | `/my/grades` | assessment records with a server-computed percent |
+
+**Why a new resource rather than a relaxed `/members/{id}`.** That route answers
+"may I see *this* member" and shapes its payload by the caller's role: staff get
+phones and guardian contact, members and parents get a safe row with neither. A
+member opening their own page through it therefore gets the *safe* row — their
+own phone number is withheld as if it were somebody else's. Teaching that route
+about selfhood would put an id-taking endpoint behind the member role, which is
+the IDOR its own comment warns about. `/my` takes no id, so identity can only
+come from the token.
+
+**One routing detail that was a real bug.** The router splits a path into
+`[resource, id, sub]`. `/learning/lessons/{id}` puts the verb in `sub`; `/my/profile`
+puts it in the **id** slot and leaves `sub` null. Copying the `/learning` line
+made every `/my` request fall through to 404 while still parsing cleanly. The
+route now reads `parts[1]` and rejects a numeric segment rather than coercing it.
+
+**The judgement calls, all pinned by tests:**
+
+- Own phone and address **are** returned — a student who cannot check their
+  contact details cannot report that the office has the wrong number.
+- Guardian contact is **not**. A parent's phone number belongs to the parent.
+- A department row is written only when somebody is **suspended**, so
+  `departments_source: "default"` means "no row, therefore active on both" —
+  never "inactive".
+- Attendance `percent` is `null`, not `0`, with no records; `late` counts as
+  attended; `holiday` is out of the denominator.
+- A missing `academic_records` table is `409 GRADES_UNAVAILABLE`, not an empty
+  list: "you have no grades" and "grades are not switched on" are different
+  messages and only one is true.
+- Parents are **not** served by `/my`. A parent asking about a child goes through
+  `apiParentCanSeeMember` on a different route, with its own verified-link rule.
+
+## 10. What comes next
 
 | Step | Where | Why in this order |
 |---|---|---|

@@ -34,6 +34,7 @@ $nav = [
  *  anyone editing a query string by hand. */
 $assetVersion = (string)(@filemtime(MEMBERS_ROOT . '/public/assets/js/app.js') ?: 1);
 $learningVersion = (string)(@filemtime(MEMBERS_ROOT . '/public/assets/js/learning.js') ?: 1);
+$myVersion = (string)(@filemtime(MEMBERS_ROOT . '/public/assets/js/my.js') ?: 1);
 ?>
 <!DOCTYPE html>
 <html lang="<?= $isAm ? 'am' : 'en' ?>">
@@ -95,6 +96,9 @@ $learningVersion = (string)(@filemtime(MEMBERS_ROOT . '/public/assets/js/learnin
 <script src="/members/public/assets/js/app.js?v=<?= e($assetVersion) ?>" defer></script>
 <?php if (!empty($learningPage)): ?>
 <script src="/members/public/assets/js/learning.js?v=<?= e($learningVersion) ?>" defer></script>
+<?php endif; ?>
+<?php if (!empty($myPage)): ?>
+<script src="/members/public/assets/js/my.js?v=<?= e($myVersion) ?>" defer></script>
 <?php endif; ?>
 </body>
 </html>

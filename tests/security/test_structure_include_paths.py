@@ -73,6 +73,15 @@ DYNAMIC_ALLOWLIST = {
     "api/v1/core/database.php": 4,
     "api/v1/index.php": 1,
     "api/v1/routes/attendance.php": 2,
+    # 2026-11-27: /learning and /my each load one optional service class by a
+    # repo-root anchored path, dirname(__DIR__, 3) . '/admin/backend/services/
+    # X.php', because composer's psr-4 map covers SSMS\Acm only and cannot
+    # autoload App\Services. The filename is a fixed literal, not request
+    # input; the require is guarded by is_file() and the caller re-checks
+    # class_exists() before use, so a folder move fails loudly with a 503
+    # rather than silently running without the service.
+    "api/v1/routes/learning.php": 1,
+    "api/v1/routes/my.php": 1,
     "backend/api/mezmur.php": 3,
     "backend/config/loader.php": 2,
     # 2026-11-13: 5th link is require_once $_telegramEnvPath — a

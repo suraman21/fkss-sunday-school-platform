@@ -12,7 +12,10 @@
        that centrally is the difference between "signed out everywhere" and
        "one page keeps showing a stale spinner forever".
 
-   The API is /api/v1 — the platform's existing one. This app adds no endpoints.
+   The API is /api/v1 — the platform's existing one. This app has added two
+   resources to it: /learning (the lesson path) and /my (the caller's own
+   profile, attendance and grades). Both are self-only and take no id, so
+   neither widens what the staff routes already expose.
    ===================================================================== */
 (function () {
     "use strict";
