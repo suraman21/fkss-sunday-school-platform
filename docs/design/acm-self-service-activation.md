@@ -348,19 +348,33 @@ thing in the way, so it was raised.
 
 | Threshold | Value | When checked | Effect |
 |---|---|---|---|
-| `ACCOUNT_SOFT_LIMIT` | 5 | before `password_verify` | refuse without verifying; generic 401 |
-| `ACCOUNT_HARD_LIMIT` | 10 | after a correct password | 429 `account_locked` |
-| `SOURCE_LIMIT` | 30 | per source address, all identifiers | generic 401 |
+| `ACCOUNT_SOFT_LIMIT` | 5 | before `password_verify` | refuse without verifying; 429 `account_locked` |
+| `SOURCE_LIMIT` | 30 | per source address, all identifiers | 429 `rate_limited` |
+
+**There is one account threshold, not two.** An earlier draft had a second,
+higher line at 10 that answered a *correct* password with a distinct lockout.
+It could never fire: the only path to `password_verify()` ran through
+`attempt()`, which refuses at 5, so by the time a password had been verified the
+counter was by construction below 10. It was removed rather than repaired.
+Running the throttle against the real limiter is what found it — the ordering
+assertions in the test suite passed while the control did nothing.
 
 Two deliberate choices worth not "fixing" later:
 
 - **The bucket is keyed on the identifier the caller typed, hashed — not
   on the resolved user id.** Keying on the resolved id would let anyone
   lock a known account outright by submitting its username.
-- **The hard lockout says so.** It proves to the caller that the account
-  is real and the password was right. The alternative is signing in an
-  account under active guessing. Guessing stops at SOFT anyway; the hard
-  threshold exists to explain the situation to a legitimate user.
+- **A locked identifier stops consuming.** Every consume slides the window
+  forward, so continuing to count while locked would let an attacker hold a
+  real account locked indefinitely with one request every few minutes. The
+  lock expires from the last *real* attempt instead.
+- **The lockout says so**, and that is safe. Because the bucket is keyed on
+  what was typed, an invented username produces the identical message after
+  the identical five failures — nothing is confirmed about whether the
+  account exists, and a locked-out student is told what happened. The
+  original reasoning — that saying "locked" confirms a real account — only
+  holds when the bucket is keyed on a resolved user, which it is not. The
+  original argument for a generic 401 therefore no longer applies.
 - **It never writes `users.is_active`.** A row-level lock would survive a
   password reset, lock out the office recovery screen, and turn a
   temporary condition into a support ticket.

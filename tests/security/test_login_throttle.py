@@ -52,16 +52,32 @@ class ThrottleShape(unittest.TestCase):
 
     def test_soft_limit_refuses_before_verifying(self):
         self.assertIn("ACCOUNT_SOFT_LIMIT", self.src)
-        attempt = self.src.split("public function attempt")[1].split("public function ", 1)[0]
+        code = strip_php_comments(self.src)
+        attempt = code.split("public function attempt")[1].split("public function ", 1)[0]
         self.assertIn("ACCOUNT_SOFT_LIMIT", attempt)
-        # The refuse path returns without consuming another attempt.
-        self.assertIn("return ['allowed' => false", attempt)
+        # The count must be allowed to exceed the threshold, or "at or over
+        # the limit" can never be observed and the counter freezes: pass a
+        # ceiling above the limit, not the limit itself.
+        self.assertIn("COUNTER_CEILING", attempt)
+        self.assertNotIn("ACCOUNT_SOFT_LIMIT,\n            self::WINDOW_SECONDS", attempt)
 
-    def test_hard_limit_is_checked_after_a_correct_password(self):
-        self.assertIn("public function hardLocked", self.src)
-        self.assertIn("ACCOUNT_HARD_LIMIT", self.src)
-        auth = read(AUTH)
-        self.assertIn("hardLocked()", auth)
+    def test_a_refusal_does_not_consume(self):
+        """Refusing must not slide the window forward.
+
+        If a refused attempt still consumed, one request every few minutes
+        would hold a victim's account locked forever: the window would keep
+        being pushed out from under them.
+        """
+        code = strip_php_comments(self.src)
+        attempt = code.split("public function attempt")[1].split("public function ", 1)[0]
+        guard = attempt.index("ACCOUNT_SOFT_LIMIT)")
+        # Everything from the threshold test up to the FIRST consume(), which
+        # must sit outside it -- the consume calls come after the guard, so
+        # anything found in this span runs before them.
+        first_consume = attempt.index("consume(", guard)
+        branch = attempt[guard:first_consume]
+        self.assertIn("'locked' => true", branch)
+        self.assertNotIn("consume(", branch)
 
     def test_peek_does_not_consume_an_attempt(self):
         """Otherwise logging in correctly would lock the account."""
@@ -91,22 +107,40 @@ class AuthWiring(unittest.TestCase):
         verify_at = self.code.index("password_verify($password")
         self.assertLess(attempt_at, verify_at)
 
-    def test_hard_lockout_is_checked_before_the_bucket_is_cleared(self):
-        """recordSuccess() deletes the row; checking after it never fires."""
-        hard_at = self.code.index("$throttle->hardLocked()")
-        clear_at = self.code.index("$throttle->recordSuccess()")
-        self.assertLess(hard_at, clear_at)
+    def test_there_is_only_one_threshold(self):
+        """A second line that cannot be reached is a lie in the code.
 
-    def test_exhaustion_answers_like_a_wrong_password(self):
-        """While merely over budget, saying 'locked' would confirm the account."""
-        # The exhaustion branch runs from the guard to the generic error.
-        # Bounded by the next statement, not by one whose name I guessed:
-        # $input = getBody() sits ABOVE this guard.
+        This file used to assert that a "hard lockout" was checked before
+        recordSuccess(), and it passed -- while the check could never fire,
+        because `attempt()` refuses at the soft limit and refuses WITHOUT
+        consuming, so the counter froze at 5 and never reached 10. A
+        behavioural test against the real limiter found it; an ordering
+        assertion could not.
+        """
+        body = strip_php_comments(read(THROTTLE))
+        self.assertNotIn("hardLocked", body)
+        self.assertNotIn("ACCOUNT_HARD_LIMIT", body)
+        self.assertNotIn("hardLocked", self.code)
+
+    def test_lockout_is_reported_honestly(self):
+        """The lockout message is safe because the bucket is keyed on the
+        identifier as TYPED: an invented username produces the same message,
+        so nothing is confirmed about whether the account exists."""
         block = self.code.split("if (!$throttleState['allowed'])")[1]
         block = block.split("$profileImageColumnExists", 1)[0]
-        self.assertIn("Invalid username or password.", block)
-        # And the distinct lockout message must not be reachable from here.
-        self.assertNotIn("account_locked", block)
+        self.assertIn("account_locked", block)
+        self.assertIn("if (!empty($throttleState['locked']))", block)
+        # The identifier is what the caller typed, not a directory lookup.
+        throttle = read(THROTTLE)
+        self.assertIn("hash('sha256', self::normalize($identifier))", throttle)
+
+    def test_a_locked_account_does_not_reset_on_the_way_out(self):
+        """recordSuccess() clears the bucket, so it must not run when the
+        attempt was refused -- otherwise a locked account is unlocked by
+        the request that discovered it was locked."""
+        guard_at = self.code.index("if (!$throttleState['allowed'])")
+        clear_at = self.code.index("$throttle->recordSuccess()")
+        self.assertLess(guard_at, clear_at)
 
 
 class PolicyCoupling(unittest.TestCase):

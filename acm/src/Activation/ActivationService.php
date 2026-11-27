@@ -182,19 +182,63 @@ class ActivationService implements ActivationServiceContract
             // unconsumed grant for this ticket + operation dies too.
             $this->tickets->revokeCeremonyGrants((int)$ticketId, $purposeValue, 'reissue');
 
-            $selector = '';
+            // An activation OTP reissue starts a clean attempt budget.
+            //
+            // The budget is deliberately per TICKET (sql/102), so a member
+            // cannot reset it by asking for another code -- that is what
+            // stops "reissue until the lock clears" from becoming the way
+            // to get unlimited guesses. But the office only reissues after
+            // a code has been burnt, and a burnt code has, by definition,
+            // spent the budget: the ticket expires, the office issues a
+            // fresh code, and the member still cannot use it for ten
+            // minutes, told "The code is invalid or expired" about a code
+            // that was correct and seconds old. The recovery path led
+            // straight back into the failure it exists to undo.
+            //
+            // The two cases are distinguishable, and that is the point: a
+            // member asking for a reissue of a code that has NOT burnt
+            // keeps their count (that is still reissue-until-lock), while a
+            // code the OFFICE issued from a burnt/expired ticket is a fresh
+            // start. Only the latter resets, and only for activation.
+            //
+            // Note this clears the per-TICKET rows for the ticket, not just
+            // this source: the person typing the new code may well be on a
+            // different phone or network than the one that burnt the old
+            // one, and the budget that matters is the ticket's.
+            // The reset applies ONLY when there was no live code to replace:
+            // $reissueOf is null exactly then, because the previous code has
+            // already been burnt or expired away and the office is handing
+            // out a fresh start. When a live code IS being replaced, the
+            // member is asking for another code, and the budget must carry
+            // over -- otherwise "keep asking until the lock clears" becomes
+            // unlimited guessing.
+            if ($purpose === CodePurpose::Activation && $reissueOf === null) {
+                $this->clearOtpAttemptsForTicket((int)$ticketId);
+            }
+
+            // NULL, not '', from the start: see the branch below. The
+            // initialiser has to agree with it, or a future edit that reads
+            // $selector before the loop reintroduces the empty-string row.
+            $selector = null;
             $secret = '';
             $codeId = 0;
             // Activation is a six-digit OTP; the other purposes keep the
             // selector+secret pair. Both live in the same row shape: for an
-            // OTP, `selector` held empty and `secret_hash` is the HMAC the
+            // OTP `selector` is NULL and `secret_hash` is the HMAC the
             // (ticket-scoped) verifier can check. See Otp for why a 6-digit
             // code cannot be its own lookup key.
             $isOtp = $purpose === CodePurpose::Activation;
             for ($attempt = 0; $attempt < 5; $attempt++) {
                 $uuid = AcmPersonService::uuid4();
                 if ($isOtp) {
-                    $selector = '';
+                    // NULL, not ''. sql/103 makes the column nullable
+                    // precisely so this is expressible: `selector` is
+                    // NOT NULL UNIQUE, so writing '' meant the SECOND OTP
+                    // row in the whole database hit SQLSTATE 23000 and
+                    // every later issuance failed. MySQL's UNIQUE permits
+                    // many NULLs and only one ''. Activation has no
+                    // selector -- say so.
+                    $selector = null;
                     $secret = Otp::generate();
                     $storedHash = Otp::hash($secret, $uuid);
                 } else {
@@ -226,9 +270,18 @@ class ActivationService implements ActivationServiceContract
                     $codeId = (int)$this->pdo->lastInsertId();
                     break;
                 } catch (\PDOException $e) {
-                    // 23000 on the selector UNIQUE key: regenerate. An OTP
-                    // row has no selector, so this only fires for the pair
-                    // form — but the loop is shared and harmless either way.
+                    // 23000 on the selector UNIQUE key: regenerate and try
+                    // again. This is a real possibility only for the pair
+                    // form, where the selector is random with a ~10^9 space.
+                    //
+                    // For an OTP row the selector is NULL and UNIQUE
+                    // excludes NULLs, so this retry cannot mask a genuine
+                    // collision -- but do NOT let it silently swallow a
+                    // permanent failure either, which is exactly what an
+                    // earlier version of this comment claimed was
+                    // "harmless". It was not: with selector = '' every
+                    // attempt collided and the loop burned all five before
+                    // throwing a misleading "Code issuance failed."
                     if ($e->getCode() !== '23000' || $attempt === 4) {
                         throw $e;
                     }
@@ -387,8 +440,20 @@ class ActivationService implements ActivationServiceContract
         try {
             // Peek before comparing: a burnt ticket must not evaluate the
             // guess at all, or the budget is decorative.
+            //
+            // A spent budget answers the SAME generic failure as an unknown
+            // reference, and that is deliberate. This used to throw
+            // rateLimited() here, which made the endpoint an existence
+            // oracle: a made-up reference returned code_invalid, while a
+            // real one that had spent its budget returned rate_limited. Two
+            // requests were enough to learn whether a reference exists —
+            // the exact thing the generic error is supposed to prevent.
+            //
+            // Nothing is lost by answering generically: the caller already
+            // cannot get in, and a person holding a genuinely burnt code
+            // learns it from the office, not from a distinct status.
             if ($this->otpBudgetExhausted($ticketId, $source)) {
-                throw ActivationException::rateLimited();
+                throw ActivationException::verifyFailed();
             }
 
             $code = $this->lockedOtpCode($ticketId);
@@ -444,7 +509,14 @@ class ActivationService implements ActivationServiceContract
     private function lockedOtpCode(int $ticketId): ?array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, uuid, ticket_id, person_id, purpose, status, attempts, max_attempts,'
+            // secret_hash is REQUIRED here: verify() compares against it a
+            // few lines below. It was missing from this list, so every
+            // correct OTP compared against null, failed as "invalid or
+            // expired", and was charged to the attempt budget like a wrong
+            // guess. Five correct entries revoked the code and burnt the
+            // ticket. The column list and its consumer have to move
+            // together; keep them adjacent.
+            'SELECT id, uuid, ticket_id, person_id, purpose, status, attempts, max_attempts, secret_hash,'
             . ' (expires_at > NOW()) AS live'
             . ' FROM acm_activation_codes'
             . " WHERE ticket_id = :t AND purpose = 'activation' AND status = 'active'"
@@ -475,6 +547,26 @@ class ActivationService implements ActivationServiceContract
         }
         return (int)$row['total'] >= Otp::MAX_ATTEMPTS
             || (int)$row['mine'] >= Otp::MAX_ATTEMPTS_PER_SOURCE;
+    }
+
+    /**
+     * Attempts already spent against this ticket, inside the window.
+     *
+     * For the console ONLY. The per-row `attempts` column on a code row is
+     * not the OTP budget -- failOtp() never touches it -- so a page that
+     * prints "attempts used" straight from the row tells an officer that a
+     * burnt ticket used 0 of 5. The real count lives in acm_otp_attempts,
+     * summed across every source, because the budget is per ticket.
+     */
+    public function otpAttemptsUsed(int $ticketId): int
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT COALESCE(SUM(attempts), 0) FROM acm_otp_attempts'
+            . ' WHERE ticket_id = :t'
+            . ' AND updated_at > DATE_SUB(NOW(), INTERVAL ' . (int)Otp::TTL_MIN . ' MINUTE)'
+        );
+        $stmt->execute([':t' => $ticketId]);
+        return (int)$stmt->fetchColumn();
     }
 
     /**
@@ -522,6 +614,21 @@ class ActivationService implements ActivationServiceContract
             'DELETE FROM acm_otp_attempts WHERE ticket_id = :t AND source = :src'
         );
         $stmt->execute([':t' => $ticketId, ':src' => $source]);
+    }
+
+    /**
+     * Drop every source's spent budget for a ticket.
+     *
+     * Used only when the OFFICE reissues an activation code, i.e. when a
+     * fresh code is being handed out from a ticket whose previous code was
+     * burnt or replaced. Without it, a burnt code keeps the ticket locked
+     * for the rest of the window and the reissued code fails as "invalid
+     * or expired" the moment it is read out.
+     */
+    private function clearOtpAttemptsForTicket(int $ticketId): void
+    {
+        $stmt = $this->pdo->prepare('DELETE FROM acm_otp_attempts WHERE ticket_id = :t');
+        $stmt->execute([':t' => $ticketId]);
     }
 
     /**
@@ -1278,6 +1385,10 @@ class ActivationService implements ActivationServiceContract
             'last' => is_array($lastRow) ? $lastRow : null,
             'velocity_1h' => $this->ticketVelocity($ticketId),
             'velocity_limit' => self::TICKET_VELOCITY_LIMIT,
+            // The real OTP budget, which is not the code row's `attempts`.
+            'otp_used' => $this->otpAttemptsUsed($ticketId),
+            'otp_limit' => Otp::MAX_ATTEMPTS,
+            'otp_source_limit' => Otp::MAX_ATTEMPTS_PER_SOURCE,
         ];
     }
 

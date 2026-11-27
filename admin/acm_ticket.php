@@ -283,17 +283,30 @@ acm_chrome_open('queue', (string)($ticket['ticket_no'] ?? 'Ticket'), 'Activation
         <dt>Expires</dt><dd><?= e((string)($liveCode['expires_at'] ?? '')) ?><?= empty($liveCode['live']) ? ' · EXPIRED — reissue to resume' : '' ?></dd>
         <dt>Attempts left</dt>
         <dd>
-            <?= max(0, (int)($liveCode['max_attempts'] ?? 0) - (int)($liveCode['attempts'] ?? 0)) ?>
-            of <?= (int)($liveCode['max_attempts'] ?? 0) ?>
-            <?php if (!empty($isOtpCode)): ?>
+            <?php
+            // The OTP budget lives in acm_otp_attempts, not in the code
+            // row's `attempts` column (failOtp() never touches that), so
+            // reading the row would always say "0 used" -- including on a
+            // ticket that had just been burnt. codeStatus() reports the
+            // real figure as otp_used.
+            $otpBudget = !empty($isOtpCode) && isset($codeInfo['otp_limit']);
+            $limit = $otpBudget ? (int)$codeInfo['otp_limit'] : (int)($liveCode['max_attempts'] ?? 0);
+            $used  = $otpBudget ? (int)($codeInfo['otp_used'] ?? 0) : (int)($liveCode['attempts'] ?? 0);
+            ?>
+            <?= max(0, $limit - $used) ?>
+            of <?= $limit ?>
+            <?php if ($otpBudget): ?>
                 <span style="font-size:.75rem;color:var(--dim)">(per ticket, across all issued codes)</span>
             <?php endif; ?>
         </dd>
     </dl>
     <?php elseif ($lastCode !== null): ?>
     <dl class="acm-kv">
-        <dt>Last code</dt><dd><?= e((string)($lastCode['selector'] ?? '')) ?> · <?= e(str_replace('_', ' ', (string)($lastCode['status'] ?? ''))) ?></dd>
-        <dt>Attempts used</dt><dd><?= (int)($lastCode['attempts'] ?? 0) ?> of <?= (int)($lastCode['max_attempts'] ?? 0) ?></dd>
+        <?php /* An OTP row has no selector, so rendering one as '' would
+                 show a leading separator with nothing before it. */ ?>
+        <dt>Last code</dt><dd><?php if (trim((string)($lastCode['selector'] ?? '')) !== ''): ?><?= e((string)$lastCode['selector']) ?> · <?php endif; ?><?= e(str_replace('_', ' ', (string)($lastCode['status'] ?? ''))) ?><?= (string)($lastCode['purpose'] ?? '') === 'activation' ? ' · 6-digit OTP' : '' ?></dd>
+        <?php $lastIsOtp = (string)($lastCode['purpose'] ?? '') === 'activation' && isset($codeInfo['otp_limit']); ?>
+        <dt>Attempts used</dt><dd><?= $lastIsOtp ? (int)($codeInfo['otp_used'] ?? 0) : (int)($lastCode['attempts'] ?? 0) ?> of <?= $lastIsOtp ? (int)$codeInfo['otp_limit'] : (int)($lastCode['max_attempts'] ?? 0) ?></dd>
     </dl>
     <?php else: ?>
     <div style="font-size:.8rem;color:var(--dim)">No code issued yet.</div>

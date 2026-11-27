@@ -19,12 +19,18 @@ final class PasswordPolicy
      * compensating for a missing control.
      *
      * That control now exists: `LoginThrottle` counts failures per
-     * ACCOUNT (not per IP) and locks the account for a growing window
-     * after `LoginThrottle::ACCOUNT_LIMIT` misses. With guessing bounded
-     * per account, 6 is defensible — it is the same floor NIST
+     * ACCOUNT (not per IP) and locks the identifier for fifteen minutes
+     * after `LoginThrottle::ACCOUNT_SOFT_LIMIT` misses. With guessing
+     * bounded per account, 6 is defensible — it is the same floor NIST
      * SP 800-63B-4 sets for out-of-band secrets, and what the school asked
-     * for (ASVS 5.0 V6.5.1 also puts the floor at 20 bits, which six
-     * digits clears).
+     * for.
+     *
+     * Six CHARACTERS is the floor, and it is not the same thing as six
+     * digits: the policy has no character-class or entropy rule, so
+     * `aaaaaa` passes. That is a deliberate, documented consequence of
+     * going to 6 -- what keeps it safe is the per-account throttle and
+     * the common-password list below, not composition rules. Do not add
+     * composition rules to compensate without saying why.
      *
      * Do NOT lower this without LoginThrottle being wired into every
      * password-checking endpoint. The policy cannot enforce that itself;
