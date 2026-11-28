@@ -120,6 +120,21 @@
         username_unavailable: [
             "ይህ የመግቢያ ስም አስቀድሞ ጥቅም ላይ ውሏል። ሌላ ይምረጡ።",
             "That username is already in use. Please choose another."
+        ],
+        /* The register has no member code for this member, so there is no
+           sign-in identifier to create. Nothing the member can retype fixes
+           this -- the office has to correct the record. Saying "choose
+           another username" here would be a lie: they never chose one. */
+        member_code_missing: [
+            "የዚህ አባል መለያ ቁጥር በመዝገቡ ላይ አልተገኘም። እባክዎ ቢሮውን ያግኙ።",
+            "This member has no ID number on record. Please contact the office."
+        ],
+        /* No username was sent and the identifier the server would bind was
+           unusable. Nothing on this screen can fix it, so it must not read
+           like a re-type hint. */
+        identifier_unavailable: [
+            "መለያው ሊፈጠር አልቻለም። እባክዎ ቢሮውን ያግኙ።",
+            "The account could not be created. Please contact the office."
         ]
     };
 

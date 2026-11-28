@@ -30,10 +30,23 @@ LOGIN = ROOT / "members/resources/views/pages/login.php"
 API_ACM = ROOT / "api/v1/routes/acm.php"
 API_AUTH = ROOT / "api/v1/routes/auth.php"
 APP_JS = ROOT / "members/public/assets/js/app.js"
+SRC_ROUTE = API_ACM
+SRC_SERVICE = ROOT / "acm/src/Activation/ActivationService.php"
 
 
 def read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
+
+
+def strip_comments(src: str) -> str:
+    """Drop comments so assertions are about code, not prose.
+
+    Both PHP (`//` and `/* */`) and JS use the same markers, so one helper
+    serves every source file in this module.
+    """
+    src = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
+    src = re.sub(r"^\s*//.*$", "", src, flags=re.M)
+    return re.sub(r"^\s*#.*$", "", src, flags=re.M)
 
 
 def strip_js_comments(src: str) -> str:
@@ -268,7 +281,10 @@ class ServerErrorsSpeakTheReadersLanguage(unittest.TestCase):
                      "weak_password", "temporarily_unavailable",
                      "activation_pending", "grant_invalid", "grant_expired",
                      "grant_consumed", "grant_revoked", "code_invalid",
-                     "account_exists", "idempotent_conflict", "network_denied"):
+                     "account_exists", "idempotent_conflict", "network_denied",
+                     # The two codes that replaced the false "username
+                     # taken" banner in production.
+                     "member_code_missing", "identifier_unavailable"):
             self.assertRegex(
                 self.js, r"\b" + code + r"\s*:\s*\[",
                 "no localized copy for the server code " + code
@@ -289,6 +305,110 @@ class ServerErrorsSpeakTheReadersLanguage(unittest.TestCase):
                           "not registered", "wrong name", "invalid member",
                           "does not exist"):
             self.assertNotIn(forbidden, code)
+
+
+class TheCredentialsStepNeverInventsATakenUsername(unittest.TestCase):
+    """The page told a member their username was taken -- one they never chose.
+
+    THE BUG THIS FILE EXISTS FOR
+        POST acm/activate/credentials failed with
+        "That username is already in use. Choose another." for a member who had
+        typed only a password. Two independent defects made that happen and
+        both had to be fixed:
+
+        1. THE SERVER BOUND AN EMPTY IDENTIFIER
+           `acm_activation_tickets` has no member_code column (sql/079 defines
+           the table; no later migration adds one), yet establishCredentials
+           read `$ticket['member_code']`, which was ''.
+           AuthenticatorDirectory::register() refuses '' with "That identifier
+           cannot be used to sign in."
+
+        2. THE ROUTE RE-LABELLED EVERY REFUSAL
+           `catch (InvalidArgumentException)` answered with
+           `code => username_unavailable` unconditionally -- including for a
+           request that carried no username at all. So a server that had never
+           been given a username told the member to pick a different one.
+    """
+
+    @staticmethod
+    def _catch():
+        """The InvalidArgumentException handler of the CREDENTIALS action only.
+
+        Scoping matters: this file has several
+        `catch (InvalidArgumentException` blocks, and an assertion that
+        slices from the first one passes for the wrong reason -- it finds
+        an unrelated `invalid_request` earlier in the file and calls that
+        "the guard fired". Anchor on the action, then on the catch inside it.
+        """
+        route = strip_comments(read(SRC_ROUTE))
+        start = route.index("if ($acmAction === 'activate/credentials'")
+        end = route.index("$credentialsResponse", start)
+        block = route[start:end]
+        return block[block.index("catch (InvalidArgumentException"):]
+
+    def test_username_unavailable_requires_that_a_username_was_sent(self):
+        catch = self._catch()
+        # The branch that answers username_unavailable must be guarded by the
+        # submitted username, not entered unconditionally.
+        self.assertIn("$sentUsername", catch)
+        self.assertRegex(
+            catch,
+            r"if\s*\(\s*\$sentUsername\s*===\s*''\s*\)",
+            "the 'choose another username' answer must be gated on there being a username"
+        )
+
+    def test_an_unsent_username_is_never_reported_as_taken(self):
+        catch = self._catch()
+        invalid = catch.index("'code' => 'identifier_unavailable'")
+        taken = catch.index("'code' => 'username_unavailable'")
+        self.assertLess(
+            invalid, taken,
+            "the no-username branch must be answered first, or the member is "
+            "told to choose another username without having chosen one"
+        )
+
+    def test_the_credentials_step_does_not_read_member_code_off_the_ticket(self):
+        """The ticket table has no member_code. Reading it yields ''."""
+        service = strip_comments(read(SRC_SERVICE))
+        self.assertNotIn(
+            "$ticket['member_code']", service,
+            "acm_activation_tickets has no member_code column -- this read is "
+            "always the empty string, and an empty identifier is refused"
+        )
+        self.assertIn("memberCodeForTicket", service)
+
+    def test_a_missing_member_code_is_its_own_code(self):
+        self.assertIn("'member_code_missing'", strip_comments(read(SRC_ROUTE)),
+                      "the office-fixable case must be distinguishable from a retry")
+
+
+class TheWalkthroughsSeedARealRegister(unittest.TestCase):
+    """The e2e walkthroughs must seed members the way the register does.
+
+    THE TRAP THIS AVOIDS
+        The walkthroughs inserted members with no member_code. An empty code
+        became an empty sign-in identifier, which is exactly the production
+        failure -- so a walkthrough seeded that way cannot prove the journey
+        works. It either fails for a reason production never has, or passes
+        because the schema tolerated a row production cannot hold.
+    """
+
+    WALKTHROUGHS = (
+        "acm_access_proof_walkthrough",
+        "acm_ceremony_walkthrough",
+        "acm_deactivation_walkthrough",
+        "acm_devices_walkthrough",
+    )
+
+    def test_every_walkthrough_binds_a_member_code(self):
+        for name in self.WALKTHROUGHS:
+            path = ROOT / "tests/e2e" / (name + ".php")
+            src = read(path)
+            self.assertIn("member_code", src,
+                          name + " seeds members with no code, so it cannot "
+                          "exercise the identifier the account will use")
+            self.assertIn(":mc", src,
+                          name + " prepares member_code but never binds it")
 
 
 class ThePageDoesNotRebuildTheOracle(unittest.TestCase):

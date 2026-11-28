@@ -70,6 +70,7 @@ if (!function_exists('acmWireError')) {
             'idempotent_conflict' => 'This idempotency key was already used with a different session.',
             'network_denied' => 'Activation is not available from this network.',
             'ticket_state' => 'The ticket is not in the right state for this action.',
+            'member_code_missing' => 'This member has no member code on record, so there is no sign-in identifier to create. Ask the office to add one to the member record.',
             'invalid_request' => 'The request is invalid.',
             // S4 device vocabulary (same route-owns-wire rule: only
             // code + status cross from the exception).
@@ -383,6 +384,33 @@ if ($acmAction === 'activate/credentials' && $method === 'POST') {
         // surface as a 500 -- the member simply picks another. The
         // message is a fixed string: no exception text escapes here
         // (pinned by test_acm_s3_ceremony).
+        //
+        // BUT ONLY WHEN A USERNAME WAS ACTUALLY SENT. Reporting
+        // username_unavailable is an instruction -- "choose another" -- so
+        // it must never be the answer to a request that carried no
+        // username at all. That is exactly how a missing member code
+        // reached production: the identifier was empty, register() refused
+        // it, and every refusal was reported as a taken username. The
+        // member was told to pick a different username by a server that had
+        // never been given one.
+        // Mirrors EXACTLY the expression that decided what the service
+        // received above, so the guard cannot disagree with the call:
+        // no username reached establishCredentials iff this is ''.
+        $sentUsername = isset($body['username']) && $body['username'] !== ''
+            ? (string)$body['username']
+            : '';
+        if ($sentUsername === '') {
+            // Both remaining causes are office-fixable (no code on the
+            // register, or the code already bound to another account), so
+            // the answer is "contact the office" -- not "the request is
+            // invalid", which would blame the member for a server-side
+            // conflict they cannot see or fix.
+            err(
+                'The account could not be created. Ask the office to check this member record.',
+                409,
+                ['code' => 'identifier_unavailable']
+            );
+        }
         err(
             'That username is already in use. Choose another, or retry without a username to use your member ID number instead.',
             409,

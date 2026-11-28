@@ -266,7 +266,13 @@ $officer2 = seedUser($pdo, $tag . '_off2', 'accounts_office');
 $officerCtx = new AccountContext($officer1, 'accounts_office');
 
 $memberStmt = $pdo->prepare(
-    'INSERT INTO members (full_name_am, student_name, father_name) VALUES (:am, :st, :fa)'
+    // member_code is seeded because it is the SIGN-IN IDENTIFIER when the
+    // member chooses no username (ActivationService reads it through the
+    // ticket's member_id). An empty code is an activation that cannot
+    // produce an account anyone can log in to -- and the ceremony walkthrough
+    // exists to prove the real journey, so it must seed a real register row.
+    'INSERT INTO members (full_name_am, student_name, father_name, member_code)'
+    . ' VALUES (:am, :st, :fa, :mc)'
 );
 $guardianStmt = $pdo->prepare('INSERT INTO guardians (display_name) VALUES (:n)');
 $personNo = 0;
@@ -280,6 +286,7 @@ function seedPerson(): array
         ':am' => 'E2E ሙከራ ' . $tag . ' ' . $personNo,
         ':st' => 'E2E Test ' . $tag . ' ' . $personNo,
         ':fa' => 'E2E Father',
+        ':mc' => 'C-' . str_pad((string)(20000 + $personNo), 5, '0', STR_PAD_LEFT),
     ]);
     $memberId = (int)$pdo->lastInsertId();
     $seedMemberIds[] = $memberId;
